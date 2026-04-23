@@ -1,0 +1,51 @@
+# MLOps Project — Python Dependencies
+# Python 3.10 compatible (see PYTHON_VERSION.md for MLX-LM constraint)
+# Install: pip install -r requirements.txt
+
+# ── Fine-tuning ──────────────────────────────────────────────────────────────
+# mlx-lm requires Python 3.11+ — install separately in a 3.11 venv
+# See PYTHON_VERSION.md for setup instructions
+
+# ── MLOps tracking & versioning ──────────────────────────────────────────────
+mlflow==2.19.0
+dvc==3.59.1
+
+# ── Vector stores ────────────────────────────────────────────────────────────
+lancedb==0.20.0
+# qdrant-client==1.12.0  # Phase 2 (Docker)
+
+# ── Data processing ──────────────────────────────────────────────────────────
+polars==1.19.0
+
+# ── Code parsing ─────────────────────────────────────────────────────────────
+tree-sitter==0.23.2
+tree-sitter-python==0.23.6
+tree-sitter-java==0.23.5
+
+# ── Evaluation ───────────────────────────────────────────────────────────────
+evaluate==0.4.3
+sacrebleu==2.4.3
+tiktoken==0.8.0
+
+# ── Embeddings ───────────────────────────────────────────────────────────────
+sentence-transformers==3.3.1
+
+# ── AWS Bedrock (baseline measurements only) ─────────────────────────────────
+boto3==1.35.99
+
+# ── HTTP / async ─────────────────────────────────────────────────────────────
+httpx==0.28.1
+aiohttp==3.11.11
+
+# ── Utilities ────────────────────────────────────────────────────────────────
+python-dotenv==1.0.1
+rich==13.9.4
+typer==0.15.1
+pyyaml==6.0.2
+pathlib2==2.3.7; python_version < "3.11"
+
+# ── Web scraping (agent collect-web) ─────────────────────────────────────────
+crawl4ai==0.4.247
+
+# ── Task scheduling ──────────────────────────────────────────────────────────
+prefect==3.1.15

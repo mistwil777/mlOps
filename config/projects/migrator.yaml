@@ -1,0 +1,39 @@
+name: migrator
+description: Automatic Python to Java code migration
+source_lang: python
+target_lang: java
+classification: interne
+model: mistral-7b-instruct-v0.3-4bit
+adapter_path: null         # populated after first training run
+model_path: null           # populated after first fuse + deploy
+previous_model_path: null  # rollback target
+deployed_at: null
+serving_port: 8080
+
+baseline:
+  provider: nova-pro
+  model_id: us.amazon.nova-pro-v1:0
+  measured: false          # set to true after running eval --baseline nova-pro
+  metrics: {}
+
+quality_thresholds:
+  min_java_compilation: 0.90
+  min_codebLEU: 0.70
+  max_latency_ratio: 2.0   # max 2× Nova Pro latency
+
+min_tokens: 50
+max_tokens: 2048
+min_output_ratio: 0.3
+max_output_ratio: 10.0
+blacklist_patterns:
+  - "TODO"
+  - "FIXME"
+  - "password"
+  - "secret"
+  - "api_key"
+
+data:
+  raw_source: /Users/wlerouli/migrator
+  raw: datalake/projects/migrator/raw/
+  processed: datalake/projects/migrator/processed/
+  fine_tuning_ready: datalake/projects/migrator/fine-tuning-ready/

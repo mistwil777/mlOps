@@ -1,0 +1,65 @@
+# Models and adapters (large binaries — root folders only)
+/models/
+/adapters/
+/logs/
+*.safetensors
+*.bin
+*.gguf
+*.ggml
+*.pt
+*.pth
+*.ckpt
+
+# Raw datalake (immutable, not versioned in Git — use DVC)
+datalake/raw/
+
+# MLflow runs (tracked separately)
+mlruns/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.Python
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+!.claude/audit.log
+
+# LanceDB
+lancedb/
+
+# SQLite databases
+*.db
+*.sqlite3
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# DVC
+# (keep .dvc files — they are the version pointers)
+/tmp/
