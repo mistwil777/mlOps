@@ -156,6 +156,7 @@ export interface DataHealth {
     fine_tuning_ready: { exists: boolean; count: number; size_mb: number; train: number; valid: number };
   };
   alerts: string[];
+  lineage_summary?: Array<{ source_type: string; n: number; avg_q: number | null }>;
 }
 
 export interface PackageInfo {

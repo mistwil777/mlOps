@@ -1,19 +1,23 @@
-"""Data management: AWA collect, human review, cleaning pipeline."""
+"""Data management: AWA collect, human review, cleaning pipeline, manual ingestion, lineage."""
 
 from __future__ import annotations
 
 import asyncio
+import io
 import json
-import subprocess
 import sys
 import uuid
+import zipfile
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import yaml
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
+
+from api.db import execute, fetchall
 
 router = APIRouter(prefix="/api/data", tags=["data"])
 
@@ -341,6 +345,13 @@ async def data_health(project_id: str) -> dict[str, Any]:
     if raw["count"] > 0 and processed.get("avg_quality") is not None and processed["avg_quality"] < 0.6:
         alerts.append(f"Qualité moyenne basse ({processed['avg_quality']:.2f}) — vérifiez les données.")
 
+    # Lineage summary
+    lineage = fetchall(
+        "SELECT source_type, COUNT(*) as n, AVG(quality_score) as avg_q "
+        "FROM data_lineage WHERE project_id = ? GROUP BY source_type",
+        (project_id,),
+    )
+
     return {
         "project_id": project_id,
         "funnel": funnel,
@@ -350,4 +361,128 @@ async def data_health(project_id: str) -> dict[str, Any]:
             "fine_tuning_ready": {**ftr, **splits},
         },
         "alerts": alerts,
+        "lineage_summary": lineage,
     }
+
+
+# ── Manual Ingestion ──────────────────────────────────────────────────────────
+
+@router.post("/ingest/{project_id}")
+async def ingest_file(
+    project_id: str,
+    file: UploadFile = File(...),
+    source_description: str = "manual_upload",
+) -> dict[str, Any]:
+    """Accept a JSONL file or ZIP of JSONL files and append to raw stage."""
+    _load_project_config(project_id)
+
+    raw_dir = Path(f"datalake/projects/{project_id}/raw")
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    raw_path = raw_dir / "pairs_raw.jsonl"
+
+    content = await file.read()
+    filename = file.filename or "upload.jsonl"
+
+    records_new: list[dict[str, Any]] = []
+
+    if filename.endswith(".zip"):
+        with zipfile.ZipFile(io.BytesIO(content)) as zf:
+            for name in zf.namelist():
+                if name.endswith(".jsonl"):
+                    data = zf.read(name).decode("utf-8", errors="replace")
+                    for line in data.splitlines():
+                        line = line.strip()
+                        if line:
+                            try:
+                                records_new.append(json.loads(line))
+                            except json.JSONDecodeError:
+                                pass
+    elif filename.endswith(".jsonl"):
+        for line in content.decode("utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if line:
+                try:
+                    records_new.append(json.loads(line))
+                except json.JSONDecodeError:
+                    pass
+    else:
+        raise HTTPException(400, "Only .jsonl or .zip files are accepted")
+
+    if not records_new:
+        raise HTTPException(400, "No valid JSONL records found in uploaded file")
+
+    # Validate minimal structure
+    for r in records_new:
+        if "prompt" not in r or "completion" not in r:
+            raise HTTPException(400, "Each record must have 'prompt' and 'completion' fields")
+
+    # Append to raw file
+    existing = _list_jsonl(raw_path)
+    ts = datetime.utcnow().isoformat()
+    tagged = [{**r, "meta": {**r.get("meta", {}), "source": source_description, "ingested_at": ts}} for r in records_new]
+    _write_jsonl(raw_path, existing + tagged)
+
+    # Track lineage
+    for r in tagged:
+        _track_lineage(project_id, r, source_description)
+
+    return {
+        "ingested": len(tagged),
+        "total_raw": len(existing) + len(tagged),
+        "source": source_description,
+    }
+
+
+# ── Data Lineage ──────────────────────────────────────────────────────────────
+
+def _ensure_lineage_table() -> None:
+    try:
+        execute(
+            """CREATE TABLE IF NOT EXISTS data_lineage (
+                id           TEXT PRIMARY KEY,
+                project_id   TEXT NOT NULL,
+                source_type  TEXT,
+                source_url   TEXT,
+                collected_at TEXT,
+                quality_score REAL,
+                review_status TEXT,
+                prompt_tokens INTEGER,
+                completion_tokens INTEGER
+            )""",
+        )
+    except Exception:
+        pass
+
+
+def _track_lineage(project_id: str, record: dict[str, Any], source_type: str) -> None:
+    _ensure_lineage_table()
+    try:
+        meta = record.get("meta", {})
+        prompt_tokens = len(record.get("prompt", "").split())
+        completion_tokens = len(record.get("completion", "").split())
+        execute(
+            "INSERT OR IGNORE INTO data_lineage VALUES (?,?,?,?,?,?,?,?,?)",
+            (
+                str(uuid.uuid4()),
+                project_id,
+                source_type,
+                meta.get("source_url", ""),
+                meta.get("ingested_at") or datetime.utcnow().isoformat(),
+                record.get("quality_score"),
+                record.get("review_status"),
+                prompt_tokens,
+                completion_tokens,
+            ),
+        )
+    except Exception:
+        pass
+
+
+@router.get("/lineage/{project_id}")
+async def get_lineage(project_id: str, limit: int = 100) -> list[dict[str, Any]]:
+    _load_project_config(project_id)
+    _ensure_lineage_table()
+    return fetchall(
+        "SELECT * FROM data_lineage WHERE project_id = ? ORDER BY collected_at DESC LIMIT ?",
+        (project_id, limit),
+    )

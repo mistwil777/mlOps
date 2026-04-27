@@ -1,11 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { getProjects, getDataHealth } from '$lib/api';
+  import { getProjects, getDataHealth, getLineage } from '$lib/api';
   import type { Project, DataHealth } from '$lib/types';
 
   let projects: Project[] = $state([]);
   let selectedProject = $state('');
   let health: DataHealth | null = $state(null);
+  let lineage: Record<string, unknown>[] = $state([]);
   let loading = $state(false);
   let error = $state('');
 
@@ -22,7 +23,10 @@
     loading = true;
     error = '';
     try {
-      health = await getDataHealth(selectedProject);
+      [health, lineage] = await Promise.all([
+        getDataHealth(selectedProject),
+        getLineage(selectedProject).catch(() => []),
+      ]);
     } catch (e) {
       error = (e as Error).message;
     } finally {
@@ -82,6 +86,25 @@
         {/each}
       </div>
     </div>
+
+    <!-- Lineage summary -->
+    {#if health.lineage_summary && health.lineage_summary.length > 0}
+      <div class="card section" style="margin-top:16px">
+        <div class="section-title">Lignage — sources</div>
+        <table class="lineage-table">
+          <thead><tr><th>Source</th><th>Paires</th><th>Qualité moy.</th></tr></thead>
+          <tbody>
+            {#each health.lineage_summary as row}
+              <tr>
+                <td class="mono">{row.source_type || '—'}</td>
+                <td class="mono">{row.n}</td>
+                <td class="mono">{row.avg_q != null ? ((row.avg_q as number) * 100).toFixed(1) + '%' : '—'}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    {/if}
 
     <!-- Stage details -->
     <div class="stages-grid">
@@ -143,4 +166,7 @@
   .stat { display: flex; justify-content: space-between; font-size: 13px; }
   .stat-label { color: var(--text-muted); }
   .badge-failed { background: rgba(255,80,80,0.15); color: var(--red); border: 1px solid var(--red); padding: 2px 8px; border-radius: 4px; font-size: 11px; }
+  .lineage-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .lineage-table th { text-align: left; padding: 6px 12px; color: var(--text-muted); font-weight: 600; border-bottom: 1px solid var(--border); }
+  .lineage-table td { padding: 6px 12px; border-bottom: 1px solid var(--surface-2); }
 </style>

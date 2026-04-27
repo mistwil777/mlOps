@@ -18,8 +18,11 @@
     { href: '/projects',     icon: '◈', label: 'Projets',      section: 'Factory' },
     { href: '/base-models',  icon: '◫', label: 'Modèles base' },
     { href: '/data',         icon: '◧', label: 'Données',      section: 'Data' },
+    { href: '/rag',          icon: '◩', label: 'RAG' },
     { href: '/train',        icon: '▷', label: 'Fine-tuning',  section: 'Training' },
     { href: '/models',       icon: '◉', label: 'Modèles fine-tunés' },
+    { href: '/adapters',     icon: '◈', label: 'Adaptateurs LoRA' },
+    { href: '/playground',   icon: '◐', label: 'Playground',   section: 'Test' },
     { href: '/delivery',     icon: '⬡', label: 'Livraison',    section: 'Delivery' },
   ];
 
