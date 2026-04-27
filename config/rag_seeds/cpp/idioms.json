@@ -1,0 +1,46 @@
+{
+  "lang": "cpp",
+  "version": "C++20",
+  "patterns": [
+    {
+      "content": "RAII: acquire resources in constructor, release in destructor. Use std::unique_ptr<T> for exclusive ownership, std::shared_ptr<T> for shared. Never raw new/delete.",
+      "metadata": {"category": "convention", "quality_label": "gold"}
+    },
+    {
+      "content": "std::optional<T> for nullable values (C++17). std::variant<T1, T2> for type-safe unions. std::expected<T, E> (C++23) for error handling.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Range-based for: for (const auto& item : container) — prefer auto& to avoid copies, const auto& for read-only. Use structured bindings: for (auto& [k, v] : map).",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Move semantics: pass by value and std::move into storage. Return by value — NRVO applies. Avoid unnecessary copies with std::move and perfect forwarding.",
+      "metadata": {"category": "performance", "quality_label": "gold"}
+    },
+    {
+      "content": "constexpr for compile-time computation. consteval for functions that must be compile-time. Use constexpr containers in C++20 (std::vector, std::string).",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Concepts (C++20): template <typename T> requires Printable<T> void print(T x). Replaces SFINAE and enable_if — far more readable.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Standard algorithms over raw loops: std::sort, std::find_if, std::transform, std::accumulate. Ranges (C++20): std::ranges::sort(v); std::views::filter.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "std::string_view for read-only string parameters — avoids copies. std::span<T> for array/vector slices. Both are non-owning views.",
+      "metadata": {"category": "performance", "quality_label": "gold"}
+    },
+    {
+      "content": "Structured bindings: auto [x, y] = getPoint(); auto& [key, val] = *map.begin(). Works with pairs, tuples, structs.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Rule of 0: if a class only owns resources via RAII members (unique_ptr, string, vector), define no destructor/copy/move — compiler-generated ones are correct.",
+      "metadata": {"category": "convention", "quality_label": "gold"}
+    }
+  ]
+}

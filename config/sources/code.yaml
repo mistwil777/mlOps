@@ -1,0 +1,80 @@
+# Source registry for domain: code
+# Priority order: official_docs > official_repo > quality_repos > github_search (last resort)
+
+topics:
+  python:
+    official_docs:
+      - https://docs.python.org/3/
+      - https://peps.python.org/
+    official_repo:
+      - https://github.com/python/cpython
+    quality_repos:
+      - https://github.com/TheAlgorithms/Python
+      - https://github.com/faif/python-patterns
+    github_search:
+      - "python best practices"
+      - "python idiomatic examples"
+
+  java:
+    official_docs:
+      - https://docs.oracle.com/en/java/javase/21/
+      - https://openjdk.org/jeps/
+    official_repo:
+      - https://github.com/openjdk/jdk
+    quality_repos:
+      - https://github.com/TheAlgorithms/Java
+      - https://github.com/iluwatar/java-design-patterns
+    github_search:
+      - "java modern idioms"
+      - "java 21 examples"
+
+  javascript:
+    official_docs:
+      - https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide
+    quality_repos:
+      - https://github.com/airbnb/javascript
+      - https://github.com/TheAlgorithms/JavaScript
+    github_search:
+      - "javascript ES2022 examples"
+
+  typescript:
+    official_docs:
+      - https://www.typescriptlang.org/docs/
+      - https://www.typescriptlang.org/tsconfig
+    official_repo:
+      - https://github.com/microsoft/TypeScript
+    quality_repos:
+      - https://github.com/type-challenges/type-challenges
+    github_search:
+      - "typescript patterns examples"
+
+  go:
+    official_docs:
+      - https://go.dev/doc/
+      - https://go.dev/tour/
+    official_repo:
+      - https://github.com/golang/go
+    quality_repos:
+      - https://github.com/TheAlgorithms/Go
+      - https://github.com/uber-go/guide
+    github_search:
+      - "golang idiomatic examples"
+
+  rust:
+    official_docs:
+      - https://doc.rust-lang.org/book/
+      - https://doc.rust-lang.org/rust-by-example/
+    official_repo:
+      - https://github.com/rust-lang/rust
+    quality_repos:
+      - https://github.com/rust-unofficial/awesome-rust
+    github_search:
+      - "rust idiomatic patterns"
+
+  migration:
+    quality_repos:
+      - https://github.com/javaparser/javaparser
+    github_search:
+      - "python to java migration"
+      - "java to python conversion"
+      - "code migration refactoring examples"

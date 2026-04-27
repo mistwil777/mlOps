@@ -1,36 +1,6 @@
 {
   "permissions": {
     "allow": [
-      "Bash(mlx_lm.*)",
-      "Bash(python *.py)",
-      "Bash(python -m *)",
-      "Bash(dvc *)",
-      "Bash(git status)",
-      "Bash(git log*)",
-      "Bash(git diff*)",
-      "Bash(git add *)",
-      "Bash(git commit *)",
-      "Bash(git checkout *)",
-      "Bash(git branch *)",
-      "Bash(git push *)",
-      "Bash(javac *)",
-      "Bash(java -cp *)",
-      "Bash(ollama *)",
-      "Bash(mlflow *)",
-      "Bash(docker ps)",
-      "Bash(docker stats)",
-      "Bash(docker logs *)",
-      "Bash(docker-compose *)",
-      "Bash(ls *)",
-      "Bash(find * -name *.jsonl)",
-      "Bash(find * -name *.py)",
-      "Bash(wc -l *)",
-      "Bash(jq * *.jsonl)",
-      "Bash(grep -r *)",
-      "Bash(pytest *)",
-      "Bash(python -m pytest *)",
-      "Read(~/Documents/GitHub/mlOps/**)",
-      "Read(~/migrator/**)",
       "Write(~/Documents/GitHub/mlOps/datalake/processed/**)",
       "Write(~/Documents/GitHub/mlOps/datalake/fine-tuning-ready/**)",
       "Write(~/Documents/GitHub/mlOps/datalake/projects/**)",
@@ -43,38 +13,13 @@
       "Write(~/Documents/GitHub/mlOps/pipeline/**)",
       "Write(~/Documents/GitHub/mlOps/agents/**)",
       "Write(~/Documents/GitHub/mlOps/config/**)",
-      "Write(~/Documents/GitHub/mlOps/tests/**)"
+      "Write(~/Documents/GitHub/mlOps/tests/**)",
+      "Write(~/Documents/GitHub/mlOps/docs/**)",
+      "Write(~/Documents/GitHub/mlOps/.claude/audit.log)"
     ],
     "deny": [
       "Write(~/Documents/GitHub/mlOps/datalake/raw/**)",
-      "Bash(curl * anthropic*)",
-      "Bash(curl * openai*)",
-      "Bash(pip install *)",
-      "Bash(npm install *)",
-      "Bash(rm -rf *)",
       "Write(~/migrator/**)"
-    ]
-  },
-  "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "echo \"$(date -u +%Y-%m-%dT%H:%M:%SZ) | BASH | $CLAUDE_TOOL_INPUT\" >> ~/Documents/GitHub/mlOps/.claude/audit.log"
-          }
-        ]
-      },
-      {
-        "matcher": "Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "echo \"$(date -u +%Y-%m-%dT%H:%M:%SZ) | WRITE | $CLAUDE_TOOL_INPUT\" >> ~/Documents/GitHub/mlOps/.claude/audit.log"
-          }
-        ]
-      }
     ]
   }
 }

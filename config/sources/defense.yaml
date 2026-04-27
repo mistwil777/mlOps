@@ -1,0 +1,28 @@
+# Source registry for domain: defense
+# IMPORTANT: only open/declassified public sources — no classified data ever
+
+topics:
+  doctrines_publiques:
+    official_docs:
+      - https://www.defense.gouv.fr/
+      - https://www.sgdsn.gouv.fr/
+    github_search:
+      - "military doctrine NLP public"
+      - "defense text summarization"
+
+  cybersecurity:
+    official_docs:
+      - https://www.ssi.gouv.fr/guide/
+      - https://www.cert.ssi.gouv.fr/
+    quality_repos:
+      - https://github.com/ANSSI-FR
+    github_search:
+      - "cybersecurity NLP dataset"
+      - "threat intelligence text classification"
+
+  procurement:
+    official_docs:
+      - https://www.economie.gouv.fr/daj/marches-publics
+    github_search:
+      - "public procurement NLP"
+      - "defense procurement document analysis"

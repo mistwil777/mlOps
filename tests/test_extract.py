@@ -44,8 +44,9 @@ class TestPairExtractor:
         for p in pairs:
             assert "prompt" in p
             assert "completion" in p
-            assert "tokens" in p
-            assert p["tokens"] > 0
+            assert "rag_context" in p
+            assert "meta" in p
+            assert p["meta"]["tokens"] > 0
 
     def test_format_mistral(self, extractor: PairExtractor, repo_with_pairs: Path) -> None:
         pairs = extractor.extract_from_repo(repo_with_pairs)
@@ -60,17 +61,20 @@ class TestPairExtractor:
         for f in formatted:
             assert "prompt" in f
             assert "completion" in f
+            assert "rag_context" in f
+            assert "meta" in f
 
-    def test_validate_syntax_python(self, extractor: PairExtractor) -> None:
-        valid = "def foo():\n    return 1\n"
-        invalid = "def foo(:\n    return 1\n"
-        assert extractor.validate_syntax(valid, "python") in (True,)
-        # syntax validation may return True if tree-sitter not installed — that's acceptable
+    def test_format_qwen(self, extractor: PairExtractor, repo_with_pairs: Path) -> None:
+        pairs = extractor.extract_from_repo(repo_with_pairs)
+        formatted = extractor.format_as_jsonl(pairs, model_format="qwen")
+        for f in formatted:
+            assert "<|im_start|>user" in f["prompt"]
+            assert "<|im_end|>" in f["prompt"]
 
     def test_min_tokens_filter(self, repo_with_pairs: Path) -> None:
         extractor = PairExtractor("python", "java", min_tokens=1000, max_tokens=9999)
         pairs = extractor.extract_from_repo(repo_with_pairs)
-        assert all(p["tokens"] >= 1000 for p in pairs), "All pairs should meet min_tokens"
+        assert all(p["meta"]["tokens"] >= 1000 for p in pairs), "All pairs should meet min_tokens"
 
     def test_missing_repo_raises(self, extractor: PairExtractor) -> None:
         with pytest.raises(FileNotFoundError):

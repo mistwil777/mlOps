@@ -1,0 +1,46 @@
+{
+  "lang": "java",
+  "version": "17+",
+  "patterns": [
+    {
+      "content": "Use Optional<T> instead of returning null. Optional.of(value), Optional.empty(), orElse(), orElseThrow(). Never return null from a public API.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Records for immutable data (Java 16+): record Point(int x, int y) {} — generates constructor, getters, equals, hashCode, toString automatically.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Stream API for collection processing: list.stream().filter(x -> x > 0).map(String::valueOf).collect(Collectors.toList()). Prefer method references over lambdas when possible.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "var for local variable type inference (Java 10+): var items = new ArrayList<String>() — only when type is obvious from right-hand side.",
+      "metadata": {"category": "convention", "quality_label": "gold"}
+    },
+    {
+      "content": "Switch expressions (Java 14+): int result = switch (day) { case MONDAY -> 1; case TUESDAY -> 2; default -> 0; }; — no fall-through risk.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Sealed classes (Java 17+): sealed interface Shape permits Circle, Rectangle {} — exhaustive pattern matching in switch, replaces enum+instanceof chains.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Text blocks for multiline strings (Java 15+): String json = \"\"\" { \"key\": \"value\" } \"\"\"; — preserves indentation, no escape hell.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Use List.of(), Map.of(), Set.of() for immutable collections. List.copyOf() to make a defensive copy. Collections.unmodifiableList() is legacy.",
+      "metadata": {"category": "convention", "quality_label": "gold"}
+    },
+    {
+      "content": "String.formatted() replaces String.format(): 'Hello %s'.formatted(name) — cleaner, same semantics.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Pattern matching instanceof (Java 16+): if (obj instanceof String s) { ... } — no separate cast needed.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "lang": "typescript",
+  "version": "5.x",
+  "patterns": [
+    {
+      "content": "Prefer interface over type alias for object shapes that may be extended. Use type for unions/intersections: type Result<T> = Success<T> | Failure.",
+      "metadata": {"category": "convention", "quality_label": "gold"}
+    },
+    {
+      "content": "Discriminated unions: type Shape = { kind: 'circle'; r: number } | { kind: 'rect'; w: number; h: number }. Switch on kind for exhaustive handling.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Use unknown instead of any for external data. Narrow with typeof, instanceof, or type guards before use. any disables type checking entirely.",
+      "metadata": {"category": "pitfall", "quality_label": "gold"}
+    },
+    {
+      "content": "Optional chaining and nullish coalescing: user?.address?.city ?? 'Unknown'. Avoids null checks cascade.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Generics with constraints: function getFirst<T extends { length: number }>(arr: T): T[0]. Use keyof for property key types.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "async/await over raw Promises. try/catch for error handling. Promise.all for parallel awaits. Avoid .then() chains.",
+      "metadata": {"category": "convention", "quality_label": "gold"}
+    },
+    {
+      "content": "Mapped types for transformations: type Readonly<T> = { readonly [K in keyof T]: T[K] }. Partial<T>, Required<T>, Pick<T, K> are built-in.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Utility types: ReturnType<typeof fn>, Parameters<typeof fn>, Awaited<Promise<T>>. Avoid reimplementing what the stdlib provides.",
+      "metadata": {"category": "convention", "quality_label": "gold"}
+    },
+    {
+      "content": "Const assertions: const config = { port: 3000, host: 'localhost' } as const — narrows types to literals, prevents mutation.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Zod or similar for runtime validation of external data. TypeScript types are compile-time only — validate at system boundaries (HTTP input, env vars).",
+      "metadata": {"category": "pitfall", "quality_label": "gold"}
+    }
+  ]
+}

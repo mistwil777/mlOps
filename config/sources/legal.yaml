@@ -1,0 +1,27 @@
+# Source registry for domain: legal (French law focus — Capgemini/Defense context)
+
+topics:
+  french_law:
+    official_docs:
+      - https://www.legifrance.gouv.fr/
+      - https://www.conseil-etat.fr/
+    quality_repos:
+      - https://github.com/etalab/codes-juridiques-francais
+    github_search:
+      - "french law NLP dataset"
+      - "legal text classification french"
+
+  contracts:
+    official_docs:
+      - https://www.legifrance.gouv.fr/codes/id/LEGITEXT000006070721/
+    github_search:
+      - "contract analysis NLP"
+      - "legal contract summarization dataset"
+
+  compliance:
+    official_docs:
+      - https://www.cnil.fr/fr/rgpd-de-quoi-parle-t-on
+      - https://www.ssi.gouv.fr/
+    github_search:
+      - "GDPR compliance NLP"
+      - "regulatory text classification"

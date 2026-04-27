@@ -1,0 +1,46 @@
+{
+  "lang": "go",
+  "version": "1.21+",
+  "patterns": [
+    {
+      "content": "Error handling: always check errors explicitly. if err != nil { return fmt.Errorf('context: %w', err) }. Use %w to wrap for errors.Is/errors.As.",
+      "metadata": {"category": "convention", "quality_label": "gold"}
+    },
+    {
+      "content": "defer for cleanup: defer file.Close() immediately after opening a file — runs on function exit regardless of path taken.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Goroutines + channels for concurrency. go func() { ch <- result }(). Use sync.WaitGroup for fan-out. Prefer channels over shared memory.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Interfaces are implicit — no implements keyword. Small interfaces preferred (io.Reader has 1 method). Accept interfaces, return structs.",
+      "metadata": {"category": "convention", "quality_label": "gold"}
+    },
+    {
+      "content": "Named return values for documentation, not logic: func divide(a, b float64) (result float64, err error). Naked return only in very short functions.",
+      "metadata": {"category": "convention", "quality_label": "gold"}
+    },
+    {
+      "content": "Use slices over arrays. append(slice, elem) returns a new slice — assign the result. Preallocate with make([]T, 0, capacity) when size is known.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "struct embedding for composition: type Logger struct { io.Writer; prefix string } — Logger inherits Writer methods. No inheritance hierarchy.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "context.Context as first parameter for cancellation/deadlines: func Fetch(ctx context.Context, url string) error. Never store context in a struct.",
+      "metadata": {"category": "convention", "quality_label": "gold"}
+    },
+    {
+      "content": "Table-driven tests: tests := []struct{ input string; want int }{ {'a', 1}, {'b', 2} }; for _, tt := range tests { t.Run(tt.input, func...) }",
+      "metadata": {"category": "testing", "quality_label": "gold"}
+    },
+    {
+      "content": "Zero value is useful: var m map[string]int is nil but safe to read from; var s []int is nil but len/cap return 0. Initialize only when you need to write.",
+      "metadata": {"category": "pitfall", "quality_label": "gold"}
+    }
+  ]
+}

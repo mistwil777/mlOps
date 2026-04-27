@@ -1,0 +1,35 @@
+# RAG seeds index — training-time pattern retrieval
+# Each language directory contains idioms.json + optional framework-specific files
+# These are indexed into LanceDB at pipeline/rag_index.py::build_index_from_project()
+
+languages:
+  python:
+    seeds: [config/rag_seeds/python/idioms.json]
+    description: Python 3.10+ idioms, conventions, pitfalls
+  java:
+    seeds: [config/rag_seeds/java/idioms.json]
+    description: Java 17+ modern idioms (records, sealed, streams)
+  javascript:
+    seeds: [config/rag_seeds/javascript/idioms.json]
+    description: ES2022+ idioms, async patterns, module system
+  typescript:
+    seeds: [config/rag_seeds/typescript/idioms.json]
+    description: TypeScript 5.x type system, generics, runtime validation
+  go:
+    seeds: [config/rag_seeds/go/idioms.json]
+    description: Go 1.21+ error handling, concurrency, interfaces
+  rust:
+    seeds: [config/rag_seeds/rust/idioms.json]
+    description: Rust 1.75+ ownership, traits, async
+  csharp:
+    seeds: [config/rag_seeds/csharp/idioms.json]
+    description: C# 12 / .NET 8 records, nullable, LINQ, async
+  cpp:
+    seeds: [config/rag_seeds/cpp/idioms.json]
+    description: C++20 RAII, move semantics, concepts, ranges
+  php:
+    seeds: [config/rag_seeds/php/idioms.json]
+    description: PHP 8.2+ typed properties, enums, match
+  kotlin:
+    seeds: [config/rag_seeds/kotlin/idioms.json]
+    description: Kotlin 1.9+ null safety, coroutines, sealed classes

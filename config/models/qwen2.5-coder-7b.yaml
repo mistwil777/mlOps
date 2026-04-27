@@ -1,0 +1,24 @@
+name: qwen2.5-coder-7b-4bit
+hf_path: mlx-community/Qwen2.5-Coder-7B-Instruct-4bit
+
+training:
+  batch_size: 8        # M4 Pro 48 GB — 7B 4-bit fits comfortably
+  rank: 16
+  alpha: 16
+  lora_layers: 16
+  iters: 1000
+  learning_rate: 1e-4
+  steps_per_eval: 100
+  val_batches: 25
+  save_every: 200
+
+inference:
+  temperature: 0.1
+  top_p: 0.9
+  top_k: 40
+  max_tokens: 2048
+
+format: qwen           # <|im_start|>user ... <|im_end|>
+
+# Supported source/target languages (any pair is valid)
+# python | java | javascript | typescript | go | rust | csharp | cpp | php | kotlin

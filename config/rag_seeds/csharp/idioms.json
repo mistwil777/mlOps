@@ -1,0 +1,46 @@
+{
+  "lang": "csharp",
+  "version": "12 / .NET 8",
+  "patterns": [
+    {
+      "content": "Records for immutable data: record Person(string Name, int Age); — compiler generates constructor, Equals, GetHashCode, ToString, and with-expressions.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Nullable reference types: enable <Nullable>enable</Nullable> in csproj. Use string? for nullable, string for non-null. Compiler warns on null dereference.",
+      "metadata": {"category": "convention", "quality_label": "gold"}
+    },
+    {
+      "content": "async/await throughout: async Task<T> for async methods. ConfigureAwait(false) in library code to avoid context capture. Never async void except event handlers.",
+      "metadata": {"category": "convention", "quality_label": "gold"}
+    },
+    {
+      "content": "LINQ for collection operations: items.Where(x => x.Active).OrderBy(x => x.Name).Select(x => x.Id).ToList(). Prefer method syntax over query syntax.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Primary constructors (C# 12): class Service(IRepository repo) — repo is in scope throughout the class. Replaces boilerplate constructor + field assignment.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Pattern matching: switch (shape) { case Circle c when c.Radius > 0: ...; case Rectangle { Width: > 100 } r: ... }. Exhaustive via default case.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "IDisposable + using statement: using var conn = new SqlConnection(cs); — Dispose called automatically at end of scope. using declaration (no braces) in C# 8+.",
+      "metadata": {"category": "convention", "quality_label": "gold"}
+    },
+    {
+      "content": "Dependency injection via constructor. Register in IServiceCollection. Prefer interfaces over concrete types in constructor parameters.",
+      "metadata": {"category": "convention", "quality_label": "gold"}
+    },
+    {
+      "content": "Collection expressions (C# 12): List<int> nums = [1, 2, 3]; int[] arr = [..nums, 4, 5]; — replaces new List<int> { ... } and array initializer.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Span<T> and Memory<T> for zero-allocation slicing of arrays and strings. ReadOnlySpan<char> for string processing without allocating substrings.",
+      "metadata": {"category": "performance", "quality_label": "gold"}
+    }
+  ]
+}

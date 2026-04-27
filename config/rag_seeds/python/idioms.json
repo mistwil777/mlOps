@@ -1,0 +1,46 @@
+{
+  "lang": "python",
+  "version": "3.10+",
+  "patterns": [
+    {
+      "content": "List comprehension replaces explicit for-loop append. [x*2 for x in items] is idiomatic Python; avoid result=[]; for x in items: result.append(x*2).",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Use dataclasses or Pydantic instead of plain dicts for structured data. @dataclass class User: name: str; age: int — gives free __init__, __repr__, __eq__.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Context managers (with statement) replace try/finally for resource cleanup. with open(path) as f: body — file always closed even on exception.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Type hints on all function signatures: def process(items: list[str]) -> dict[str, int]. Use from __future__ import annotations for forward refs.",
+      "metadata": {"category": "convention", "quality_label": "gold"}
+    },
+    {
+      "content": "Prefer pathlib.Path over os.path. Path('data') / 'file.txt' instead of os.path.join('data', 'file.txt'). Use path.read_text() and path.write_text().",
+      "metadata": {"category": "convention", "quality_label": "gold"}
+    },
+    {
+      "content": "Exception handling: catch specific exceptions, not bare except. except ValueError as e: is correct; except Exception: is acceptable; bare except: is wrong.",
+      "metadata": {"category": "pitfall", "quality_label": "gold"}
+    },
+    {
+      "content": "f-strings for formatting: f'Hello {name}' instead of 'Hello %s' % name or 'Hello {}'.format(name). Multiline: f'result={value!r}'.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Dict/set comprehensions: {k: v for k, v in pairs} and {x for x in items if x > 0}. Use dict.get(key, default) instead of checking key in dict then accessing.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Use enumerate() and zip() instead of range(len()). for i, item in enumerate(items) instead of for i in range(len(items)): item = items[i].",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Generator expressions for lazy evaluation: sum(x*x for x in range(1000)) is more memory-efficient than sum([x*x for x in range(1000)]).",
+      "metadata": {"category": "performance", "quality_label": "gold"}
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "lang": "javascript",
+  "version": "ES2022+",
+  "patterns": [
+    {
+      "content": "Prefer const over let; never var. const does not mean immutable — object properties can still change. Use Object.freeze() for true immutability.",
+      "metadata": {"category": "convention", "quality_label": "gold"}
+    },
+    {
+      "content": "Destructuring: const { name, age = 0 } = user; const [first, ...rest] = items; function f({ id, label }) — avoids repeated property access.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "async/await over raw Promises. try/catch for error handling. Promise.all([p1, p2]) for parallel. Promise.allSettled() when partial failure is acceptable.",
+      "metadata": {"category": "convention", "quality_label": "gold"}
+    },
+    {
+      "content": "Optional chaining and nullish coalescing: user?.address?.city ?? 'Unknown'. Avoids null-check chains.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Array methods over loops: .map(), .filter(), .reduce(), .find(), .some(), .every(). Chaining is idiomatic; avoid mutations inside map/filter.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Spread and rest: const merged = { ...defaults, ...overrides }; const copy = [...arr]; function f(...args) — avoids Object.assign and .apply().",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Modules: use import/export (ESM) not require/module.exports (CJS) for new code. Use dynamic import() for lazy loading.",
+      "metadata": {"category": "convention", "quality_label": "gold"}
+    },
+    {
+      "content": "Template literals for string interpolation: `Hello ${name}, you have ${count} messages.` — also for multiline strings.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Error handling: always propagate or log errors. Never empty catch. throw new Error('message') not throw 'message' (string throws lose stack traces).",
+      "metadata": {"category": "pitfall", "quality_label": "gold"}
+    },
+    {
+      "content": "WeakMap/WeakRef for object metadata that should not prevent GC. Map for ordered key-value pairs. Set for unique values. Prefer these over plain objects where appropriate.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    }
+  ]
+}

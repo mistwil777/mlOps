@@ -1,0 +1,46 @@
+{
+  "lang": "kotlin",
+  "version": "1.9+",
+  "patterns": [
+    {
+      "content": "Null safety: use ? for nullable types. Safe call ?.let { }, Elvis operator ?: default, !! only when null is a program error. Prefer ? over !! everywhere.",
+      "metadata": {"category": "convention", "quality_label": "gold"}
+    },
+    {
+      "content": "Data classes for DTOs: data class User(val name: String, val age: Int) — free copy(), equals(), hashCode(), toString(), componentN() functions.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Extension functions: fun String.capitalizeWords(): String = split(' ').joinToString(' ') { it.capitalize() } — extend third-party classes without inheritance.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Scope functions: let (transform and return), also (side-effect and return same), apply (configure and return same), run (execute block and return result), with (call multiple methods).",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "When expression replaces switch: when (x) { is Int -> ... ; in 1..10 -> ... ; else -> ... }. Must be exhaustive when used as expression.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Coroutines for async: suspend fun fetch(): T with launch/async builders. Structured concurrency via CoroutineScope — cancellation propagates automatically.",
+      "metadata": {"category": "convention", "quality_label": "gold"}
+    },
+    {
+      "content": "Sealed classes for state machines and ADTs: sealed class Result<T>. Exhaustive when branches without else. Prefer over enum when variants carry data.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Delegation: class LoggingList<T>(private val inner: MutableList<T>) : MutableList<T> by inner — delegates all interface methods to inner, override only what you need.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "val over var everywhere possible. Immutable by default, mutable only when necessary. Use copy() on data classes instead of mutating.",
+      "metadata": {"category": "convention", "quality_label": "gold"}
+    },
+    {
+      "content": "Collection builders: listOf(), mapOf(), setOf() for immutable; mutableListOf() for mutable. Avoid Java ArrayList/HashMap directly.",
+      "metadata": {"category": "convention", "quality_label": "gold"}
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "lang": "rust",
+  "version": "1.75+",
+  "patterns": [
+    {
+      "content": "Use Result<T, E> for fallible operations, Option<T> for nullable values. Never panic in library code. Use ? operator to propagate errors.",
+      "metadata": {"category": "convention", "quality_label": "gold"}
+    },
+    {
+      "content": "Ownership: each value has one owner. Clone only when necessary. Borrow (&T) for read, mutable borrow (&mut T) for write — never both at once.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Iterator adapters are lazy and zero-cost: items.iter().filter(|x| x > 0).map(|x| x * 2).collect::<Vec<_>>(). Prefer over manual loops.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Pattern matching with match is exhaustive: match result { Ok(v) => v, Err(e) => return Err(e) }. Use if let / while let for single-variant matches.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Traits define behaviour: impl Display for MyType { fn fmt(&self, f: &mut Formatter) -> fmt::Result }. Use derive for common traits: #[derive(Debug, Clone, PartialEq)].",
+      "metadata": {"category": "convention", "quality_label": "gold"}
+    },
+    {
+      "content": "Use String for owned string data, &str for string references/slices. fn process(s: &str) is more flexible than fn process(s: String).",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Lifetimes: fn longest<'a>(x: &'a str, y: &'a str) -> &'a str — compiler infers most lifetimes; annotate only when ambiguous.",
+      "metadata": {"category": "pitfall", "quality_label": "gold"}
+    },
+    {
+      "content": "Structs over tuples for named fields. Newtype pattern: struct Meters(f64) — wraps a primitive with type safety, zero runtime cost.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "async/await with tokio or async-std for async code. Mark fn as async, await futures with .await. Use tokio::spawn for concurrent tasks.",
+      "metadata": {"category": "convention", "quality_label": "gold"}
+    },
+    {
+      "content": "Clippy is mandatory: cargo clippy -- -D warnings. It catches non-idiomatic patterns. cargo fmt enforces formatting.",
+      "metadata": {"category": "tooling", "quality_label": "gold"}
+    }
+  ]
+}

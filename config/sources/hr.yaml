@@ -1,0 +1,19 @@
+# Source registry for domain: hr
+
+topics:
+  job_descriptions:
+    official_docs:
+      - https://www.apec.fr/
+      - https://www.pole-emploi.fr/
+    github_search:
+      - "job description NLP dataset"
+      - "HR text classification"
+
+  performance_reviews:
+    github_search:
+      - "performance review text dataset"
+      - "employee feedback NLP"
+
+  onboarding:
+    github_search:
+      - "HR onboarding documentation NLP"

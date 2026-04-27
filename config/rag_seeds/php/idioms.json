@@ -1,0 +1,46 @@
+{
+  "lang": "php",
+  "version": "8.2+",
+  "patterns": [
+    {
+      "content": "Typed properties and constructor promotion: class User { public function __construct(private readonly string $name, private int $age) {} } — no body needed for simple DI.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Enums (PHP 8.1+): enum Status: string { case Active = 'active'; case Inactive = 'inactive'; } — replaces class constants. Backed enums have a value.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Fibers (PHP 8.1+) and never type (PHP 8.1+). Use match expression instead of switch: match($x) { 1 => 'one', 2 => 'two', default => 'other' } — strict, no fall-through.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Null coalescing: $value = $input ?? 'default'. Null coalescing assignment: $arr['key'] ??= 'init'. Nullsafe operator: $user?->getAddress()?->getCity().",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Named arguments: str_contains(haystack: $text, needle: 'foo'). Useful for functions with many optional params — skip positional order.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Union types and intersection types: function process(int|string $id): User|null. Use mixed only when genuinely mixed — not as a lazy escape from typing.",
+      "metadata": {"category": "convention", "quality_label": "gold"}
+    },
+    {
+      "content": "Readonly classes (PHP 8.2): readonly class Point { public function __construct(public float $x, public float $y) {} } — all properties readonly implicitly.",
+      "metadata": {"category": "idiom", "quality_label": "gold"}
+    },
+    {
+      "content": "Generators for lazy sequences: function rangeGen(int $start, int $end): Generator { for ($i = $start; $i <= $end; $i++) yield $i; } — avoids building full array in memory.",
+      "metadata": {"category": "performance", "quality_label": "gold"}
+    },
+    {
+      "content": "Exceptions: throw new \\InvalidArgumentException('msg'). Catch specific types, not \\Exception. Use finally for cleanup. PHP 8 allows throw as expression.",
+      "metadata": {"category": "convention", "quality_label": "gold"}
+    },
+    {
+      "content": "PSR-4 autoloading: one class per file, filename matches class name. Composer handles autoload. Never require_once manually for class loading.",
+      "metadata": {"category": "convention", "quality_label": "gold"}
+    }
+  ]
+}

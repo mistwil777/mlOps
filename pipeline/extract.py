@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-import sys
+import re
 from pathlib import Path
 from typing import Any
 
@@ -14,19 +14,29 @@ from pipeline.utils.logger import get_logger
 
 logger = get_logger("mlops.extract")
 
-_LANG_EXTENSIONS: dict[str, str] = {
-    "python": ".py",
-    "java": ".java",
+LANG_EXTENSIONS: dict[str, str] = {
+    "python":     ".py",
+    "java":       ".java",
     "javascript": ".js",
     "typescript": ".ts",
-    "go": ".go",
-    "rust": ".rs",
-    "cpp": ".cpp",
-    "c": ".c",
+    "go":         ".go",
+    "rust":       ".rs",
+    "csharp":     ".cs",
+    "cpp":        ".cpp",
+    "php":        ".php",
+    "kotlin":     ".kt",
+    "swift":      ".swift",
+    "ruby":       ".rb",
+    "c":          ".c",
 }
 
-_MISTRAL_TEMPLATE = "[INST] {prompt} [/INST]"
-_LLAMA_TEMPLATE = "<|user|>\n{prompt}\n<|assistant|>\n{completion}"
+# Chat templates — prompt placeholder is {prompt}
+_TEMPLATES: dict[str, str] = {
+    "mistral": "[INST] {prompt} [/INST]",
+    "qwen":    "<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n",
+    "llama":   "<|user|>\n{prompt}\n<|assistant|>\n",
+    "raw":     "{prompt}",
+}
 
 
 def _load_project_config(project: str) -> dict[str, Any]:
@@ -38,47 +48,33 @@ def _load_project_config(project: str) -> dict[str, Any]:
 
 
 class PairExtractor:
-    def __init__(self, src_lang: str, tgt_lang: str, min_tokens: int = 50, max_tokens: int = 2048):
+    """
+    Extracts (src_code, tgt_code) pairs from a repo where src and tgt files
+    share the same stem and differ only by extension.
+
+    Optionally enriches each pair with RAG context retrieved from a RagIndex.
+    The RAG context is injected into the prompt at format time so the model
+    learns both RAG-guided and standalone modes.
+    """
+
+    def __init__(
+        self,
+        src_lang: str,
+        tgt_lang: str,
+        min_tokens: int = 50,
+        max_tokens: int = 2048,
+        rag_index=None,
+    ):
         self.src_lang = src_lang
         self.tgt_lang = tgt_lang
         self.min_tokens = min_tokens
         self.max_tokens = max_tokens
-        self._src_ext = _LANG_EXTENSIONS.get(src_lang, f".{src_lang}")
-        self._tgt_ext = _LANG_EXTENSIONS.get(tgt_lang, f".{tgt_lang}")
-        self._parser_available = self._check_tree_sitter()
-
-    def _check_tree_sitter(self) -> bool:
-        try:
-            import tree_sitter_python  # noqa: F401
-            import tree_sitter_java  # noqa: F401
-            return True
-        except ImportError:
-            logger.warning("tree-sitter language packs not installed — skipping syntax validation")
-            return False
-
-    def validate_syntax(self, code: str, lang: str) -> bool:
-        """Return True if code parses without errors."""
-        if not self._parser_available:
-            return True  # skip validation gracefully
-
-        try:
-            from tree_sitter import Language, Parser  # noqa: PLC0415
-            import tree_sitter_python as tspy  # noqa: PLC0415
-            import tree_sitter_java as tsjava  # noqa: PLC0415
-
-            lang_map = {"python": tspy.language(), "java": tsjava.language()}
-            if lang not in lang_map:
-                return True
-
-            parser = Parser(Language(lang_map[lang]))
-            tree = parser.parse(code.encode())
-            return not tree.root_node.has_error
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("Syntax check failed for %s: %s", lang, exc)
-            return False
+        self._src_ext = LANG_EXTENSIONS.get(src_lang, f".{src_lang}")
+        self._tgt_ext = LANG_EXTENSIONS.get(tgt_lang, f".{tgt_lang}")
+        self._rag = rag_index
 
     def extract_from_repo(self, repo_path: Path | str) -> list[dict[str, Any]]:
-        """Walk repo and find matching src/tgt file pairs."""
+        """Walk repo, collect pairs where src+tgt share the same stem."""
         repo = Path(repo_path)
         if not repo.exists():
             raise FileNotFoundError(f"Repository not found: {repo}")
@@ -87,17 +83,11 @@ class PairExtractor:
         logger.info("Found %d %s files in %s", len(src_files), self.src_lang, repo)
 
         pairs: list[dict[str, Any]] = []
-        rejected = {"syntax": 0, "too_short": 0, "too_long": 0, "no_match": 0}
+        rejected = {"too_short": 0, "too_long": 0, "no_match": 0}
 
         for src_file in src_files:
-            # Look for tgt file with same stem in same or sibling directory
-            tgt_candidates = [
-                src_file.with_suffix(self._tgt_ext),
-                src_file.parent.parent / src_file.stem / (src_file.stem + self._tgt_ext),
-            ]
-            tgt_file = next((p for p in tgt_candidates if p.exists()), None)
-
-            if tgt_file is None:
+            tgt_file = src_file.with_suffix(self._tgt_ext)
+            if not tgt_file.exists():
                 rejected["no_match"] += 1
                 continue
 
@@ -112,75 +102,92 @@ class PairExtractor:
                 rejected["too_long"] += 1
                 continue
 
-            if not self.validate_syntax(src_code, self.src_lang):
-                rejected["syntax"] += 1
-                continue
-            if not self.validate_syntax(tgt_code, self.tgt_lang):
-                rejected["syntax"] += 1
-                continue
+            rag_context = ""
+            if self._rag is not None:
+                try:
+                    hits = self._rag.search(src_code[:512])
+                    rag_context = self._rag.format_context(hits)
+                except Exception as exc:
+                    logger.debug("RAG lookup failed for %s: %s", src_file.name, exc)
 
             pairs.append({
                 "prompt": src_code,
                 "completion": tgt_code,
-                "src_file": str(src_file.relative_to(repo)),
-                "tgt_file": str(tgt_file.relative_to(repo)),
-                "tokens": total_tokens,
+                "rag_context": rag_context,
+                "meta": {
+                    "src_file": str(src_file.relative_to(repo)),
+                    "tgt_file": str(tgt_file.relative_to(repo)),
+                    "tokens": total_tokens,
+                    "src_lang": self.src_lang,
+                    "tgt_lang": self.tgt_lang,
+                },
             })
 
         logger.info(
-            "Extracted %d pairs. Rejected: syntax=%d too_short=%d too_long=%d no_match=%d",
-            len(pairs), rejected["syntax"], rejected["too_short"],
-            rejected["too_long"], rejected["no_match"],
+            "Extracted %d pairs | rejected: no_match=%d too_short=%d too_long=%d",
+            len(pairs), rejected["no_match"], rejected["too_short"], rejected["too_long"],
         )
         return pairs
 
     def format_as_jsonl(
         self,
         pairs: list[dict[str, Any]],
-        model_format: str = "mistral",
+        model_format: str = "qwen",
     ) -> list[dict[str, Any]]:
-        """Format raw pairs into the prompt/completion format expected by mlx_lm."""
+        """Wrap pairs in the model chat template. RAG context is prepended when present."""
+        template = _TEMPLATES.get(model_format, _TEMPLATES["raw"])
         formatted = []
+
         for p in pairs:
-            if model_format == "mistral":
-                prompt = _MISTRAL_TEMPLATE.format(
-                    prompt=f"Convert this {self.src_lang} code to {self.tgt_lang}:\n\n{p['prompt']}"
-                )
-            elif model_format == "llama":
-                prompt = f"<|user|>\nConvert this {self.src_lang} code to {self.tgt_lang}:\n\n{p['prompt']}\n<|assistant|>\n"
-            else:
-                prompt = p["prompt"]
+            instruction = f"Convert the following {self.src_lang} code to {self.tgt_lang}."
+            if p["rag_context"]:
+                instruction += f"\n\n[Reference patterns]\n{p['rag_context']}"
+            instruction += f"\n\n```{self.src_lang}\n{p['prompt']}\n```"
 
             formatted.append({
-                "prompt": prompt,
+                "prompt": template.format(prompt=instruction),
                 "completion": p["completion"],
-                "tokens": p["tokens"],
+                "rag_context": p["rag_context"],
+                "meta": p["meta"],
             })
+
         return formatted
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Extract training pairs from a repository")
-    parser.add_argument("--repo", required=True)
-    parser.add_argument("--project", required=True)
+    parser.add_argument("--repo",       required=True)
+    parser.add_argument("--project",    required=True)
     parser.add_argument("--min-tokens", type=int, default=50)
     parser.add_argument("--max-tokens", type=int, default=2048)
-    parser.add_argument("--format", default=None)
+    parser.add_argument("--format",     default=None,  help="Override model chat template")
+    parser.add_argument("--no-rag",     action="store_true")
+    parser.add_argument("--no-ollama",  action="store_true", help="Dummy embeddings (dev/CI)")
     args = parser.parse_args()
 
     config = _load_project_config(args.project)
     src_lang = config["source_lang"]
     tgt_lang = config["target_lang"]
-    fmt = args.format or config.get("model", "mistral-7b").split("-")[0]
+    model_fmt = args.format or config.get("model_format", "qwen")
 
-    extractor = PairExtractor(src_lang, tgt_lang, args.min_tokens, args.max_tokens)
-    pairs = extractor.extract_from_repo(args.repo)
-    formatted = extractor.format_as_jsonl(pairs, model_format=fmt)
+    rag_index = None
+    if not args.no_rag and config.get("rag_index"):
+        from pipeline.rag_index import build_index
+        rag_index = build_index(
+            args.project, src_lang, tgt_lang,
+            use_ollama=not args.no_ollama,
+        )
+        logger.info("RAG index: %d patterns", rag_index.count)
+
+    extractor = PairExtractor(src_lang, tgt_lang, args.min_tokens, args.max_tokens, rag_index=rag_index)
+    pairs     = extractor.extract_from_repo(args.repo)
+    formatted = extractor.format_as_jsonl(pairs, model_format=model_fmt)
 
     output = Path(f"datalake/projects/{args.project}/processed/pairs_raw.jsonl")
     write_jsonl(output, formatted)
 
-    print(f"Extracted {len(formatted)} pairs → {output}")
+    rag_enriched = sum(1 for p in formatted if p["rag_context"])
+    print(f"Extracted {len(formatted)} pairs ({rag_enriched} RAG-enriched) → {output}")
 
 
 if __name__ == "__main__":
