@@ -1,6 +1,5 @@
 """Tests for pipeline/extract.py."""
 
-import json
 import tempfile
 from pathlib import Path
 
@@ -29,7 +28,14 @@ def repo_with_pairs(tmp_path: Path) -> Path:
 
 @pytest.fixture()
 def extractor() -> PairExtractor:
-    return PairExtractor(src_lang="python", tgt_lang="java", min_tokens=10, max_tokens=512)
+    return PairExtractor(
+        domain="code",
+        task_type="migration",
+        src_lang="python",
+        tgt_lang="java",
+        min_tokens=10,
+        max_tokens=512,
+    )
 
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
@@ -47,6 +53,8 @@ class TestPairExtractor:
             assert "rag_context" in p
             assert "meta" in p
             assert p["meta"]["tokens"] > 0
+            assert p["meta"]["domain"] == "code"
+            assert p["meta"]["task_type"] == "migration"
 
     def test_format_mistral(self, extractor: PairExtractor, repo_with_pairs: Path) -> None:
         pairs = extractor.extract_from_repo(repo_with_pairs)
@@ -71,11 +79,30 @@ class TestPairExtractor:
             assert "<|im_start|>user" in f["prompt"]
             assert "<|im_end|>" in f["prompt"]
 
-    def test_min_tokens_filter(self, repo_with_pairs: Path) -> None:
-        extractor = PairExtractor("python", "java", min_tokens=1000, max_tokens=9999)
+    def test_instruction_contains_task(self, extractor: PairExtractor, repo_with_pairs: Path) -> None:
         pairs = extractor.extract_from_repo(repo_with_pairs)
+        formatted = extractor.format_as_jsonl(pairs, model_format="raw")
+        for f in formatted:
+            assert "python" in f["prompt"].lower() or "java" in f["prompt"].lower()
+
+    def test_min_tokens_filter(self, repo_with_pairs: Path) -> None:
+        ex = PairExtractor(
+            domain="code", task_type="migration",
+            src_lang="python", tgt_lang="java",
+            min_tokens=1000, max_tokens=9999,
+        )
+        pairs = ex.extract_from_repo(repo_with_pairs)
         assert all(p["meta"]["tokens"] >= 1000 for p in pairs), "All pairs should meet min_tokens"
 
     def test_missing_repo_raises(self, extractor: PairExtractor) -> None:
         with pytest.raises(FileNotFoundError):
             extractor.extract_from_repo("/nonexistent/path/to/repo")
+
+    def test_standalone_extraction(self, tmp_path: Path) -> None:
+        (tmp_path / "doc.txt").write_text("This is a long enough document with many words for standalone extraction test.\n" * 3)
+        ex = PairExtractor(domain="legal", task_type="summarization", src_lang=None, tgt_lang=None, min_tokens=10)
+        pairs = ex.extract_from_repo(tmp_path)
+        assert len(pairs) >= 1
+        for p in pairs:
+            assert p["meta"]["domain"] == "legal"
+            assert p["meta"]["task_type"] == "summarization"

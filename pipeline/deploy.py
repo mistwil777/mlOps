@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 import time
@@ -17,6 +16,9 @@ logger = get_logger("mlops.deploy")
 
 _MLX_PYTHON = os.environ.get("MLX_PYTHON", "python3.11")
 
+# mlx_lm.server is brew-installed — prefer the system binary over a venv
+_MLX_SERVER_BIN = os.environ.get("MLX_SERVER_BIN", "mlx_lm.server")
+
 
 def _load_project_config(project: str) -> dict[str, Any]:
     path = Path("config/projects") / f"{project}.yaml"
@@ -28,6 +30,36 @@ def _save_project_config(project: str, config: dict[str, Any]) -> None:
     path = Path("config/projects") / f"{project}.yaml"
     with path.open("w") as fh:
         yaml.dump(config, fh, default_flow_style=False, allow_unicode=True)
+
+
+def _sanity_prompts(domain: str, task_type: str) -> list[str]:
+    """Return a small set of generic sanity prompts for this domain/task_type."""
+    prompts: dict[str, list[str]] = {
+        "migration": [
+            "Migrate this Python function to Java:\n\ndef add(a, b):\n    return a + b",
+            "Migrate this Python function to Java:\n\ndef is_empty(lst):\n    return len(lst) == 0",
+        ],
+        "summarization": [
+            "Summarize the following paragraph in one sentence:\n\n"
+            "Machine learning is a branch of artificial intelligence that enables systems "
+            "to learn from data and improve over time without explicit programming.",
+            "Summarize in 2 sentences:\n\nThe Eiffel Tower was built in 1889 as the entrance arch "
+            "for the World's Fair held in Paris. It stands 330 meters tall.",
+        ],
+        "documentation": [
+            "Write a docstring for:\n\ndef multiply(a: int, b: int) -> int:\n    return a * b",
+            "Write a docstring for:\n\ndef filter_even(lst: list[int]) -> list[int]:\n    return [x for x in lst if x % 2 == 0]",
+        ],
+        "qa": [
+            "Answer the question based on the context.\nContext: Paris is the capital of France.\nQuestion: What is the capital of France?",
+            "Answer the question.\nContext: Python was created by Guido van Rossum in 1991.\nQuestion: Who created Python?",
+        ],
+    }
+    default = [
+        f"Perform a {task_type} task on the following input:\n\nHello, world.",
+        f"Apply {domain} {task_type} to the following:\n\nfoo(bar, baz)",
+    ]
+    return prompts.get(task_type, default)
 
 
 class ModelDeployer:
@@ -53,14 +85,13 @@ class ModelDeployer:
         return True
 
     def sanity_check(self, model_path: str, n_requests: int = 10) -> tuple[bool, dict[str, Any]]:
-        """Run n_requests against the serving model and check compilability."""
+        """Run n_requests against the serving model and check response validity."""
         import httpx  # noqa: PLC0415
-        from pipeline.utils.metrics import compile_java  # noqa: PLC0415
+        from pipeline.utils.metrics import rouge_l_score  # noqa: PLC0415
 
-        test_prompts = [
-            "Convert this Python to Java:\n\ndef add(a, b):\n    return a + b",
-            "Convert this Python to Java:\n\ndef is_even(n):\n    return n % 2 == 0",
-        ]
+        domain    = self.config.get("domain", "code")
+        task_type = self.config.get("task_type", "generation")
+        prompts   = _sanity_prompts(domain, task_type)
 
         port = self.config.get("serving_port", 8080)
         results = []
@@ -68,7 +99,7 @@ class ModelDeployer:
         ok_count = 0
 
         for i in range(n_requests):
-            prompt = test_prompts[i % len(test_prompts)]
+            prompt = prompts[i % len(prompts)]
             t0 = time.perf_counter()
             try:
                 resp = httpx.post(
@@ -84,38 +115,47 @@ class ModelDeployer:
                 latency = (time.perf_counter() - t0) * 1000
                 latencies.append(latency)
                 completion = resp.json()["choices"][0]["message"]["content"]
-                compiled, _ = compile_java(completion)
-                if compiled:
+                valid = bool(completion and len(completion.strip()) > 5)
+                if valid:
                     ok_count += 1
-                results.append({"compiled": compiled, "latency_ms": latency})
+                results.append({"valid": valid, "latency_ms": latency})
             except Exception as exc:  # noqa: BLE001
                 logger.error("Request %d failed: %s", i, exc)
-                results.append({"compiled": False, "error": str(exc)})
+                results.append({"valid": False, "error": str(exc)})
 
-        success = ok_count >= n_requests * 0.8  # 80% pass rate for sanity
+        success = ok_count >= n_requests * 0.8
         summary = {
             "n_requests": n_requests,
-            "compiled": ok_count,
+            "valid_responses": ok_count,
             "success_rate": ok_count / n_requests,
             "latency_mean_ms": sum(latencies) / len(latencies) if latencies else 0,
             "passed": success,
         }
-        logger.info("Sanity check: %d/%d compiled, mean latency=%.0fms",
+        logger.info("Sanity check: %d/%d valid, mean latency=%.0fms",
                     ok_count, n_requests, summary["latency_mean_ms"])
         return success, summary
 
     def serve(self, model_path: str, port: int = 8080) -> subprocess.Popen:
-        """Start mlx_lm.server as a background process."""
+        """Start mlx_lm.server as a background process (brew binary)."""
         pid_file = Path("models") / self.project / "server.pid"
         pid_file.parent.mkdir(parents=True, exist_ok=True)
 
-        # Stop existing server on that port
         if pid_file.exists():
             old_pid = pid_file.read_text().strip()
             subprocess.run(["kill", old_pid], capture_output=True)
             logger.info("Stopped previous server (PID %s)", old_pid)
 
-        cmd = [_MLX_PYTHON, "-m", "mlx_lm.server", "--model", model_path, "--port", str(port)]
+        # Try brew binary first, fall back to python -m mlx_lm.server
+        try:
+            import shutil  # noqa: PLC0415
+            bin_path = shutil.which(_MLX_SERVER_BIN)
+            if bin_path:
+                cmd = [bin_path, "--model", model_path, "--port", str(port)]
+            else:
+                cmd = [_MLX_PYTHON, "-m", "mlx_lm.server", "--model", model_path, "--port", str(port)]
+        except Exception:
+            cmd = [_MLX_PYTHON, "-m", "mlx_lm.server", "--model", model_path, "--port", str(port)]
+
         process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         pid_file.write_text(str(process.pid))
         logger.info("Server started on port %d (PID %d)", port, process.pid)

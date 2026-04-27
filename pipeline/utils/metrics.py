@@ -1,4 +1,4 @@
-"""Evaluation metrics: Java compilation, CodeBLEU, dataset statistics."""
+"""Evaluation metrics: compilation checks, ROUGE-L, CodeBLEU, dataset statistics."""
 
 from __future__ import annotations
 
@@ -16,7 +16,6 @@ logger = get_logger("mlops.metrics")
 
 def compile_java(code: str, timeout: int = 10) -> tuple[bool, str]:
     """Compile a Java snippet in a temp directory. Returns (success, error_message)."""
-    # Wrap bare code in a class if it doesn't have one
     if "class " not in code:
         code = textwrap.dedent(f"""
             public class Snippet {{
@@ -43,10 +42,41 @@ def compile_java(code: str, timeout: int = 10) -> tuple[bool, str]:
         return False, result.stderr.strip()
 
 
-def codebLEU_score(hypothesis: str, reference: str) -> float:
+def rouge_l_score(hypothesis: str, reference: str) -> float:
+    """Compute ROUGE-L F1 between hypothesis and reference (character-level LCS)."""
+    if not hypothesis or not reference:
+        return 0.0
+
+    h_tokens = hypothesis.split()
+    r_tokens = reference.split()
+
+    if not h_tokens or not r_tokens:
+        return 0.0
+
+    # LCS via DP
+    m, n = len(h_tokens), len(r_tokens)
+    dp = [[0] * (n + 1) for _ in range(2)]
+    lcs_len = 0
+    for i in range(1, m + 1):
+        for j in range(1, n + 1):
+            if h_tokens[i - 1] == r_tokens[j - 1]:
+                dp[i % 2][j] = dp[(i - 1) % 2][j - 1] + 1
+                lcs_len = max(lcs_len, dp[i % 2][j])
+            else:
+                dp[i % 2][j] = 0
+
+    # ROUGE-L F1
+    precision = lcs_len / m if m else 0.0
+    recall    = lcs_len / n if n else 0.0
+    if precision + recall == 0:
+        return 0.0
+    return round(2 * precision * recall / (precision + recall), 4)
+
+
+def codebLEU_score(hypothesis: str, reference: str, lang: str = "java") -> float:
     """Compute CodeBLEU score between hypothesis and reference code.
 
-    Falls back to sacrebleu BLEU if codebleu package is not installed.
+    Falls back to ROUGE-L if codebleu/sacrebleu are not installed.
     """
     try:
         from codebleu import calc_codebleu  # noqa: PLC0415
@@ -54,7 +84,7 @@ def codebLEU_score(hypothesis: str, reference: str) -> float:
         result = calc_codebleu(
             [reference],
             [hypothesis],
-            lang="java",
+            lang=lang,
             weights=(0.25, 0.25, 0.25, 0.25),
         )
         return float(result["codebleu"])
@@ -67,8 +97,8 @@ def codebLEU_score(hypothesis: str, reference: str) -> float:
             score = bleu.sentence_score(hypothesis, [reference])
             return score.score / 100.0
         except Exception as exc:  # noqa: BLE001
-            logger.error("sacrebleu failed: %s", exc)
-            return 0.0
+            logger.warning("sacrebleu failed (%s), using ROUGE-L", exc)
+            return rouge_l_score(hypothesis, reference)
 
 
 def token_length_stats(jsonl_path: Path | str) -> dict[str, float]:

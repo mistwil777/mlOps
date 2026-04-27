@@ -16,6 +16,8 @@ from pipeline.utils.logger import get_logger, log_metric
 
 logger = get_logger("mlops.clean")
 
+_MLX_SERVER_URL = "http://localhost:8080"
+
 
 def _load_project_config(project: str) -> dict[str, Any]:
     path = Path("config/projects") / f"{project}.yaml"
@@ -26,6 +28,15 @@ def _load_project_config(project: str) -> dict[str, Any]:
 def _record_hash(record: dict[str, Any]) -> str:
     key = record.get("prompt", "") + record.get("completion", "")
     return hashlib.md5(key.encode()).hexdigest()
+
+
+def _mlx_server_available() -> bool:
+    try:
+        import httpx  # noqa: PLC0415
+        r = httpx.get(f"{_MLX_SERVER_URL}/v1/models", timeout=2.0)
+        return r.status_code == 200 and len(r.json().get("data", [])) > 0
+    except Exception:
+        return False
 
 
 class DataCleaner:
@@ -132,12 +143,16 @@ class DataCleaner:
         if not use_llm:
             return self._heuristic_score(pairs)
 
+        if not _mlx_server_available():
+            logger.warning("mlx_lm.server not available, falling back to heuristics")
+            return self._heuristic_score(pairs)
+
         try:
             import httpx  # noqa: PLC0415
 
             scored = []
             for p in pairs:
-                score = self._ollama_score(p, httpx)
+                score = self._mlx_score(p, httpx)
                 scored.append({**p, "quality_score": score})
             return scored
         except Exception as exc:  # noqa: BLE001
@@ -145,7 +160,7 @@ class DataCleaner:
             return self._heuristic_score(pairs)
 
     def _heuristic_score(self, pairs: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Fast scoring without LLM: token ratio, length, presence of imports."""
+        """Fast scoring without LLM: token ratio, length, structural signals."""
         scored = []
         for p in pairs:
             prompt_tok = count_tokens(p.get("prompt", ""))
@@ -156,29 +171,38 @@ class DataCleaner:
             score = 0.5
             if 0.5 <= ratio <= 3.0:
                 score += 0.2
-            if "import" in completion or "class " in completion:
-                score += 0.15
             if len(completion.strip().splitlines()) > 3:
+                score += 0.15
+            if any(kw in completion for kw in ("import", "class ", "def ", "function", "public", "return")):
                 score += 0.15
 
             scored.append({**p, "quality_score": min(1.0, score)})
         return scored
 
-    def _ollama_score(self, pair: dict[str, Any], httpx: Any) -> float:
-        """Call Ollama to score a pair. Returns 0-1."""
+    def _mlx_score(self, pair: dict[str, Any], httpx: Any) -> float:
+        """Call mlx_lm.server to score a training pair. Returns 0-1."""
+        domain = self.config.get("domain", "code")
+        task_type = self.config.get("task_type", "generation")
+
         prompt = (
-            f"Rate the quality of this code translation pair from 0 to 10. "
-            f"Only reply with a number.\n\n"
+            f"Rate the quality of this {domain}/{task_type} training pair from 0 to 10. "
+            f"Consider: accuracy, completeness, consistency between input and output. "
+            f"Reply with a single integer only.\n\n"
             f"INPUT:\n{pair.get('prompt', '')[:500]}\n\n"
             f"OUTPUT:\n{pair.get('completion', '')[:500]}"
         )
         try:
             resp = httpx.post(
-                "http://localhost:11434/api/generate",
-                json={"model": "mistral", "prompt": prompt, "stream": False},
+                f"{_MLX_SERVER_URL}/v1/chat/completions",
+                json={
+                    "model": "default",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 8,
+                    "temperature": 0.0,
+                },
                 timeout=30.0,
             )
-            text = resp.json().get("response", "5").strip()
+            text = resp.json()["choices"][0]["message"]["content"].strip()
             return float(text.split()[0]) / 10.0
         except Exception:  # noqa: BLE001
             return 0.5
@@ -200,12 +224,6 @@ class DataCleaner:
         pairs: list[dict[str, Any]],
         output_path: Path | str,
     ) -> None:
-        from pipeline.utils.metrics import quality_score_summary  # noqa: PLC0415
-
-        with open("/dev/stdin", "w") as _:
-            pass  # flush
-
-        stats = quality_score_summary("/dev/stdin")  # placeholder — use in-memory instead
         scores = [p.get("quality_score", 0) for p in pairs if "quality_score" in p]
 
         buckets = {"0.0-0.5": 0, "0.5-0.7": 0, "0.7-0.9": 0, "0.9-1.0": 0}
@@ -219,12 +237,14 @@ class DataCleaner:
             else:
                 buckets["0.9-1.0"] += 1
 
+        mean_score = sum(scores) / len(scores) if scores else 0.0
+
         html = f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Quality Report</title>
 <style>body{{font-family:monospace;margin:2em}} table{{border-collapse:collapse}}
 td,th{{border:1px solid #ccc;padding:8px}}</style></head><body>
 <h1>Dataset Quality Report</h1>
-<p>Total pairs: {len(pairs)} | Scored: {len(scores)}</p>
+<p>Total pairs: {len(pairs)} | Scored: {len(scores)} | Mean score: {mean_score:.3f}</p>
 <table><tr><th>Score bucket</th><th>Count</th></tr>
 {"".join(f"<tr><td>{k}</td><td>{v}</td></tr>" for k,v in buckets.items())}
 </table></body></html>"""

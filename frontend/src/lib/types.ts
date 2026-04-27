@@ -114,6 +114,50 @@ export interface Health {
   disk_free_gb: number;
 }
 
+export interface CollectJob {
+  job_id: string;
+}
+
+export interface JobStatus {
+  status: 'running' | 'completed' | 'failed';
+  lines: number;
+}
+
+export interface ReviewItem {
+  prompt: string;
+  completion: string;
+  rag_context?: string;
+  quality_score?: number;
+  review_status?: 'validate' | 'reject' | 'correct';
+  meta?: Record<string, unknown>;
+}
+
+export interface ReviewPage {
+  total: number;
+  page: number;
+  page_size: number;
+  items: ReviewItem[];
+}
+
+export interface ReviewStats {
+  total: number;
+  validated: number;
+  rejected: number;
+  corrected: number;
+  pending: number;
+}
+
+export interface DataHealth {
+  project_id: string;
+  funnel: { raw: number; processed: number; fine_tuning_ready: number };
+  stages: {
+    raw: { exists: boolean; count: number; size_mb: number; avg_quality: number | null; scored_count: number; reviewed_count: number };
+    processed: { exists: boolean; count: number; size_mb: number; avg_quality: number | null; scored_count: number; reviewed_count: number };
+    fine_tuning_ready: { exists: boolean; count: number; size_mb: number; train: number; valid: number };
+  };
+  alerts: string[];
+}
+
 export interface PackageInfo {
   model_id: string;
   project_name: string;

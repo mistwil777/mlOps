@@ -1,4 +1,4 @@
-import type { BaseModel, Dataset, DeployedModel, DownloadStatus, Evaluation, Health, Metric, PackageInfo, Project, Run } from './types';
+import type { BaseModel, CollectJob, DataHealth, Dataset, DeployedModel, DownloadStatus, Evaluation, Health, JobStatus, Metric, PackageInfo, Project, ReviewItem, ReviewPage, ReviewStats, Run } from './types';
 
 const BASE = '/api';
 
@@ -54,3 +54,17 @@ export const deleteModel    = (id: string) => req<unknown>(`/models/${id}`, { me
 
 // Delivery
 export const getPackageInfo = (id: string) => req<PackageInfo>(`/models/${id}/package`);
+
+// Data
+export const startCollect      = (body: { project_id: string; topic: string; max_pairs?: number }) =>
+  req<CollectJob>('/data/collect', { method: 'POST', body: JSON.stringify(body) });
+export const getCollectStatus  = (jobId: string) => req<JobStatus>(`/data/collect/${jobId}/status`);
+export const getReview         = (projectId: string, page = 0, pageSize = 20, status?: string) =>
+  req<ReviewPage>(`/data/review/${projectId}?page=${page}&page_size=${pageSize}${status ? `&status=${status}` : ''}`);
+export const postReview        = (projectId: string, body: { index: number; action: string; corrected_prompt?: string; corrected_completion?: string }) =>
+  req<{ ok: boolean; index: number; status: string }>(`/data/review/${projectId}`, { method: 'POST', body: JSON.stringify(body) });
+export const getReviewStats    = (projectId: string) => req<ReviewStats>(`/data/review/${projectId}/stats`);
+export const startPipeline     = (body: { project_id: string; use_llm_score?: boolean; threshold?: number }) =>
+  req<CollectJob>('/data/pipeline', { method: 'POST', body: JSON.stringify(body) });
+export const getPipelineStatus = (jobId: string) => req<JobStatus>(`/data/pipeline/${jobId}/status`);
+export const getDataHealth     = (projectId: string) => req<DataHealth>(`/data/health/${projectId}`);

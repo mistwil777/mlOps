@@ -17,7 +17,8 @@
     { href: '/',             icon: '⬡', label: 'Dashboard' },
     { href: '/projects',     icon: '◈', label: 'Projets',      section: 'Factory' },
     { href: '/base-models',  icon: '◫', label: 'Modèles base' },
-    { href: '/train',        icon: '▷', label: 'Fine-tuning' },
+    { href: '/data',         icon: '◧', label: 'Données',      section: 'Data' },
+    { href: '/train',        icon: '▷', label: 'Fine-tuning',  section: 'Training' },
     { href: '/models',       icon: '◉', label: 'Modèles fine-tunés' },
     { href: '/delivery',     icon: '⬡', label: 'Livraison',    section: 'Delivery' },
   ];

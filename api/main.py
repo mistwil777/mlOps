@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from api.routers import base_models, datasets, delivery, health, models, projects, runs, stream
+from api.routers import base_models, data, datasets, delivery, health, models, projects, runs, stream
 
 app = FastAPI(title="MLOps Factory API", version="1.0.0", docs_url="/api/docs", redoc_url=None)
 
@@ -21,7 +21,7 @@ app.add_middleware(
 )
 
 for r in (health.router, projects.router, base_models.router, datasets.router,
-          runs.router, stream.router, models.router, delivery.router):
+          runs.router, stream.router, models.router, delivery.router, data.router):
     app.include_router(r)
 
 _STATIC = Path("dashboards")

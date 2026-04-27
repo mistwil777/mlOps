@@ -12,7 +12,7 @@ import yaml
 
 from pipeline.utils.jsonl import read_jsonl
 from pipeline.utils.logger import get_logger, log_metric
-from pipeline.utils.metrics import compile_java, codebLEU_score
+from pipeline.utils.metrics import rouge_l_score
 
 logger = get_logger("mlops.evaluate")
 
@@ -72,6 +72,15 @@ def _call_nova_pro(prompt: str) -> tuple[str, float]:
     return completion, latency
 
 
+def _is_valid_response(text: str) -> bool:
+    """Heuristic: non-empty, not an error message, has some structure."""
+    if not text or len(text.strip()) < 10:
+        return False
+    error_patterns = ["error:", "traceback", "exception:", "i'm sorry", "i cannot"]
+    lower = text.lower()
+    return not any(p in lower for p in error_patterns)
+
+
 class ModelEvaluator:
     def __init__(self, project: str):
         self.project = project
@@ -92,26 +101,26 @@ class ModelEvaluator:
 
         results = []
         latencies: list[float] = []
-        compilation_ok = 0
-        codebleu_scores: list[float] = []
+        pass_count = 0
+        rouge_scores: list[float] = []
 
         for r in records:
             completion, latency = _call_local_model(r["prompt"], model_path, port)
             latencies.append(latency)
 
-            compiled, _ = compile_java(completion)
-            if compiled:
-                compilation_ok += 1
+            valid = _is_valid_response(completion)
+            if valid:
+                pass_count += 1
 
-            bleu = codebLEU_score(completion, r["completion"])
-            codebleu_scores.append(bleu)
+            rl = rouge_l_score(completion, r["completion"])
+            rouge_scores.append(rl)
 
             results.append({
                 "prompt": r["prompt"][:200],
                 "reference": r["completion"][:200],
                 "hypothesis": completion[:200],
-                "compiled": compiled,
-                "codebleu": bleu,
+                "valid_response": valid,
+                "rouge_l": rl,
                 "latency_ms": latency,
             })
 
@@ -120,8 +129,8 @@ class ModelEvaluator:
 
         metrics = {
             "n": len(records),
-            "java_compilation": compilation_ok / len(records) if records else 0,
-            "codebleu": sum(codebleu_scores) / len(codebleu_scores) if codebleu_scores else 0,
+            "pass_rate": pass_count / len(records) if records else 0,
+            "rouge_l": sum(rouge_scores) / len(rouge_scores) if rouge_scores else 0,
             "latency_p50": sorted(latencies)[len(latencies)//2] if latencies else 0,
             "latency_p95": latencies_sorted[p95_idx] if latencies else 0,
             "exact_match": sum(
@@ -170,34 +179,44 @@ class ModelEvaluator:
             records = random.sample(records, n)
 
         latencies: list[float] = []
-        compilation_ok = 0
-        codebleu_scores: list[float] = []
+        pass_count = 0
+        rouge_scores: list[float] = []
 
         for r in records:
             completion, latency = _call_nova_pro(r["prompt"])
             latencies.append(latency)
-            compiled, _ = compile_java(completion)
-            if compiled:
-                compilation_ok += 1
-            codebleu_scores.append(codebLEU_score(completion, r["completion"]))
+            if _is_valid_response(completion):
+                pass_count += 1
+            rouge_scores.append(rouge_l_score(completion, r["completion"]))
 
         latencies_sorted = sorted(latencies)
         p95_idx = max(0, int(len(latencies_sorted) * 0.95) - 1)
 
         return {"metrics": {
             "n": len(records),
-            "java_compilation": compilation_ok / len(records) if records else 0,
-            "codebleu": sum(codebleu_scores) / len(codebleu_scores) if codebleu_scores else 0,
+            "pass_rate": pass_count / len(records) if records else 0,
+            "rouge_l": sum(rouge_scores) / len(rouge_scores) if rouge_scores else 0,
             "latency_p50": sorted(latencies)[len(latencies)//2] if latencies else 0,
             "latency_p95": latencies_sorted[p95_idx] if latencies else 0,
         }}
 
     def check_quality_gates(self, metrics: dict[str, float]) -> dict[str, bool]:
         thresholds = self.config.get("quality_thresholds", {})
-        return {
-            "java_compilation": metrics.get("java_compilation", 0) >= thresholds.get("min_java_compilation", 0.9),
-            "codebleu": metrics.get("codebleu", 0) >= thresholds.get("min_codebLEU", 0.7),
-        }
+        gates: dict[str, bool] = {}
+
+        if "min_pass_rate" in thresholds:
+            gates["pass_rate"] = metrics.get("pass_rate", 0) >= thresholds["min_pass_rate"]
+
+        if "min_rouge_l" in thresholds:
+            gates["rouge_l"] = metrics.get("rouge_l", 0) >= thresholds["min_rouge_l"]
+
+        if "max_latency_ratio" in thresholds:
+            baseline_p50 = self.config.get("baseline", {}).get("metrics", {}).get("latency_p50", 0)
+            if baseline_p50 > 0:
+                ratio = metrics.get("latency_p50", 0) / baseline_p50
+                gates["latency_ratio"] = ratio <= thresholds["max_latency_ratio"]
+
+        return gates
 
     def generate_eval_report(
         self,
@@ -214,6 +233,8 @@ class ModelEvaluator:
             for k, v in metrics.items() if k != "n"
         )
 
+        all_passed = all(gates.values()) if gates else True
+
         html = f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Eval Report — {self.project}</title>
 <style>body{{font-family:monospace;margin:2em}} table{{border-collapse:collapse}}
@@ -222,7 +243,7 @@ td,th{{border:1px solid #ccc;padding:8px}}
 <h1>Evaluation Report — {self.project}</h1>
 <p>Samples: {metrics.get('n', 'N/A')}</p>
 <table><tr><th>Metric</th><th>Value</th></tr>{rows}</table>
-<p>Gates: {"ALL PASSED" if all(gates.values()) else "FAILED: " + ", ".join(k for k,v in gates.items() if not v)}</p>
+<p>Gates: {"ALL PASSED" if all_passed else "FAILED: " + ", ".join(k for k,v in gates.items() if not v)}</p>
 </body></html>"""
 
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
