@@ -117,6 +117,27 @@ async def get_run_metrics(run_id: str):
     return result
 
 
+@router.get("/evaluations")
+def list_evaluations(
+    project_id: str | None = Query(None),
+    limit: int = Query(50, le=200),
+):
+    """List evaluations across all runs, optionally filtered by project."""
+    sql = """
+        SELECT e.*, r.project_id, r.experiment_name, r.model_name,
+               r.train_loss, r.val_loss AS run_val_loss
+        FROM evaluations e
+        JOIN runs r ON r.id = e.run_id
+    """
+    params: list[Any] = []
+    if project_id:
+        sql += " WHERE r.project_id = ?"
+        params.append(project_id)
+    sql += " ORDER BY e.created_at DESC LIMIT ?"
+    params.append(limit)
+    return fetchall(sql, tuple(params))
+
+
 @router.get("/{run_id}/evaluations")
 def get_run_evaluations(run_id: str):
     return fetchall("SELECT * FROM evaluations WHERE run_id = ? ORDER BY created_at DESC", (run_id,))

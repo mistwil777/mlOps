@@ -53,6 +53,7 @@
       num: 4,
       label: 'Évaluation',
       items: [
+        { href: '/eval',         icon: '◎', label: 'Évaluations' },
         { href: '/models',       icon: '◉', label: 'Modèles fine-tunés' },
         { href: '/playground',   icon: '◐', label: 'Playground' },
       ],

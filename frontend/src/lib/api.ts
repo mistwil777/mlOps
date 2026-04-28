@@ -35,13 +35,20 @@ export const getDownloadStatus   = (id: string)   => req<DownloadStatus>(`/base-
 export const getDatasets = (projectId: string) => req<Dataset[]>(`/projects/${projectId}/datasets`);
 
 // Runs
-export const getRuns        = (params?: { project_id?: string; status?: string }) =>
-  req<Run[]>('/runs?' + new URLSearchParams(params as Record<string,string> ?? {}).toString());
+export const getRuns        = (params?: { project_id?: string; status?: string; limit?: number }) => {
+  const p = new URLSearchParams();
+  if (params?.project_id) p.set('project_id', params.project_id);
+  if (params?.status)     p.set('status', params.status);
+  if (params?.limit)      p.set('limit', String(params.limit));
+  return req<Run[]>('/runs?' + p.toString());
+};
 export const getRun         = (id: string) => req<Run>(`/runs/${id}`);
 export const createRun      = (body: unknown) => req<{ run_id: string }>('/runs', { method: 'POST', body: JSON.stringify(body) });
 export const cancelRun      = (id: string) => req<unknown>(`/runs/${id}`, { method: 'DELETE' });
 export const getRunMetrics  = (id: string) => req<Metric[]>(`/runs/${id}/metrics`);
-export const getRunEvals    = (id: string) => req<Evaluation[]>(`/runs/${id}/evaluations`);
+export const getRunEvals      = (id: string)            => req<Evaluation[]>(`/runs/${id}/evaluations`);
+export const listEvaluations  = (projectId?: string)    => req<(Evaluation & { project_id: string; experiment_name: string; model_name: string })[]>(`/runs/evaluations${projectId ? `?project_id=${projectId}` : ''}`);
+export const launchEvaluation = (runId: string)         => req<{ eval_id: string; status: string }>(`/runs/${runId}/evaluate`, { method: 'POST' });
 export const launchEval     = (id: string) => req<unknown>(`/runs/${id}/evaluate`, { method: 'POST' });
 
 // Models
