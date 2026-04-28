@@ -15,6 +15,7 @@
 
   const nav = [
     { href: '/',             icon: '⬡', label: 'Dashboard' },
+    { href: '/advisor',      icon: '◎', label: 'Analyse besoin', section: 'Scoping' },
     { href: '/projects',     icon: '◈', label: 'Projets',      section: 'Factory' },
     { href: '/base-models',  icon: '◫', label: 'Modèles base' },
     { href: '/data',         icon: '◧', label: 'Données',      section: 'Data' },

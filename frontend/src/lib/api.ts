@@ -1,4 +1,4 @@
-import type { BaseModel, CollectJob, DataHealth, Dataset, DeployedModel, DownloadStatus, Evaluation, Health, JobStatus, Metric, PackageInfo, Project, ReviewItem, ReviewPage, ReviewStats, Run } from './types';
+import type { AdvisorAdapter, AdvisorRecommendation, BaseModel, CollectJob, DataHealth, Dataset, DeployedModel, DownloadStatus, Evaluation, Health, JobStatus, Metric, PackageInfo, Project, ReviewItem, ReviewPage, ReviewStats, Run, SelectionEval } from './types';
 
 const BASE = '/api';
 
@@ -54,6 +54,25 @@ export const deleteModel    = (id: string) => req<unknown>(`/models/${id}`, { me
 
 // Delivery
 export const getPackageInfo = (id: string) => req<PackageInfo>(`/models/${id}/package`);
+
+// Advisor
+export const advisorRecommend = (need: string, model?: string) =>
+  req<AdvisorRecommendation>('/advisor/recommend', {
+    method: 'POST',
+    body: JSON.stringify({ need, model: model ?? 'us.anthropic.claude-sonnet-4-6' }),
+  });
+
+export const advisorAlternatives = (need: string, adapter_name: string, adapter_desc: string, current_selection: AdvisorAdapter[], model?: string) =>
+  req<AdvisorAdapter[]>('/advisor/alternatives', {
+    method: 'POST',
+    body: JSON.stringify({ need, adapter_name, adapter_desc, current_selection, model: model ?? 'us.anthropic.claude-sonnet-4-6' }),
+  });
+
+export const advisorEvaluateSelection = (need: string, adapters: AdvisorAdapter[], model?: string) =>
+  req<SelectionEval>('/advisor/evaluate-selection', {
+    method: 'POST',
+    body: JSON.stringify({ need, adapters, model: model ?? 'us.anthropic.claude-sonnet-4-6' }),
+  });
 
 // Data
 export const startCollect      = (body: { project_id: string; topic: string; max_pairs?: number }) =>

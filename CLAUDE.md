@@ -80,6 +80,14 @@ Versioning: voir SKILLS.md — règle: commit atomique tagué skill/<name>/vX.Y
 - /compact after long sessions (>30 exchanges)
 - Prefer short + precise questions over long explanations
 
+## UI Design Rules (SvelteKit frontend)
+- **Progressive disclosure** on all dense card lists: 3 levels max.
+  - L1 (always visible): name + key badges + action buttons — scannable at a glance
+  - L2 (click to expand): description + scores + pros/cons — enough to decide
+  - L3 ("Voir plus" inside L2): raw data, sources, types — for users who want depth
+  Implement with a local `expanded` boolean per card; never show all levels by default.
+  Apply to: adapter cards, run cards, model cards, dataset cards, eval cards.
+
 ## Expected Response Format
 - Code: concise, no obvious comments, type hints everywhere, pathlib.Path only
 - No end-of-response summary · No "here's what I did"

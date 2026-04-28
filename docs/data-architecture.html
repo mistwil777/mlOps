@@ -605,6 +605,7 @@
   <a href="#rag">LanceDB & RAG</a>
   <a href="#schema">Schéma BDD</a>
   <a href="#rat">RAT & Embarqué</a>
+  <a href="#advisor">Phase 0 Advisor</a>
 </nav>
 
 <!-- ────────────────────────── HERO ────────────────────────── -->
@@ -1632,10 +1633,94 @@
   </div>
 </div>
 
+<!-- ────────────────────────── SECTION Phase 0 Advisor ── -->
+<div class="section" id="advisor">
+  <div class="section-label">
+    <div class="dot" style="background:var(--accent2)"></div>
+    Phase 0 — Architecture multi-adapter
+  </div>
+  <h2>Phase 0 Advisor : de la donnée brute à l'architecture recommandée</h2>
+
+  <p>Avant de créer le moindre datalake, la plateforme propose une étape de scoping IA. L'objectif : partir d'un <strong>besoin client en langage naturel</strong> et obtenir une architecture multi-adapter — avec les types de données, les sources web, et un scoring d'équipe dynamique. <strong>L'humain valide, rien n'est créé automatiquement.</strong></p>
+
+  <div class="callout info">
+    <span class="ci">◎</span>
+    <p><strong>Endpoint :</strong> <code>POST /api/advisor/recommend</code> → Claude Sonnet 4.6 via Bedrock. Le résultat inclut, pour chaque adapter, les <code>data_types</code> et <code>data_sources</code> recommandés — ce sont précisément les sources qui alimenteront le datalake dans les phases suivantes.</p>
+  </div>
+
+  <h3 style="margin-top:28px;margin-bottom:16px">Comment la Phase 0 alimente l'architecture de données</h3>
+
+  <div class="rag-steps">
+    <div class="rag-step">
+      <div class="rs-icon">📝</div>
+      <div class="rs-num">Étape 1</div>
+      <h3>Besoin client → adapters</h3>
+      <p><code>/advisor/recommend</code> propose spécialistes + orchestrateur avec estimation de paires d'entraînement.</p>
+    </div>
+    <div class="rag-step">
+      <div class="rs-icon">⊕</div>
+      <div class="rs-num">Étape 2</div>
+      <h3>Score d'équipe</h3>
+      <p><code>/advisor/evaluate-selection</code> note couverture, cohésion, équilibre, orchestrabilité. Recalcul à chaque modification.</p>
+    </div>
+    <div class="rag-step">
+      <div class="rs-icon">◧</div>
+      <div class="rs-num">Étape 3</div>
+      <h3>Sources → datalake plan</h3>
+      <p>Chaque adapter expose ses <code>data_sources</code> et <code>data_types</code> — plan de collecte directement actionnable.</p>
+    </div>
+    <div class="rag-step">
+      <div class="rs-icon">✓</div>
+      <div class="rs-num">Étape 4</div>
+      <h3>YAML multi-adapter</h3>
+      <p>Validation humaine → export YAML <code>multi_adapter: true</code> → création des projets → pipeline datalake par adapter.</p>
+    </div>
+  </div>
+
+  <div class="two-col" style="margin-top:28px">
+    <div class="tcol">
+      <div class="tc-header">
+        <span class="tc-icon">⬡</span>
+        <div>
+          <div class="tc-title" style="color:var(--accent2)">Sans Phase 0</div>
+          <div class="tc-sub">Approche historique — un projet, un domaine</div>
+        </div>
+      </div>
+      <ul>
+        <li><div class="li-dot" style="background:var(--text-muted)"></div><div class="li-text">Un projet = un modèle fine-tuné généraliste</div></li>
+        <li><div class="li-dot" style="background:var(--text-muted)"></div><div class="li-text">Datalake unique, pipeline unique</div></li>
+        <li><div class="li-dot" style="background:var(--text-muted)"></div><div class="li-text">Peu adapté aux domaines mixtes</div></li>
+        <li><div class="li-dot" style="background:var(--text-muted)"></div><div class="li-text">Scoping informel, non tracé</div></li>
+      </ul>
+    </div>
+    <div class="tcol" style="border-color:var(--accent2)">
+      <div class="tc-header">
+        <span class="tc-icon">◎</span>
+        <div>
+          <div class="tc-title" style="color:var(--accent2)">Avec Phase 0 Advisor</div>
+          <div class="tc-sub">Multi-adapter — N spécialistes + 1 orchestrateur</div>
+        </div>
+      </div>
+      <ul>
+        <li><div class="li-dot" style="background:var(--accent2)"></div><div class="li-text"><strong>N adapters</strong> LoRA spécialisés — 1 datalake par adapter</div></li>
+        <li><div class="li-dot" style="background:var(--accent2)"></div><div class="li-text"><strong>Orchestrateur</strong> — routing + synthèse multi-adapter</div></li>
+        <li><div class="li-dot" style="background:var(--accent2)"></div><div class="li-text">Sources web et types de données recommandés par l'IA</div></li>
+        <li><div class="li-dot" style="background:var(--accent2)"></div><div class="li-text">Score d'équipe — cohérence validée avant tout démarrage</div></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout tip" style="margin-top:24px">
+    <span class="ci">🎯</span>
+    <p><strong>Impact sur l'architecture de données :</strong> chaque adapter recommandé par la Phase 0 devient un projet indépendant avec son propre datalake (<code>datalake/projects/&lt;adapter-name&gt;/</code>), son propre pipeline de collecte, ses propres paires JSONL et son propre adapter LoRA. L'orchestrateur, lui, reçoit des paires de routing (question → adapter cible → réponse synthétisée).</p>
+  </div>
+</div>
+
 <!-- ────────────────────────── FOOTER ── -->
 <footer>
   <span>MLOps Factory · Capgemini Defense</span> &nbsp;·&nbsp;
   Architecture 100% locale, zéro appel cloud en production &nbsp;·&nbsp;
+  Mis à jour le 28 avril 2026 — Phase 0 Advisor opérationnel &nbsp;·&nbsp;
   <span>2026</span>
 </footer>
 

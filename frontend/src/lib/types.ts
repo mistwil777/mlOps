@@ -159,6 +159,46 @@ export interface DataHealth {
   lineage_summary?: Array<{ source_type: string; n: number; avg_q: number | null }>;
 }
 
+export interface AdvisorAdapter {
+  name: string;
+  role: 'specialist' | 'orchestrator';
+  description: string;
+  data_types: string[];
+  data_sources: string[];
+  rag_recommended?: boolean;
+  estimated_pairs: number;
+  // populated only for alternatives
+  score?: number;
+  team_score?: number;
+  pros?: string[];
+  cons?: string[];
+  team_note?: string;
+}
+
+export interface SelectionEval {
+  coverage: number;
+  cohesion: number;
+  balance: number;
+  orchestrability: number;
+  overall: number;
+  gaps: string[];
+  overlaps: string[][];
+  recommendation: string;
+}
+
+export interface AdvisorRecommendation {
+  project: string;
+  n_specialists: number;
+  total_estimated_pairs: number;
+  config_updated: string | null;
+  recommendation: {
+    adapters: AdvisorAdapter[];
+    orchestrator: AdvisorAdapter;
+    rag_global: boolean;
+    notes: string;
+  };
+}
+
 export interface PackageInfo {
   model_id: string;
   project_name: string;

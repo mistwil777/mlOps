@@ -498,13 +498,13 @@
     <div class="card-grid card-grid-4" style="margin-bottom:20px">
       <div class="card">
         <div class="card-title">Backend routes</div>
-        <div class="card-value">12</div>
-        <div class="card-desc">Routers FastAPI couvrant tout le cycle de vie</div>
+        <div class="card-value">16</div>
+        <div class="card-desc">Routers FastAPI couvrant tout le cycle de vie + advisor + orchestrator + feedback + lifecycle</div>
       </div>
       <div class="card">
         <div class="card-title">Pages UI</div>
-        <div class="card-value">17</div>
-        <div class="card-desc">SvelteKit — Factory, Data, Training, Test, Delivery</div>
+        <div class="card-value">18</div>
+        <div class="card-desc">SvelteKit — Factory, Data, Training, Test, Delivery + Phase 0 Advisor</div>
       </div>
       <div class="card">
         <div class="card-title">Domaines</div>
@@ -513,8 +513,8 @@
       </div>
       <div class="card">
         <div class="card-title">Skills CC</div>
-        <div class="card-value">11</div>
-        <div class="card-desc">Automatisations complètes réutilisables</div>
+        <div class="card-value">13</div>
+        <div class="card-desc">Automatisations complètes — dont /advisor (scoping) et /orchestrate (multi-adapter routing)</div>
       </div>
     </div>
 
@@ -532,8 +532,8 @@
       <h3>Avancement par composant</h3>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 40px;margin-top:8px">
         <div>
-          <div class="status-row"><div class="status-dot status-done"></div><span class="status-label">API FastAPI (12 routers)</span><span class="status-note">Opérationnel</span></div>
-          <div class="status-row"><div class="status-dot status-done"></div><span class="status-label">SvelteKit UI (17 pages)</span><span class="status-note">Opérationnel</span></div>
+          <div class="status-row"><div class="status-dot status-done"></div><span class="status-label">API FastAPI (16 routers)</span><span class="status-note">Opérationnel</span></div>
+          <div class="status-row"><div class="status-dot status-done"></div><span class="status-label">SvelteKit UI (18 pages)</span><span class="status-note">Opérationnel</span></div>
           <div class="status-row"><div class="status-dot status-done"></div><span class="status-label">Pipeline extract/clean/train</span><span class="status-note">Opérationnel</span></div>
           <div class="status-row"><div class="status-dot status-done"></div><span class="status-label">MLflow tracking :5001</span><span class="status-note">Opérationnel</span></div>
           <div class="status-row"><div class="status-dot status-done"></div><span class="status-label">SQLite métadonnées (WAL)</span><span class="status-note">Opérationnel</span></div>
@@ -542,6 +542,7 @@
         <div>
           <div class="status-row"><div class="status-dot status-done"></div><span class="status-label">LoRA/QLoRA (MLX-LM)</span><span class="status-note">Opérationnel</span></div>
           <div class="status-row"><div class="status-dot status-done"></div><span class="status-label">Delivery & packaging</span><span class="status-note">Opérationnel</span></div>
+          <div class="status-row"><div class="status-dot status-done"></div><span class="status-label">Phase 0 Advisor (multi-adapter)</span><span class="status-note">Opérationnel — Bedrock</span></div>
           <div class="status-row"><div class="status-dot status-wip"></div><span class="status-label">Qdrant (prod vector DB)</span><span class="status-note">Phase 2 — Docker</span></div>
           <div class="status-row"><div class="status-dot status-wip"></div><span class="status-label">PostgreSQL (prod metadata)</span><span class="status-note">Après MinIO</span></div>
           <div class="status-row"><div class="status-dot status-todo"></div><span class="status-label">Multi-GPU / multi-node</span><span class="status-note">Hors scope M4</span></div>
@@ -725,8 +726,8 @@
       </div>
       <div class="adapter-card">
         <div class="adapter-name">Multi-LoRA (chargement dynamique)</div>
-        <div class="adapter-desc">Un seul modèle de base chargé en mémoire + N adapters swappables selon la requête. Économise de la RAM. Un adapter par projet/domaine.</div>
-        <div class="adapter-use">→ Production multi-projet sur une seule machine. Roadmap Phase 2.</div>
+        <div class="adapter-desc">Un seul modèle de base chargé en mémoire + N adapters swappables selon la requête. Économise de la RAM. Un adapter par domaine/spécialité, un orchestrateur pour le routing.</div>
+        <div class="adapter-use">→ Architecture recommandée par le /advisor (Phase 0). Serving multi-adapter : Roadmap Phase 2.</div>
       </div>
     </div>
   </section>
@@ -862,6 +863,139 @@
           <li>quality_scorer.py — scoring LLM</li>
           <li>watchdog.py — monitoring 60s</li>
         </ul>
+      </div>
+      <div class="anatomy-card">
+        <div class="anatomy-card-icon">◎</div>
+        <div class="anatomy-card-title">Phase 0 — Advisor</div>
+        <ul class="anatomy-card-items">
+          <li>advisor.py — recommend adapters</li>
+          <li>advisor.py — alternatives + scoring</li>
+          <li>advisor.py — evaluate-selection</li>
+          <li>orchestrator.py — multi-adapter routing</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- ════════════════════════════════════════════════════
+       SECTION PHASE 0 — ADVISOR
+       ════════════════════════════════════════════════════ -->
+  <section>
+    <h2><span class="icon">◎</span> Phase 0 — Analyse du besoin & architecture multi-adapter</h2>
+
+    <p>
+      Avant de créer le moindre projet ou de lancer le moindre pipeline, la plateforme propose une étape de scoping assistée par IA.
+      L'objectif : partir d'un <strong>besoin client en langage naturel</strong> et obtenir une architecture multi-adapter recommandée —
+      avec les spécialistes LoRA, l'orchestrateur, les données sources, et un scoring d'équipe.
+      <strong>L'humain valide, l'IA propose — rien n'est créé automatiquement.</strong>
+    </p>
+
+    <div class="callout callout-good">
+      <div class="callout-icon">◎</div>
+      <div>
+        <strong>Accès :</strong> <code>UI → /advisor</code> — page "Phase 0 — Analyse du besoin".
+        Powered by Claude Sonnet via AWS Bedrock. Zéro donnée client dans le prompt — seul le besoin métier anonymisé circule.
+      </div>
+    </div>
+
+    <!-- Flux Phase 0 -->
+    <div class="diagram" style="margin-top:20px">
+      <div class="diagram-title">Phase 0 — flux de décision assisté par IA</div>
+      <div class="pipeline" style="min-width:700px">
+        <div class="pipe-stage">
+          <div class="pipe-icon">📝</div>
+          <div class="pipe-name">Besoin client</div>
+          <div class="pipe-sub">texte libre — UI /advisor</div>
+          <div class="pipe-badge badge-blue">Input</div>
+        </div>
+        <div class="pipe-stage">
+          <div class="pipe-icon">◎</div>
+          <div class="pipe-name">Sonnet 4.6</div>
+          <div class="pipe-sub">Bedrock · POST /advisor/recommend</div>
+          <div class="pipe-badge badge-purple">IA</div>
+        </div>
+        <div class="pipe-stage">
+          <div class="pipe-icon">⬡</div>
+          <div class="pipe-name">Adapters proposés</div>
+          <div class="pipe-sub">spécialistes + orchestrateur</div>
+          <div class="pipe-badge badge-orange">Score solo + équipe</div>
+        </div>
+        <div class="pipe-stage">
+          <div class="pipe-icon">⟳</div>
+          <div class="pipe-name">Alternatives</div>
+          <div class="pipe-sub">POST /advisor/alternatives</div>
+          <div class="pipe-badge badge-yellow">Itération</div>
+        </div>
+        <div class="pipe-stage">
+          <div class="pipe-icon">✓</div>
+          <div class="pipe-name">Validation humaine</div>
+          <div class="pipe-sub">sélection finale</div>
+          <div class="pipe-badge badge-green">Décision</div>
+        </div>
+        <div class="pipe-stage">
+          <div class="pipe-icon">📋</div>
+          <div class="pipe-name">YAML généré</div>
+          <div class="pipe-sub">multi_adapter: true</div>
+          <div class="pipe-badge badge-blue">Config</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Fonctionnalités clés -->
+    <div class="anatomy-grid" style="margin-top:20px">
+      <div class="anatomy-card">
+        <div class="anatomy-card-icon">◉</div>
+        <div class="anatomy-card-title">Scoring adaptatif</div>
+        <ul class="anatomy-card-items">
+          <li>Score solo 0-20 par adapter</li>
+          <li>Score d'équipe (fit collectif)</li>
+          <li>Pros / cons détaillés</li>
+          <li>Note d'équipe par adapter</li>
+        </ul>
+      </div>
+      <div class="anatomy-card">
+        <div class="anatomy-card-icon">⊕</div>
+        <div class="anatomy-card-title">Évaluation de sélection</div>
+        <ul class="anatomy-card-items">
+          <li>Couverture, cohésion, équilibre</li>
+          <li>Orchestrabilité globale</li>
+          <li>Lacunes et chevauchements détectés</li>
+          <li>Recalcul auto à chaque modification</li>
+        </ul>
+      </div>
+      <div class="anatomy-card">
+        <div class="anatomy-card-icon">◧</div>
+        <div class="anatomy-card-title">Sources & données</div>
+        <ul class="anatomy-card-items">
+          <li>Sources web par adapter (chips cliquables)</li>
+          <li>Types de données par adapter</li>
+          <li>Vue sources globales dédupliquées</li>
+          <li>Estimation des paires d'entraînement</li>
+        </ul>
+      </div>
+      <div class="anatomy-card">
+        <div class="anatomy-card-icon">⟳</div>
+        <div class="anatomy-card-title">Alternatives à la demande</div>
+        <ul class="anatomy-card-items">
+          <li>3 alternatives contextualisées</li>
+          <li>Score en contexte de la sélection actuelle</li>
+          <li>Remplacement en un clic</li>
+          <li>Suppression / curation libre</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="callout callout-info" style="margin-top:20px">
+      <div class="callout-icon">💡</div>
+      <div>
+        <strong>UX — Progressive disclosure (règle globale) :</strong>
+        Toutes les cartes adapter (Phase 0 ET future UI) suivent 3 niveaux.
+        L1 (toujours visible) : nom + badges + mini-scores + boutons.
+        L2 (clic) : description + barres de score + pros/cons.
+        L3 (toggle interne) : types de données + sources.
+        Composant réutilisable : <code>AdapterCard.svelte</code>.
       </div>
     </div>
   </section>
@@ -1434,15 +1568,17 @@
       <div class="diagram-title">Phases de développement</div>
       <div style="display:flex;gap:0;min-width:800px">
         <div style="flex:1;background:rgba(63,185,80,0.08);border:1px solid rgba(63,185,80,0.2);border-radius:8px 0 0 8px;padding:16px">
-          <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--green);margin-bottom:10px">Phase 1 — DONE</div>
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--green);margin-bottom:10px">Phase 0+1 — DONE</div>
           <div style="font-size:11px;color:var(--text-dim);line-height:1.8">
-            ✅ Backend FastAPI (12 routers)<br>
-            ✅ Frontend SvelteKit (17 pages)<br>
+            ✅ Backend FastAPI (16 routers)<br>
+            ✅ Frontend SvelteKit (18 pages)<br>
             ✅ Pipeline extract/clean/train<br>
             ✅ MLflow + SQLite<br>
             ✅ LanceDB RAG dev<br>
-            ✅ 11 skills CC<br>
-            ✅ Delivery & packaging
+            ✅ 13 skills CC<br>
+            ✅ Delivery & packaging<br>
+            ✅ Phase 0 Advisor (Bedrock)<br>
+            ✅ Accordion UX (3 niveaux)
           </div>
         </div>
         <div style="flex:1;background:rgba(210,153,34,0.08);border:1px solid rgba(210,153,34,0.2);padding:16px;border-left:none;border-right:none">
@@ -1539,6 +1675,16 @@
           <td>Non — uniquement dans <code>.claude/</code>. À migrer dans le repo.</td>
           <td><span class="badge badge-red">À faire</span></td>
         </tr>
+        <tr>
+          <td>La Phase 0 Advisor fonctionne-t-elle ?</td>
+          <td>Oui — <code>advisor.py</code> + <code>AdapterCard.svelte</code>. Scoring dès la 1ère génération, alternatives, évaluation d'équipe dynamique.</td>
+          <td><span class="badge badge-green">OK</span></td>
+        </tr>
+        <tr>
+          <td>Le progressive disclosure est-il cohérent sur toute l'UI ?</td>
+          <td>Codifié dans CLAUDE.md et implémenté via <code>AdapterCard.svelte</code>. À appliquer aux autres types de cartes (runs, modèles, datasets) dans la prochaine session.</td>
+          <td><span class="badge badge-yellow">Partiel</span></td>
+        </tr>
       </tbody>
     </table>
 
@@ -1548,7 +1694,7 @@
 
 <footer>
   MLOps Factory · Capgemini · Document interne — <strong>ne pas distribuer</strong> ·
-  Généré le 28 avril 2026 · Architecture : souveraineté locale, Green IT, zéro cloud en production
+  Mis à jour le 28 avril 2026 · Phase 0 Advisor opérationnel · Architecture : souveraineté locale, Green IT, zéro cloud en production
 </footer>
 
 </body>
