@@ -94,6 +94,10 @@
       <span class="nav-icon">⬡</span>
       Dashboard
     </a>
+    <a href="/start" class:active={isActive('/start')} class="nav-top nav-start">
+      <span class="nav-icon">▶</span>
+      Nouveau projet
+    </a>
 
     <!-- Numbered groups -->
     {#each groups as group}
@@ -124,6 +128,14 @@
     font-weight: 500;
     margin: 4px 4px 2px !important;
   }
+
+  .nav-start {
+    background: var(--accent-dim) !important;
+    border: 1px solid rgba(91,152,248,.2) !important;
+    color: var(--accent) !important;
+    margin-bottom: 6px !important;
+  }
+  .nav-start:hover { background: rgba(91,152,248,.2) !important; }
 
   .nav-icon {
     font-size: 14px;

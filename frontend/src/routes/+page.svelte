@@ -112,7 +112,7 @@
   {:else}
     <div class="project-list mb-24">
       {#each projects.slice(0, 6) as project}
-        <ProjectCard {project} />
+        <ProjectCard {project} onDelete={(id) => { projects = projects.filter(p => p.id !== id); }} />
       {/each}
     </div>
   {/if}

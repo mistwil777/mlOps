@@ -135,6 +135,32 @@ def create_project(body: ProjectCreate):
     return {**cfg, "id": project_id}
 
 
+@router.delete("/{project_id}", status_code=204)
+def delete_project(project_id: str):
+    from pathlib import Path
+    import shutil
+
+    cfg = get_project_config(project_id)
+    if not cfg:
+        raise HTTPException(404, f"Project '{project_id}' not found")
+
+    # Remove YAML config
+    config_path = Path("config/projects") / f"{project_id}.yaml"
+    config_path.unlink(missing_ok=True)
+
+    # Remove SQLite rows (cascade: runs, evaluations, rag_feedback)
+    execute("DELETE FROM evaluations WHERE run_id IN (SELECT id FROM runs WHERE project_id = ?)", (project_id,))
+    execute("DELETE FROM runs WHERE project_id = ?", (project_id,))
+    execute("DELETE FROM rag_feedback WHERE project_id = ?", (project_id,))
+    execute("DELETE FROM deployed_models WHERE project_id = ?", (project_id,))
+    execute("DELETE FROM projects WHERE id = ?", (project_id,))
+
+    # Remove datalake directory (non-blocking — log on error)
+    datalake_dir = Path("datalake/projects") / project_id
+    if datalake_dir.exists():
+        shutil.rmtree(datalake_dir, ignore_errors=True)
+
+
 @router.patch("/{project_id}")
 def patch_project(project_id: str, body: ProjectPatch):
     cfg = get_project_config(project_id)

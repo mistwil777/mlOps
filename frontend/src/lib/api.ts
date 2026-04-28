@@ -22,6 +22,7 @@ export const getProjects   = ()           => req<Project[]>('/projects');
 export const getProject    = (id: string) => req<Project>(`/projects/${id}`);
 export const createProject = (body: unknown) => req<Project>('/projects', { method: 'POST', body: JSON.stringify(body) });
 export const patchProject  = (id: string, body: unknown) => req<Project>(`/projects/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+export const deleteProject = (id: string) => req<void>(`/projects/${id}`, { method: 'DELETE' });
 
 // Base models
 export const getBaseModels       = ()              => req<BaseModel[]>('/base-models');

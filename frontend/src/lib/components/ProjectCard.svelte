@@ -1,18 +1,39 @@
 <script lang="ts">
   import type { Project, NextActions } from '$lib/types';
   import { goto } from '$app/navigation';
-  import { getNextActions } from '$lib/api';
+  import { getNextActions, deleteProject } from '$lib/api';
   import PipelineStepper from './PipelineStepper.svelte';
   import ActionBar from './ActionBar.svelte';
 
   interface Props {
     project: Project;
+    onDelete?: (id: string) => void;
   }
 
-  let { project }: Props = $props();
+  let { project, onDelete }: Props = $props();
 
   let nextActions = $state<NextActions | null>(null);
   let expanded = $state(false);
+  let confirmDelete = $state(false);
+  let deleting = $state(false);
+
+  async function handleDelete(e: MouseEvent) {
+    e.stopPropagation();
+    if (!confirmDelete) { confirmDelete = true; return; }
+    deleting = true;
+    try {
+      await deleteProject(project.id);
+      onDelete?.(project.id);
+    } catch {
+      deleting = false;
+      confirmDelete = false;
+    }
+  }
+
+  function cancelDelete(e: MouseEvent) {
+    e.stopPropagation();
+    confirmDelete = false;
+  }
 
   $effect(() => {
     if (expanded && !nextActions) {
@@ -69,6 +90,15 @@
         class="btn btn-ghost btn-sm"
         onclick={() => goto(`/projects/${project.id}`)}
       >Ouvrir</button>
+
+      {#if confirmDelete}
+        <button class="btn btn-danger btn-sm" disabled={deleting} onclick={handleDelete}>
+          {deleting ? '…' : 'Confirmer'}
+        </button>
+        <button class="btn btn-ghost btn-sm" onclick={cancelDelete}>Annuler</button>
+      {:else}
+        <button class="icon-btn danger trash-btn" title="Supprimer le projet" onclick={handleDelete}>🗑</button>
+      {/if}
     </div>
   </div>
 
@@ -137,6 +167,9 @@
   }
 
   .btn-sm { padding: 4px 10px; font-size: var(--text-sm); font-weight: 500; }
+
+  .trash-btn { font-size: 13px; opacity: .5; transition: opacity 150ms; }
+  .trash-btn:hover { opacity: 1; }
 
   .l2 {
     padding: 12px 14px 14px;
