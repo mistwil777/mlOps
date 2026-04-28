@@ -88,3 +88,6 @@ export const startPipeline     = (body: { project_id: string; use_llm_score?: bo
 export const getPipelineStatus = (jobId: string) => req<JobStatus>(`/data/pipeline/${jobId}/status`);
 export const getDataHealth     = (projectId: string) => req<DataHealth>(`/data/health/${projectId}`);
 export const getLineage        = (projectId: string, limit = 100) => req<Record<string, unknown>[]>(`/data/lineage/${projectId}?limit=${limit}`);
+
+// Project next-actions
+export const getNextActions    = (projectId: string) => req<import('./types').NextActions>(`/projects/${projectId}/next-actions`);

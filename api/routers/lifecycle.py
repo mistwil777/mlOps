@@ -152,3 +152,105 @@ def trigger_feedback_ingest(project_id: str) -> dict[str, Any]:
     if not cfg:
         raise HTTPException(404, f"Project '{project_id}' not found")
     return ingest_feedback_dir(project_id)
+
+
+@router.get("/{project_id}/next-actions")
+def next_actions(project_id: str) -> dict[str, Any]:
+    """Deterministic pipeline-state-based recommended actions for a project."""
+    cfg = get_project_config(project_id)
+    if not cfg:
+        raise HTTPException(404, f"Project '{project_id}' not found")
+
+    actions: list[dict[str, Any]] = []
+
+    # 1 — Scoping: no adapters configured
+    if not cfg.get("adapters"):
+        actions.append({
+            "id":       "advisor",
+            "priority": "high",
+            "label":    "Analyser le besoin client",
+            "detail":   "Aucun adapter défini. Lancer l'Advisor pour scoper l'architecture.",
+            "href":     "/advisor",
+            "icon":     "◎",
+        })
+
+    # 2 — Data: not enough fine-tuning-ready pairs
+    ft_ready_dir = Path("datalake/fine-tuning-ready") / project_id
+    ft_count = 0
+    if ft_ready_dir.exists():
+        for f in ft_ready_dir.glob("*.jsonl"):
+            try:
+                ft_count += sum(1 for _ in f.open())
+            except OSError:
+                pass
+
+    min_pairs: int = cfg.get("quality_thresholds", {}).get("min_pairs", 200)
+    if ft_count < min_pairs:
+        actions.append({
+            "id":       "data",
+            "priority": "high" if ft_count == 0 else "medium",
+            "label":    f"Enrichir le dataset ({ft_count}/{min_pairs} paires)",
+            "detail":   "Dataset insuffisant pour un fine-tuning de qualité.",
+            "href":     f"/data?project={project_id}",
+            "icon":     "◧",
+        })
+
+    # 3 — Training: dataset ready but no completed run
+    last_run = _last_training_run(project_id)
+    if ft_count >= min_pairs and not last_run:
+        actions.append({
+            "id":       "train",
+            "priority": "high",
+            "label":    "Lancer le fine-tuning",
+            "detail":   "Dataset prêt. Aucun run completé pour ce projet.",
+            "href":     f"/train?project={project_id}",
+            "icon":     "▷",
+        })
+
+    # 4 — Eval: run completed but no evaluation stored
+    if last_run:
+        eval_row = fetchone(
+            "SELECT id FROM evaluations WHERE run_id = ? LIMIT 1",
+            (last_run["id"],),
+        )
+        if not eval_row:
+            actions.append({
+                "id":       "eval",
+                "priority": "high",
+                "label":    "Évaluer le modèle",
+                "detail":   "Run complété mais pas encore évalué. Requis avant déploiement.",
+                "href":     f"/models?project={project_id}",
+                "icon":     "◉",
+            })
+
+    # 5 — Retrain: feedback threshold crossed
+    if _pending_retrain(project_id):
+        actions.append({
+            "id":       "retrain",
+            "priority": "medium",
+            "label":    "Relancer le training",
+            "detail":   "Seuil de retrain atteint — nouveau feedback disponible.",
+            "href":     f"/train?project={project_id}",
+            "icon":     "⟳",
+        })
+
+    # Pipeline phase (0–4)
+    phase: int
+    if not cfg.get("adapters"):
+        phase = 0
+    elif ft_count < min_pairs:
+        phase = 1
+    elif not last_run:
+        phase = 2
+    else:
+        eval_done = bool(fetchone(
+            "SELECT id FROM evaluations WHERE run_id = ?",
+            (last_run["id"],),
+        ))
+        phase = 4 if eval_done else 3
+
+    return {
+        "project_id": project_id,
+        "pipeline_phase": phase,
+        "actions": actions,
+    }

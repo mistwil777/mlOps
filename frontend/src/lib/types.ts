@@ -199,6 +199,21 @@ export interface AdvisorRecommendation {
   };
 }
 
+export interface NextAction {
+  id: string;
+  priority: 'high' | 'medium' | 'low';
+  label: string;
+  detail: string;
+  href: string;
+  icon: string;
+}
+
+export interface NextActions {
+  project_id: string;
+  pipeline_phase: 0 | 1 | 2 | 3 | 4;
+  actions: NextAction[];
+}
+
 export interface PackageInfo {
   model_id: string;
   project_name: string;
