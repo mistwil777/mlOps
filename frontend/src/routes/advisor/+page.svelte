@@ -2,6 +2,8 @@
   import { advisorRecommend, advisorAlternatives, advisorEvaluateSelection } from '$lib/api';
   import type { AdvisorRecommendation, AdvisorAdapter, SelectionEval } from '$lib/types';
   import AdapterCard from '$lib/components/AdapterCard.svelte';
+  import Topbar from '$lib/components/Topbar.svelte';
+  import SovereigntyBadge from '$lib/components/SovereigntyBadge.svelte';
 
   // ── State ──────────────────────────────────────────────────────────────────
   let need  = $state('');
@@ -144,15 +146,15 @@
   }
 </script>
 
-<div class="topbar">
-  <span class="topbar-title">Phase 0 — Analyse du besoin</span>
+<Topbar crumbs={[{ label: '1 · Scoping' }, { label: 'Analyse du besoin' }]}>
+  <SovereigntyBadge mode="cloud" label="🟠 Bedrock (scoping)" size="sm" />
   {#if result}
     <button class="btn btn-ghost btn-sm" onclick={copyYaml}>Copier YAML</button>
     <button class="btn btn-primary btn-sm" onclick={() => { result = null; need = ''; adapters = []; orchestrator = null; altTarget = null; sourcesAdapter = null; selEval = null; }}>
       ↺ Nouveau besoin
     </button>
   {/if}
-</div>
+</Topbar>
 
 <div class="content">
   <div class="phase0-layout" class:has-panel={altTarget || sourcesAdapter}>
