@@ -11,6 +11,7 @@ async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
     const err = await r.text().catch(() => r.statusText);
     throw new Error(`${r.status} ${err}`);
   }
+  if (r.status === 204 || r.headers.get('content-length') === '0') return undefined as T;
   return r.json() as Promise<T>;
 }
 
@@ -45,11 +46,12 @@ export const getRuns        = (params?: { project_id?: string; status?: string; 
 };
 export const getRun         = (id: string) => req<Run>(`/runs/${id}`);
 export const createRun      = (body: unknown) => req<{ run_id: string }>('/runs', { method: 'POST', body: JSON.stringify(body) });
-export const cancelRun      = (id: string) => req<unknown>(`/runs/${id}`, { method: 'DELETE' });
 export const getRunMetrics  = (id: string) => req<Metric[]>(`/runs/${id}/metrics`);
 export const getRunEvals      = (id: string)            => req<Evaluation[]>(`/runs/${id}/evaluations`);
 export const listEvaluations  = (projectId?: string)    => req<(Evaluation & { project_id: string; experiment_name: string; model_name: string })[]>(`/runs/evaluations${projectId ? `?project_id=${projectId}` : ''}`);
 export const launchEvaluation = (runId: string)         => req<{ eval_id: string; status: string }>(`/runs/${runId}/evaluate`, { method: 'POST' });
+export const cancelRun        = (runId: string)         => req<{ run_id: string; status: string }>(`/runs/${runId}/cancel`, { method: 'POST' });
+export const deleteRun        = (runId: string)         => req<void>(`/runs/${runId}`, { method: 'DELETE' });
 export const launchEval     = (id: string) => req<unknown>(`/runs/${id}/evaluate`, { method: 'POST' });
 
 // Models

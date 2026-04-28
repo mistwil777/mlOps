@@ -95,9 +95,16 @@
         <button class="btn btn-danger btn-sm" disabled={deleting} onclick={handleDelete}>
           {deleting ? '…' : 'Confirmer'}
         </button>
-        <button class="btn btn-ghost btn-sm" onclick={cancelDelete}>Annuler</button>
+        <button class="btn btn-ghost btn-sm" onclick={cancelDelete}>✕</button>
       {:else}
-        <button class="trash-btn" title="Supprimer le projet" onclick={handleDelete}>✕ Supprimer</button>
+        <button class="trash-btn" title="Supprimer le projet" onclick={handleDelete}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3 6 5 6 21 6"/>
+            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+            <path d="M10 11v6M14 11v6"/>
+            <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+          </svg>
+        </button>
       {/if}
     </div>
   </div>
@@ -169,17 +176,17 @@
   .btn-sm { padding: 4px 10px; font-size: var(--text-sm); font-weight: 500; }
 
   .trash-btn {
-    font-size: 12px;
-    opacity: 1;
     background: none;
-    border: 1px solid var(--border);
+    border: 1px solid var(--red-dim);
     border-radius: 4px;
-    padding: 3px 8px;
+    padding: 4px 7px;
     cursor: pointer;
-    color: var(--text-muted);
-    transition: border-color 150ms, color 150ms;
+    color: var(--red);
+    display: flex;
+    align-items: center;
+    transition: background 150ms, border-color 150ms;
   }
-  .trash-btn:hover { border-color: var(--red); color: var(--red); }
+  .trash-btn:hover { background: var(--red-dim); border-color: var(--red); }
 
   .l2 {
     padding: 12px 14px 14px;

@@ -9,7 +9,7 @@
   import ProjectCard from '$lib/components/ProjectCard.svelte';
   import SovereigntyBadge from '$lib/components/SovereigntyBadge.svelte';
   import Topbar from '$lib/components/Topbar.svelte';
-  import { getRunMetrics } from '$lib/api';
+  import { getRunMetrics, deleteRun } from '$lib/api';
   import type { Metric } from '$lib/types';
 
   let health: Health | null           = $state(null);
@@ -127,7 +127,7 @@
       <thead>
         <tr>
           <th>Run</th><th>Projet</th><th>Modèle</th><th>Statut</th>
-          <th>Train loss</th><th>Val loss</th><th>Durée</th><th>Date</th>
+          <th>Train loss</th><th>Val loss</th><th>Durée</th><th>Date</th><th></th>
         </tr>
       </thead>
       <tbody>
@@ -141,10 +141,27 @@
             <td class="mono">{run.val_loss?.toFixed(4) ?? '—'}</td>
             <td>{fmtDuration(run.duration_s)}</td>
             <td class="text-muted">{run.started_at?.slice(0, 10)}</td>
+            <td onclick={e => e.stopPropagation()} role="cell">
+              <button
+                class="run-trash"
+                title="Archiver ce run"
+                onclick={async () => {
+                  await deleteRun(run.id);
+                  recentRuns = recentRuns.filter(r => r.id !== run.id);
+                }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="3 6 5 6 21 6"/>
+                  <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                  <path d="M10 11v6M14 11v6"/>
+                  <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+                </svg>
+              </button>
+            </td>
           </tr>
         {:else}
           <tr>
-            <td colspan="8" class="empty-cell">
+            <td colspan="9" class="empty-cell">
               Aucun run. <a href="/train">Lancer un premier training</a>
             </td>
           </tr>
@@ -214,4 +231,17 @@
     color: var(--text-muted);
     padding: 24px;
   }
+
+  .run-trash {
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 3px 6px;
+    cursor: pointer;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    transition: border-color 150ms, color 150ms;
+  }
+  .run-trash:hover { border-color: var(--red); color: var(--red); }
 </style>

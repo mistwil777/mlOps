@@ -202,8 +202,9 @@ async def _watch_proc(run_id: str, proc: subprocess.Popen) -> None:
     _PROCS.pop(run_id, None)
 
 
-@router.delete("/{run_id}")
+@router.post("/{run_id}/cancel")
 def cancel_run(run_id: str):
+    """Cancel a running run without deleting it."""
     proc = _PROCS.get(run_id)
     if proc:
         proc.terminate()
@@ -213,6 +214,27 @@ def cancel_run(run_id: str):
         (_now(), run_id),
     )
     return {"run_id": run_id, "status": "cancelled"}
+
+
+@router.delete("/{run_id}", status_code=204)
+def delete_run(run_id: str):
+    """Archive (soft-delete) a run — moves it to archived_runs, keeps it in history."""
+    row = fetchone("SELECT * FROM runs WHERE id = ?", (run_id,))
+    if not row:
+        raise HTTPException(404, f"Run '{run_id}' not found")
+
+    # Cancel if still running
+    proc = _PROCS.get(run_id)
+    if proc:
+        proc.terminate()
+        _PROCS.pop(run_id, None)
+
+    execute(
+        """INSERT OR IGNORE INTO archived_runs
+           SELECT *, ? as archived_at FROM runs WHERE id = ?""",
+        (_now(), run_id),
+    )
+    execute("DELETE FROM runs WHERE id = ?", (run_id,))
 
 
 @router.post("/{run_id}/evaluate", status_code=202)

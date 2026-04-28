@@ -97,6 +97,27 @@ CREATE TABLE IF NOT EXISTS rag_feedback (
     created_at      TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
+-- ── Archived runs (soft-delete) ──────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS archived_runs (
+    id              TEXT PRIMARY KEY,
+    project_id      TEXT,
+    experiment_name TEXT,
+    model_name      TEXT,
+    status          TEXT,
+    iters           INTEGER,
+    batch_size      INTEGER,
+    learning_rate   REAL,
+    lora_rank       INTEGER,
+    train_loss      REAL,
+    val_loss        REAL,
+    duration_s      INTEGER,
+    adapter_path    TEXT,
+    mlflow_run_id   TEXT,
+    started_at      TEXT,
+    finished_at     TEXT,
+    archived_at     TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
 -- ── Indexes ───────────────────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_runs_project   ON runs(project_id);
 CREATE INDEX IF NOT EXISTS idx_runs_status    ON runs(status);
