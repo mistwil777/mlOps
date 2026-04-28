@@ -97,7 +97,7 @@
         </button>
         <button class="btn btn-ghost btn-sm" onclick={cancelDelete}>Annuler</button>
       {:else}
-        <button class="icon-btn danger trash-btn" title="Supprimer le projet" onclick={handleDelete}>🗑</button>
+        <button class="trash-btn" title="Supprimer le projet" onclick={handleDelete}>✕ Supprimer</button>
       {/if}
     </div>
   </div>
@@ -168,8 +168,18 @@
 
   .btn-sm { padding: 4px 10px; font-size: var(--text-sm); font-weight: 500; }
 
-  .trash-btn { font-size: 13px; opacity: .5; transition: opacity 150ms; }
-  .trash-btn:hover { opacity: 1; }
+  .trash-btn {
+    font-size: 12px;
+    opacity: 1;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 3px 8px;
+    cursor: pointer;
+    color: var(--text-muted);
+    transition: border-color 150ms, color 150ms;
+  }
+  .trash-btn:hover { border-color: var(--red); color: var(--red); }
 
   .l2 {
     padding: 12px 14px 14px;

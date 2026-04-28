@@ -481,8 +481,11 @@
 </div>
 
 <style>
-  .wizard-content { max-width: 900px; }
-  .wizard-card { min-width: 0; }
+  .wizard-content {
+    max-width: 860px;
+    margin: 0 auto;
+    width: 100%;
+  }
 
   /* Welcome */
   .welcome {
