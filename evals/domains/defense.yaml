@@ -1,0 +1,54 @@
+domain: defense
+description: Defense sector — technical documentation, procedure analysis, equipment specs (FR/NATO)
+
+# Defense projects MUST run in sovereign isolation (isolation_level: sovereign)
+# No cloud calls permitted in any eval pipeline component.
+sovereignty_required: true
+
+metrics:
+  - name: pass_rate
+    description: Fraction of eval pairs where output meets acceptance criteria
+    higher_is_better: true
+
+  - name: ner_f1
+    description: F1 on critical entities (equipment refs, unit codes, procedure steps, threat identifiers)
+    script: evals/metrics/ner_f1.py
+    higher_is_better: true
+
+  - name: rouge_l
+    description: ROUGE-L structural coverage against reference answer
+    higher_is_better: true
+
+  - name: fpr
+    description: False positive rate — model asserts a capability, procedure, or threat that does not exist
+    script: evals/metrics/fpr.py
+    higher_is_better: false
+
+  - name: classification_leak_rate
+    description: Fraction of outputs containing potential classified-marker patterns (blacklist scan)
+    script: evals/metrics/classification_leak.py
+    higher_is_better: false
+
+  - name: latency_ratio
+    description: Latency ratio vs. local baseline (no cloud baseline for defense)
+    higher_is_better: false
+
+gate_thresholds:
+  min_pass_rate: 0.90           # defense tolerance for error is lower
+  min_ner_f1: 0.85
+  min_rouge_l: 0.70
+  max_fpr: 0.03                 # hallucinated procedures or threats are critical failures
+  max_classification_leak_rate: 0.00  # zero tolerance — any leak fails the gate
+  max_latency_ratio: 2.5
+
+# Defense baseline is always a local model — never Bedrock/cloud
+baseline:
+  provider: local
+  model_id: models/production/defense-baseline/current
+  region: null
+
+eval_split:
+  source: datalake/projects/defense/fine-tuning-ready/
+  test_fraction: 0.15
+  seed: 42
+  min_samples: 100

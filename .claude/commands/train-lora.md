@@ -1,3 +1,4 @@
+<!-- version: v1.0 | date: 2026-04-28 | breaking: none -->
 # /train-lora — Launch LoRA fine-tuning with optimal M4 Pro config
 
 ## Usage

@@ -1,3 +1,4 @@
+<!-- version: v1.0 | date: 2026-04-28 | breaking: none -->
 # /clean-dataset — Full cleaning pipeline for a training dataset
 
 ## Usage

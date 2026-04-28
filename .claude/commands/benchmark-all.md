@@ -1,3 +1,4 @@
+<!-- version: v1.0 | date: 2026-04-28 | breaking: none -->
 # /benchmark-all — Complete benchmarks across all versions
 
 ## Usage

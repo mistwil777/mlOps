@@ -62,7 +62,7 @@ def deploy_model(body: DeployRequest):
         raise HTTPException(404, "Run not found or not completed")
 
     model_id = str(uuid.uuid4())[:8]
-    fused_path = f"models/{body.project_id}/{model_id}"
+    fused_path = f"models/staging/{body.project_id}/{model_id}"
 
     cmd = [
         sys.executable, "-m", "pipeline.deploy",
@@ -93,6 +93,15 @@ def serve_model(model_id: str):
 
     if not Path(fused_path).exists():
         raise HTTPException(409, f"Fused model path not found: {fused_path}")
+
+    # Gate: only serve from production — staging paths are refused
+    production_root = Path("models/production").resolve()
+    if not str(Path(fused_path).resolve()).startswith(str(production_root)):
+        raise HTTPException(
+            403,
+            f"Cannot serve model from outside production path. "
+            f"Promote via deploy gate first (current path: {fused_path})",
+        )
 
     cmd = ["mlx_lm.server", "--model", fused_path, "--port", str(port)]
     proc = subprocess.Popen(cmd, cwd=Path(".").resolve())

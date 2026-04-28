@@ -1,0 +1,50 @@
+domain: juridique
+description: Legal document analysis and drafting (French law — contracts, corporate, IP)
+
+metrics:
+  - name: legal_bleu
+    description: BLEU computed on legal reference translations / clause rewrites
+    script: evals/metrics/legal_bleu.py
+    higher_is_better: true
+
+  - name: ner_f1
+    description: F1 on named entity recognition (parties, dates, legal references, obligations)
+    script: evals/metrics/ner_f1.py
+    higher_is_better: true
+
+  - name: clause_recall
+    description: Fraction of required legal clauses present in generated output
+    script: evals/metrics/clause_recall.py
+    higher_is_better: true
+
+  - name: fpr
+    description: False positive rate — model incorrectly asserts a legal right/obligation that is absent
+    script: evals/metrics/fpr.py
+    higher_is_better: false
+
+  - name: pass_rate
+    description: Human-validated correctness rate on eval set (sampled legal experts review)
+    higher_is_better: true
+
+  - name: latency_ratio
+    description: Latency ratio vs. baseline
+    higher_is_better: false
+
+gate_thresholds:
+  min_pass_rate: 0.88           # legal correctness bar is higher than generic
+  min_legal_bleu: 0.60
+  min_ner_f1: 0.82
+  min_clause_recall: 0.80
+  max_fpr: 0.05                 # false legal claims are high-risk
+  max_latency_ratio: 3.0        # legal queries tolerate slightly higher latency
+
+baseline:
+  provider: bedrock
+  model_id: us.amazon.nova-pro-v1:0
+  region: us-east-1
+
+eval_split:
+  source: datalake/projects/juridique/fine-tuning-ready/
+  test_fraction: 0.15
+  seed: 42
+  min_samples: 80

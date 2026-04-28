@@ -1,0 +1,47 @@
+domain: migrator
+description: Python → Java code migration
+
+# Metrics logged by scripts/eval_model.py for this domain
+metrics:
+  - name: compilation_rate
+    description: Fraction of generated Java snippets that compile without error
+    script: evals/metrics/compilation_rate.py
+    higher_is_better: true
+
+  - name: codebleu
+    description: CodeBLEU score — weighted blend of n-gram, AST, and data-flow similarity
+    script: evals/metrics/codebleu.py
+    higher_is_better: true
+
+  - name: rouge_l
+    description: ROUGE-L on token sequence (structural coverage)
+    higher_is_better: true
+
+  - name: pass_rate
+    description: Fraction of eval pairs where the output passes all assert tests
+    higher_is_better: true
+
+  - name: latency_ratio
+    description: Latency vs. baseline (Nova Pro) — ratio must stay below threshold
+    higher_is_better: false
+
+# Thresholds for the deploy gate (override project-level quality_thresholds)
+gate_thresholds:
+  min_pass_rate: 0.85
+  min_rouge_l: 0.65
+  min_codebleu: 0.55
+  min_compilation_rate: 0.90   # hard requirement: generated Java must compile
+  max_latency_ratio: 2.0
+
+# Baseline for comparative eval (never used in production inference)
+baseline:
+  provider: bedrock
+  model_id: us.amazon.nova-pro-v1:0
+  region: us-east-1
+
+# Eval dataset split
+eval_split:
+  source: datalake/projects/migrator/fine-tuning-ready/
+  test_fraction: 0.15
+  seed: 42
+  min_samples: 50

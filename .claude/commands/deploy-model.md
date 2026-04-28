@@ -1,3 +1,4 @@
+<!-- version: v1.1 | date: 2026-04-28 | breaking: fuse output now in models/staging/, gate required before serve -->
 # /deploy-model — Fuse adapter + serve + sanity check + rollback capability
 
 ## Usage
@@ -24,12 +25,12 @@ ls experiments/eval_<project>_*.json | xargs ls -t | head -1
 If no eval found: abort with message "Run /eval-model first".
 If last eval has failed gates: abort unless `--force` flag is set.
 
-### Step 2 — Fuse adapter into base model
+### Step 2 — Fuse adapter into base model (output goes to staging)
 ```bash
 $MLX_PYTHON -m mlx_lm.fuse \
     --model <hf_path from project config> \
     --adapter-path <adapter_path> \
-    --save-path models/<project>/<run_id>/
+    --save-path models/staging/<project>/<run_id>/
 ```
 
 ### Step 3 — Sanity check (10 requests)
@@ -46,10 +47,24 @@ Checks:
 - Response time < 10s per request
 - No crashes or OOM errors
 
+### Step 3b — Gate check + promote staging → production
+```bash
+python -m scripts.deploy_gate check \
+    --project <project> \
+    --run-id <mlflow_run_id> \
+    --output logs/gate_<project>_<run_id>.json
+# Exit code 0 = PASS, 1 = FAIL (abort unless --force)
+
+python -m scripts.deploy_gate promote \
+    --project <project> \
+    --model-id <run_id>
+# Moves models/staging/<project>/<run_id>/ → models/production/<project>/<run_id>/
+```
+
 ### Step 4 — Deploy (if not dry-run)
 ```bash
 python -m pipeline.deploy serve \
-    --model models/<project>/<run_id>/ \
+    --model models/production/<project>/<run_id>/ \
     --port <port>
 ```
 

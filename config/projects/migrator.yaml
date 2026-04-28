@@ -4,6 +4,9 @@ classification: interne
 
 domain: code
 task_type: migration
+eval_domain: migrator       # maps to evals/domains/migrator.yaml
+isolation_level: standard   # standard | sovereign (sovereign = Docker stack per project)
+multi_adapter: false
 
 model: qwen2.5-coder-7b-4bit
 model_format: qwen          # chat template used in extract + train

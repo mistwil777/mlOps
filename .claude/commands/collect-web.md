@@ -1,3 +1,4 @@
+<!-- version: v1.0 | date: 2026-04-28 | breaking: none -->
 # /collect-web — Tech watch + collect new training pairs from the web
 
 ## Usage

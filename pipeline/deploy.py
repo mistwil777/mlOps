@@ -67,8 +67,12 @@ class ModelDeployer:
         self.project = project
         self.config = _load_project_config(project)
 
-    def fuse(self, base_model: str, adapter_path: str, output_path: str) -> bool:
-        """Fuse a LoRA adapter into the base model weights."""
+    def fuse(self, base_model: str, adapter_path: str, model_id: str) -> tuple[bool, str]:
+        """Fuse a LoRA adapter into the base model weights → models/staging/<project>/<model_id>.
+
+        Returns (success, staging_path).
+        """
+        output_path = str(Path("models/staging") / self.project / model_id)
         Path(output_path).mkdir(parents=True, exist_ok=True)
         cmd = [
             _MLX_PYTHON, "-m", "mlx_lm.fuse",
@@ -80,9 +84,30 @@ class ModelDeployer:
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
             logger.error("Fuse failed: %s", result.stderr)
-            return False
-        logger.info("Fuse complete → %s", output_path)
-        return True
+            return False, output_path
+        logger.info("Fuse complete → %s (staging)", output_path)
+        return True, output_path
+
+    def gate_and_promote(self, mlflow_run_id: str, model_id: str, force: bool = False) -> tuple[bool, str]:
+        """Run deploy gate then promote staging → production.
+
+        Returns (promoted, production_path).
+        """
+        from scripts.deploy_gate import promote, run_gate  # noqa: PLC0415
+
+        gate_result_path = f"logs/gate_{self.project}_{model_id}.json"
+        passed = run_gate(self.project, mlflow_run_id, gate_result_path)
+
+        if not passed and not force:
+            logger.error("Deploy gate FAILED for %s — use force=True to override", self.project)
+            return False, ""
+
+        if not passed and force:
+            logger.warning("Deploy gate FAILED but force=True — promoting anyway")
+
+        promote(self.project, model_id)
+        production_path = str(Path("models/production") / self.project / model_id)
+        return True, production_path
 
     def sanity_check(self, model_path: str, n_requests: int = 10) -> tuple[bool, dict[str, Any]]:
         """Run n_requests against the serving model and check response validity."""
@@ -136,7 +161,14 @@ class ModelDeployer:
         return success, summary
 
     def serve(self, model_path: str, port: int = 8080) -> subprocess.Popen:
-        """Start mlx_lm.server as a background process (brew binary)."""
+        """Start mlx_lm.server — only accepts paths under models/production/."""
+        model_path_obj = Path(model_path).resolve()
+        production_root = Path("models/production").resolve()
+        if not str(model_path_obj).startswith(str(production_root)):
+            raise ValueError(
+                f"Refusing to serve from outside production: {model_path}. "
+                "Run gate_and_promote() first."
+            )
         pid_file = Path("models") / self.project / "server.pid"
         pid_file.parent.mkdir(parents=True, exist_ok=True)
 

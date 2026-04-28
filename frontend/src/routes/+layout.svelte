@@ -24,6 +24,7 @@
     { href: '/adapters',     icon: '◈', label: 'Adaptateurs LoRA' },
     { href: '/playground',   icon: '◐', label: 'Playground',   section: 'Test' },
     { href: '/delivery',     icon: '⬡', label: 'Livraison',    section: 'Delivery' },
+    { href: '/lifecycle',    icon: '✈', label: 'Sol ↔ Embarqué', section: 'Embarqué' },
   ];
 
   function isActive(href: string) {

@@ -37,6 +37,10 @@ class ProjectCreate(BaseModel):
     min_tokens: int = 50
     max_tokens: int = 2048
     blacklist_patterns: list[str] = ["password", "secret", "api_key", "TODO", "FIXME"]
+    retrain_threshold: dict[str, Any] = {
+        "new_patterns": 200,
+        "min_quality": 0.85,
+    }
 
 
 class ProjectPatch(BaseModel):
@@ -107,6 +111,7 @@ def create_project(body: ProjectCreate):
         "min_tokens":  body.min_tokens,
         "max_tokens":  body.max_tokens,
         "blacklist_patterns": body.blacklist_patterns,
+        "retrain_threshold": body.retrain_threshold,
         "data": {
             "raw":               f"datalake/projects/{project_id}/raw/",
             "processed":         f"datalake/projects/{project_id}/processed/",
@@ -119,6 +124,7 @@ def create_project(body: ProjectCreate):
     from pathlib import Path
     for stage in ("raw", "processed", "fine-tuning-ready"):
         Path(f"datalake/projects/{project_id}/{stage}").mkdir(parents=True, exist_ok=True)
+    Path(f"datalake/projects/{project_id}/raw/feedback").mkdir(parents=True, exist_ok=True)
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     execute(

@@ -21,7 +21,8 @@ Recommended batch_size: 8 (7B 4-bit models) · 4 (14B 4-bit models)
 - datalake/raw/               → IMMUTABLE after ingestion — never write here
 - datalake/processed/         → after cleaning pipeline
 - datalake/fine-tuning-ready/ → JSONL ready for mlx_lm.lora
-- models/                     → fused models (mlx_lm.fuse)
+- models/staging/<project>/   → fused models awaiting gate (mlx_lm.fuse output)
+- models/production/<project>/→ gate-passed models only — serving allowed here
 - adapters/                   → LoRA checkpoints
 - projects/<name>/            → data per project/domain
 
@@ -51,6 +52,8 @@ Embedding     : nomic-embed-text v1.5 via Ollama (port 11434)
 6. JSONL format: always verify special tokens before training
 7. Everything automatable by software must be automated — AI only where it adds real value
 8. Green IT: reuse configurations, avoid redundancy, no cloud calls in production
+9. models/staging/ → never served directly — promote via scripts/deploy_gate.py gate+promote
+10. Modify a skill → atomic commit tagged skill/<name>/vX.Y + update SKILLS.md
 
 ## Available Commands (skills)
 /new-project      : initialize a new fine-tuning project
@@ -60,10 +63,14 @@ Embedding     : nomic-embed-text v1.5 via Ollama (port 11434)
 /collect-web      : tech watch + new pairs
 /train-lora       : launch fine-tuning with optimal M4 Pro config
 /eval-model       : complete evaluation + baseline comparison
-/deploy-model     : fuse + serve + sanity check
+/deploy-model     : fuse → staging, gate check, promote → production, serve
 /compare-models   : comparative table of N models
 /daily-report     : aggregated daily report
 /benchmark-all    : complete benchmarks across all versions
+/advisor          : scoping multi-adapter — recommande adapters + données selon besoin client
+/orchestrate      : routing + appels parallèles + synthèse multi-adapter
+
+Versioning: voir SKILLS.md — règle: commit atomique tagué skill/<name>/vX.Y
 
 ## Token Economy — CC Rules
 - Repetitive tasks (pair scoring) → Agent subtype haiku
