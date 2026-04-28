@@ -1,0 +1,1555 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MLOps Factory — Vue d'ensemble & Cas d'usage</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface2: #1c2128;
+      --border: #30363d;
+      --accent: #1f6feb;
+      --accent2: #388bfd;
+      --green: #3fb950;
+      --yellow: #d29922;
+      --red: #f85149;
+      --purple: #a371f7;
+      --orange: #f0883e;
+      --cyan: #39d353;
+      --text: #e6edf3;
+      --text-dim: #8b949e;
+      --text-muted: #484f58;
+      --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    /* ─── HEADER ─── */
+    header {
+      background: linear-gradient(135deg, #0d1117 0%, #161b22 50%, #1a1f2e 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 40px 60px 32px;
+      position: relative;
+      overflow: hidden;
+    }
+    header::before {
+      content: '';
+      position: absolute;
+      top: -60px; right: -60px;
+      width: 300px; height: 300px;
+      background: radial-gradient(circle, rgba(31,111,235,0.15) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .header-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: rgba(31,111,235,0.15);
+      border: 1px solid rgba(31,111,235,0.3);
+      border-radius: 20px;
+      padding: 4px 14px;
+      font-size: 12px;
+      color: var(--accent2);
+      margin-bottom: 16px;
+    }
+    .header-badge::before { content: '⬡'; font-size: 10px; }
+    h1 {
+      font-size: 32px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      margin-bottom: 10px;
+    }
+    h1 span { color: var(--accent2); }
+    .subtitle {
+      color: var(--text-dim);
+      font-size: 15px;
+      max-width: 700px;
+    }
+    .meta-row {
+      margin-top: 20px;
+      display: flex; gap: 24px;
+      flex-wrap: wrap;
+    }
+    .meta-chip {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+    .meta-chip .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+    }
+    /* ─── LAYOUT ─── */
+    .container { max-width: 1200px; margin: 0 auto; padding: 0 40px 80px; }
+    section { margin-top: 60px; }
+    h2 {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 24px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 10px;
+    }
+    h2 .icon { font-size: 20px; }
+    h3 { font-size: 16px; font-weight: 600; margin-bottom: 12px; color: var(--text); }
+    p { color: var(--text-dim); margin-bottom: 12px; line-height: 1.7; }
+    strong { color: var(--text); }
+    /* ─── CARDS ─── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px 24px;
+    }
+    .card-grid {
+      display: grid;
+      gap: 16px;
+    }
+    .card-grid-2 { grid-template-columns: repeat(2, 1fr); }
+    .card-grid-3 { grid-template-columns: repeat(3, 1fr); }
+    .card-grid-4 { grid-template-columns: repeat(4, 1fr); }
+    .card-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+    .card-value {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .card-desc { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+    /* ─── DIAGRAMS ─── */
+    .diagram {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 32px;
+      margin: 20px 0;
+      overflow-x: auto;
+    }
+    .diagram-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-muted);
+      margin-bottom: 28px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .diagram-title::before {
+      content: '';
+      display: block; width: 20px; height: 1px;
+      background: var(--border);
+    }
+    /* ─── FLOW PIPELINE ─── */
+    .pipeline {
+      display: flex;
+      align-items: stretch;
+      gap: 0;
+      flex-wrap: nowrap;
+      min-width: 900px;
+    }
+    .pipe-stage {
+      flex: 1;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 12px;
+      text-align: center;
+      position: relative;
+    }
+    .pipe-stage + .pipe-stage::before {
+      content: '→';
+      position: absolute;
+      left: -14px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-muted);
+      font-size: 16px;
+      z-index: 1;
+    }
+    .pipe-icon { font-size: 24px; margin-bottom: 8px; }
+    .pipe-name { font-size: 12px; font-weight: 600; color: var(--text); }
+    .pipe-sub { font-size: 10px; color: var(--text-muted); margin-top: 4px; }
+    .pipe-badge {
+      display: inline-block;
+      margin-top: 8px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: 600;
+    }
+    /* ─── ARCH DIAGRAM ─── */
+    .arch-grid {
+      display: grid;
+      grid-template-columns: 200px 1fr 200px;
+      gap: 16px;
+      align-items: start;
+    }
+    .arch-col {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .arch-box {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 14px;
+      font-size: 12px;
+    }
+    .arch-box-title { font-weight: 600; color: var(--text); margin-bottom: 4px; font-size: 11px; }
+    .arch-box-sub { color: var(--text-muted); font-size: 10px; }
+    .arch-center {
+      background: var(--surface);
+      border: 1px solid var(--accent);
+      border-radius: 8px;
+      padding: 20px;
+    }
+    .arch-center-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--accent2);
+      margin-bottom: 12px;
+      text-align: center;
+    }
+    /* ─── BADGES / TAGS ─── */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .badge-blue   { background: rgba(31,111,235,0.15); color: var(--accent2); border: 1px solid rgba(31,111,235,0.3); }
+    .badge-green  { background: rgba(63,185,80,0.15);  color: var(--green);   border: 1px solid rgba(63,185,80,0.3); }
+    .badge-yellow { background: rgba(210,153,34,0.15); color: var(--yellow);  border: 1px solid rgba(210,153,34,0.3); }
+    .badge-red    { background: rgba(248,81,73,0.15);  color: var(--red);     border: 1px solid rgba(248,81,73,0.3); }
+    .badge-purple { background: rgba(163,113,247,0.15);color: var(--purple);  border: 1px solid rgba(163,113,247,0.3); }
+    .badge-orange { background: rgba(240,136,62,0.15); color: var(--orange);  border: 1px solid rgba(240,136,62,0.3); }
+    /* ─── STEPS NUMBERED ─── */
+    .steps { display: flex; flex-direction: column; gap: 0; }
+    .step {
+      display: flex;
+      gap: 20px;
+      position: relative;
+      padding-bottom: 24px;
+    }
+    .step:last-child { padding-bottom: 0; }
+    .step-left { display: flex; flex-direction: column; align-items: center; }
+    .step-num {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      font-weight: 700;
+      font-size: 13px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      z-index: 1;
+    }
+    .step-line {
+      width: 2px;
+      flex: 1;
+      background: var(--border);
+      margin-top: 4px;
+    }
+    .step:last-child .step-line { display: none; }
+    .step-body { flex: 1; }
+    .step-title { font-weight: 600; font-size: 14px; margin-bottom: 6px; }
+    .step-desc { color: var(--text-dim); font-size: 13px; }
+    .step-detail {
+      margin-top: 8px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+    /* ─── CODE BLOCK ─── */
+    .code-block {
+      background: #0d1117;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 14px 18px;
+      font-family: 'SF Mono', 'Cascadia Code', Consolas, monospace;
+      font-size: 12px;
+      color: #79c0ff;
+      overflow-x: auto;
+      margin: 10px 0;
+    }
+    .code-comment { color: #8b949e; }
+    .code-str { color: #a5d6ff; }
+    .code-key { color: #ff7b72; }
+    .code-val { color: #79c0ff; }
+    /* ─── ALERT / CALLOUT ─── */
+    .callout {
+      border-radius: 8px;
+      padding: 14px 18px;
+      margin: 16px 0;
+      display: flex;
+      gap: 12px;
+      font-size: 13px;
+    }
+    .callout-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+    .callout-info  { background: rgba(31,111,235,0.1); border: 1px solid rgba(31,111,235,0.25); }
+    .callout-warn  { background: rgba(210,153,34,0.1); border: 1px solid rgba(210,153,34,0.25); }
+    .callout-crit  { background: rgba(248,81,73,0.1);  border: 1px solid rgba(248,81,73,0.25); }
+    .callout-good  { background: rgba(63,185,80,0.1);  border: 1px solid rgba(63,185,80,0.25); }
+    /* ─── DATALAKE VISUAL ─── */
+    .funnel {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0;
+      padding: 10px 0;
+    }
+    .funnel-layer {
+      padding: 12px 0;
+      border-radius: 6px;
+      text-align: center;
+      font-size: 12px;
+      font-weight: 600;
+      position: relative;
+      margin-bottom: 2px;
+    }
+    .funnel-arrow {
+      width: 0;
+      height: 0;
+      border-left: 12px solid transparent;
+      border-right: 12px solid transparent;
+      border-top: 10px solid var(--border);
+      margin: 0 auto;
+    }
+    /* ─── TABLE ─── */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th {
+      text-align: left;
+      padding: 10px 14px;
+      background: var(--surface2);
+      color: var(--text-dim);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid var(--border);
+    }
+    td {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-dim);
+      vertical-align: top;
+    }
+    tr:last-child td { border-bottom: none; }
+    td:first-child { color: var(--text); font-weight: 500; }
+    /* ─── DIVIDER ─── */
+    .divider {
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--border), transparent);
+      margin: 40px 0;
+    }
+    /* ─── CASE STUDY HEADER ─── */
+    .case-header {
+      border-radius: 10px;
+      padding: 28px 32px;
+      margin-bottom: 32px;
+      position: relative;
+      overflow: hidden;
+    }
+    .case-header-legal {
+      background: linear-gradient(135deg, rgba(31,111,235,0.1), rgba(163,113,247,0.05));
+      border: 1px solid rgba(31,111,235,0.25);
+    }
+    .case-header-defense {
+      background: linear-gradient(135deg, rgba(248,81,73,0.08), rgba(240,136,62,0.05));
+      border: 1px solid rgba(240,136,62,0.25);
+    }
+    .case-title { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+    .case-subtitle { color: var(--text-dim); font-size: 13px; }
+    .case-badges { margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap; }
+    /* ─── BACKEND ANATOMY ─── */
+    .anatomy-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    .anatomy-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 16px;
+    }
+    .anatomy-card-icon { font-size: 20px; margin-bottom: 8px; }
+    .anatomy-card-title { font-size: 12px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+    .anatomy-card-items { list-style: none; }
+    .anatomy-card-items li {
+      font-size: 11px;
+      color: var(--text-dim);
+      padding: 2px 0;
+      padding-left: 14px;
+      position: relative;
+    }
+    .anatomy-card-items li::before {
+      content: '·';
+      position: absolute;
+      left: 4px;
+      color: var(--text-muted);
+    }
+    /* ─── ADAPTER TYPES ─── */
+    .adapter-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+    .adapter-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .adapter-name {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+    .adapter-desc { font-size: 12px; color: var(--text-dim); }
+    .adapter-use  { font-size: 11px; color: var(--accent2); margin-top: 8px; }
+    /* ─── STATUS INDICATOR ─── */
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 0;
+    }
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .status-done   { background: var(--green); box-shadow: 0 0 6px rgba(63,185,80,0.5); }
+    .status-wip    { background: var(--yellow); box-shadow: 0 0 6px rgba(210,153,34,0.5); }
+    .status-todo   { background: var(--text-muted); }
+    .status-label  { font-size: 13px; color: var(--text); }
+    .status-note   { font-size: 11px; color: var(--text-muted); margin-left: auto; }
+    /* ─── FOOTER ─── */
+    footer {
+      margin-top: 80px;
+      border-top: 1px solid var(--border);
+      padding: 24px 40px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+    /* ─── RESPONSIVE ─── */
+    @media (max-width: 900px) {
+      .card-grid-3, .card-grid-4, .anatomy-grid { grid-template-columns: 1fr 1fr; }
+      .card-grid-2, .adapter-grid { grid-template-columns: 1fr; }
+      .arch-grid { grid-template-columns: 1fr; }
+      header { padding: 24px 20px; }
+      .container { padding: 0 20px 60px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ════════════════════════════════════════════════════════
+     HEADER
+     ════════════════════════════════════════════════════════ -->
+<header>
+  <div class="header-badge">MLOps Factory · Capgemini · Sovereignty First</div>
+  <h1><span>MLOps Factory</span> — Vue d'ensemble de la plateforme</h1>
+  <p class="subtitle">
+    Infrastructure complète pour produire des modèles fine-tunés <strong>100% locaux</strong>,
+    sans aucun appel cloud en production — conçue pour des contextes à données classifiées
+    (Défense, Juridique, Santé, Finance).
+  </p>
+  <div class="meta-row">
+    <div class="meta-chip"><div class="dot" style="background:#3fb950"></div> Machine : MacBook Pro M4 Pro · 48 GB RAM</div>
+    <div class="meta-chip"><div class="dot" style="background:#1f6feb"></div> Backend : FastAPI + SQLite + MLflow :5001</div>
+    <div class="meta-chip"><div class="dot" style="background:#a371f7"></div> Frontend : SvelteKit · TypeScript</div>
+    <div class="meta-chip"><div class="dot" style="background:#f0883e"></div> Fine-tuning : MLX-LM (QLoRA/LoRA)</div>
+    <div class="meta-chip"><div class="dot" style="background:#d29922"></div> Vectors : LanceDB (dev) · Qdrant (prod)</div>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- ════════════════════════════════════════════════════
+       SECTION 1 — CE QU'ON A CONSTRUIT
+       ════════════════════════════════════════════════════ -->
+  <section>
+    <h2><span class="icon">🏗</span> Ce que l'on a construit — état actuel</h2>
+
+    <div class="card-grid card-grid-4" style="margin-bottom:20px">
+      <div class="card">
+        <div class="card-title">Backend routes</div>
+        <div class="card-value">12</div>
+        <div class="card-desc">Routers FastAPI couvrant tout le cycle de vie</div>
+      </div>
+      <div class="card">
+        <div class="card-title">Pages UI</div>
+        <div class="card-value">17</div>
+        <div class="card-desc">SvelteKit — Factory, Data, Training, Test, Delivery</div>
+      </div>
+      <div class="card">
+        <div class="card-title">Domaines</div>
+        <div class="card-value">9</div>
+        <div class="card-desc">code, legal, hr, finance, defense, healthcare, sales, compliance, support</div>
+      </div>
+      <div class="card">
+        <div class="card-title">Skills CC</div>
+        <div class="card-value">11</div>
+        <div class="card-desc">Automatisations complètes réutilisables</div>
+      </div>
+    </div>
+
+    <div class="callout callout-good">
+      <div class="callout-icon">✅</div>
+      <div>
+        <strong>Architecture de souveraineté validée :</strong> aucune donnée ne quitte la machine.
+        MLX sur Apple Silicon, LanceDB local, Ollama pour l'embedding, SQLite pour les métadonnées.
+        AWS Bedrock Nova Pro reste <em>uniquement</em> comme baseline de comparaison — jamais en production.
+      </div>
+    </div>
+
+    <!-- AVANCEMENT -->
+    <div class="card" style="margin-top:20px">
+      <h3>Avancement par composant</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 40px;margin-top:8px">
+        <div>
+          <div class="status-row"><div class="status-dot status-done"></div><span class="status-label">API FastAPI (12 routers)</span><span class="status-note">Opérationnel</span></div>
+          <div class="status-row"><div class="status-dot status-done"></div><span class="status-label">SvelteKit UI (17 pages)</span><span class="status-note">Opérationnel</span></div>
+          <div class="status-row"><div class="status-dot status-done"></div><span class="status-label">Pipeline extract/clean/train</span><span class="status-note">Opérationnel</span></div>
+          <div class="status-row"><div class="status-dot status-done"></div><span class="status-label">MLflow tracking :5001</span><span class="status-note">Opérationnel</span></div>
+          <div class="status-row"><div class="status-dot status-done"></div><span class="status-label">SQLite métadonnées (WAL)</span><span class="status-note">Opérationnel</span></div>
+          <div class="status-row"><div class="status-dot status-done"></div><span class="status-label">LanceDB vectoriel (dev)</span><span class="status-note">Opérationnel</span></div>
+        </div>
+        <div>
+          <div class="status-row"><div class="status-dot status-done"></div><span class="status-label">LoRA/QLoRA (MLX-LM)</span><span class="status-note">Opérationnel</span></div>
+          <div class="status-row"><div class="status-dot status-done"></div><span class="status-label">Delivery & packaging</span><span class="status-note">Opérationnel</span></div>
+          <div class="status-row"><div class="status-dot status-wip"></div><span class="status-label">Qdrant (prod vector DB)</span><span class="status-note">Phase 2 — Docker</span></div>
+          <div class="status-row"><div class="status-dot status-wip"></div><span class="status-label">PostgreSQL (prod metadata)</span><span class="status-note">Après MinIO</span></div>
+          <div class="status-row"><div class="status-dot status-todo"></div><span class="status-label">Multi-GPU / multi-node</span><span class="status-note">Hors scope M4</span></div>
+          <div class="status-row"><div class="status-dot status-todo"></div><span class="status-label">CI/CD pipeline DVC remote</span><span class="status-note">Après MinIO</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════
+       SECTION 2 — ARCHITECTURE GLOBALE
+       ════════════════════════════════════════════════════ -->
+  <section>
+    <h2><span class="icon">🧩</span> Architecture globale — vue macro</h2>
+
+    <div class="diagram">
+      <div class="diagram-title">Stack souverain — flux de données de bout en bout</div>
+
+      <!-- Couches empilées verticalement -->
+      <div style="display:flex;flex-direction:column;gap:12px;min-width:800px">
+
+        <!-- LAYER 1 : SOURCES -->
+        <div style="background:rgba(163,113,247,0.08);border:1px solid rgba(163,113,247,0.2);border-radius:8px;padding:14px 20px">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--purple);margin-bottom:10px">① Sources de données (inputs)</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 14px;font-size:11px">
+              <div style="font-weight:600;color:var(--text)">Repos internes</div>
+              <div style="color:var(--text-muted)">ZIP upload · UI ingest</div>
+            </div>
+            <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 14px;font-size:11px">
+              <div style="font-weight:600;color:var(--text)">Web collector</div>
+              <div style="color:var(--text-muted)">agents/web_collector.py</div>
+            </div>
+            <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 14px;font-size:11px">
+              <div style="font-weight:600;color:var(--text)">Documents internes</div>
+              <div style="color:var(--text-muted)">PDF / DOCX / TXT</div>
+            </div>
+            <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 14px;font-size:11px">
+              <div style="font-weight:600;color:var(--text)">RAG seeds</div>
+              <div style="color:var(--text-muted)">config/rag_seeds/</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- FLÈCHE -->
+        <div style="text-align:center;color:var(--text-muted);font-size:18px">↓</div>
+
+        <!-- LAYER 2 : DATALAKE -->
+        <div style="background:rgba(31,111,235,0.08);border:1px solid rgba(31,111,235,0.2);border-radius:8px;padding:14px 20px">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--accent2);margin-bottom:10px">② Datalake (3 couches immuables → transformées)</div>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <div style="background:rgba(248,81,73,0.1);border:1px solid rgba(248,81,73,0.2);border-radius:6px;padding:8px 14px;font-size:11px">
+              <div style="font-weight:700;color:var(--red)">raw/</div>
+              <div style="color:var(--text-muted)">IMMUABLE · DVC</div>
+            </div>
+            <div style="color:var(--text-muted)">→ extract.py →</div>
+            <div style="background:rgba(210,153,34,0.1);border:1px solid rgba(210,153,34,0.2);border-radius:6px;padding:8px 14px;font-size:11px">
+              <div style="font-weight:700;color:var(--yellow)">processed/</div>
+              <div style="color:var(--text-muted)">Dédupliqué · Filtré</div>
+            </div>
+            <div style="color:var(--text-muted)">→ clean.py →</div>
+            <div style="background:rgba(63,185,80,0.1);border:1px solid rgba(63,185,80,0.2);border-radius:6px;padding:8px 14px;font-size:11px">
+              <div style="font-weight:700;color:var(--green)">fine-tuning-ready/</div>
+              <div style="color:var(--text-muted)">JSONL train/valid</div>
+            </div>
+            <div style="color:var(--text-muted)">+</div>
+            <div style="background:rgba(163,113,247,0.1);border:1px solid rgba(163,113,247,0.2);border-radius:6px;padding:8px 14px;font-size:11px">
+              <div style="font-weight:700;color:var(--purple)">LanceDB Index</div>
+              <div style="color:var(--text-muted)">Vectoriel par projet</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- FLÈCHE -->
+        <div style="text-align:center;color:var(--text-muted);font-size:18px">↓</div>
+
+        <!-- LAYER 3 : FACTORY -->
+        <div style="background:rgba(240,136,62,0.08);border:1px solid rgba(240,136,62,0.2);border-radius:8px;padding:14px 20px">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--orange);margin-bottom:10px">③ Factory — Fine-tuning (MLX-LM sur M4 Pro)</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+            <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 14px;font-size:11px">
+              <div style="font-weight:600;color:var(--text)">Base model</div>
+              <div style="color:var(--text-muted)">Mistral 7B / Qwen 14B</div>
+            </div>
+            <div style="color:var(--text-muted)">+</div>
+            <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 14px;font-size:11px">
+              <div style="font-weight:600;color:var(--text)">JSONL dataset</div>
+              <div style="color:var(--text-muted)">fine-tuning-ready/</div>
+            </div>
+            <div style="color:var(--text-muted)">→ mlx_lm.lora →</div>
+            <div style="background:rgba(240,136,62,0.1);border:1px solid rgba(240,136,62,0.2);border-radius:6px;padding:8px 14px;font-size:11px">
+              <div style="font-weight:700;color:var(--orange)">Adapter LoRA</div>
+              <div style="color:var(--text-muted)">adapters/{projet}/{run_id}/</div>
+            </div>
+            <div style="color:var(--text-muted)">→ mlx_lm.fuse →</div>
+            <div style="background:rgba(63,185,80,0.1);border:1px solid rgba(63,185,80,0.2);border-radius:6px;padding:8px 14px;font-size:11px">
+              <div style="font-weight:700;color:var(--green)">Modèle fusionné</div>
+              <div style="color:var(--text-muted)">models/{projet}/{id}/</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- FLÈCHE -->
+        <div style="text-align:center;color:var(--text-muted);font-size:18px">↓</div>
+
+        <!-- LAYER 4 : OBS + EVAL -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div style="background:rgba(57,211,83,0.06);border:1px solid rgba(57,211,83,0.15);border-radius:8px;padding:14px 20px">
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--cyan);margin-bottom:8px">④ Observabilité</div>
+            <div style="font-size:11px;color:var(--text-dim)">
+              MLflow :5001 → train/val loss<br>
+              SQLite → runs, evals, adapters, lineage<br>
+              Logs structurés par run_id
+            </div>
+          </div>
+          <div style="background:rgba(210,153,34,0.06);border:1px solid rgba(210,153,34,0.15);border-radius:8px;padding:14px 20px">
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--yellow);margin-bottom:8px">⑤ Évaluation</div>
+            <div style="font-size:11px;color:var(--text-dim)">
+              Métriques : ROUGE-L, CodeBLEU, pass_rate, latence<br>
+              Baseline : AWS Nova Pro (comparaison seule)<br>
+              Seuils : pass_rate ≥ 85%, rouge_l ≥ 0.65
+            </div>
+          </div>
+        </div>
+
+        <!-- FLÈCHE -->
+        <div style="text-align:center;color:var(--text-muted);font-size:18px">↓</div>
+
+        <!-- LAYER 5 : DELIVERY -->
+        <div style="background:rgba(163,113,247,0.06);border:1px solid rgba(163,113,247,0.15);border-radius:8px;padding:14px 20px">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--purple);margin-bottom:8px">⑥ Delivery — Serving ou packaging</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 14px;font-size:11px">
+              <div style="font-weight:600;color:var(--text)">mlx_lm.server :8080</div>
+              <div style="color:var(--text-muted)">API OpenAI-compatible · on-premise</div>
+            </div>
+            <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 14px;font-size:11px">
+              <div style="font-weight:600;color:var(--text)">ZIP download</div>
+              <div style="color:var(--text-muted)">modèle fusionné ou adapter seul</div>
+            </div>
+            <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 14px;font-size:11px">
+              <div style="font-weight:600;color:var(--text)">Sandbox client</div>
+              <div style="color:var(--text-muted)">déployé air-gap si nécessaire</div>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- end layers -->
+    </div><!-- end diagram -->
+
+    <!-- QUESTION CLÉE : LES ADAPTERS -->
+    <div class="callout callout-info">
+      <div class="callout-icon">💡</div>
+      <div>
+        <strong>Rappel terminologie — les "plugins" post-LoRA :</strong>
+        Ce que tu appelles "plugins", ce sont les <strong>adapters</strong> (ou <em>adaptateurs</em>).
+        En pratique sur cette plateforme : <strong>LoRA adapters</strong> et <strong>QLoRA adapters</strong>.
+        Après entraînement, tu peux soit les <em>fusionner</em> (<code>mlx_lm.fuse</code>) dans le modèle de base
+        pour obtenir un modèle autonome, soit les garder <em>séparés</em> et les charger dynamiquement
+        au moment du serving — c'est le principe du <strong>multi-LoRA</strong> (un seul modèle de base, N adapters
+        pour N domaines). On y reviendra ci-dessous.
+      </div>
+    </div>
+
+    <!-- ADAPTER TYPES -->
+    <div class="adapter-grid" style="margin-top:20px">
+      <div class="adapter-card">
+        <div class="adapter-name">LoRA — Low-Rank Adaptation</div>
+        <div class="adapter-desc">Entraîne uniquement deux petites matrices (A et B) par couche ciblée. Le modèle de base est gelé. Le fichier adapter est petit (~ quelques MB).</div>
+        <div class="adapter-use">→ Quand tu as suffisamment de RAM et un dataset propre. Rank 16 recommandé ici.</div>
+      </div>
+      <div class="adapter-card">
+        <div class="adapter-name">QLoRA — Quantized LoRA</div>
+        <div class="adapter-desc">Même principe que LoRA mais le modèle de base est chargé en 4-bit. Consomme ~40% moins de RAM. Léger compromis de qualité acceptable sur la plupart des tâches.</div>
+        <div class="adapter-use">→ Par défaut sur M4 Pro pour les modèles 14B+. Les configs YAML utilisent toutes des modèles 4-bit.</div>
+      </div>
+      <div class="adapter-card">
+        <div class="adapter-name">Adapter fusionné (Merged)</div>
+        <div class="adapter-desc">Les poids de l'adapter sont fusionnés dans le modèle de base via <code>mlx_lm.fuse</code>. Produit un modèle standalone prêt à servir. Pas de dépendance à l'adapter au runtime.</div>
+        <div class="adapter-use">→ Delivery client, air-gap deployments, modèle "produit fini".</div>
+      </div>
+      <div class="adapter-card">
+        <div class="adapter-name">Multi-LoRA (chargement dynamique)</div>
+        <div class="adapter-desc">Un seul modèle de base chargé en mémoire + N adapters swappables selon la requête. Économise de la RAM. Un adapter par projet/domaine.</div>
+        <div class="adapter-use">→ Production multi-projet sur une seule machine. Roadmap Phase 2.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════
+       SECTION 3 — ANATOMIE DU BACKEND
+       ════════════════════════════════════════════════════ -->
+  <section>
+    <h2><span class="icon">⚙️</span> Anatomie du backend — ce qui se passe quand tu cliques</h2>
+
+    <p>Voici la réponse détaillée à ta question : <em>"quand je clique sur Nouveau Projet, que se passe-t-il côté backend ?"</em></p>
+
+    <div class="diagram">
+      <div class="diagram-title">POST /projects — cycle de création d'un projet</div>
+      <div class="steps">
+        <div class="step">
+          <div class="step-left"><div class="step-num">1</div><div class="step-line"></div></div>
+          <div class="step-body">
+            <div class="step-title">Validation du formulaire UI → appel API</div>
+            <div class="step-desc">Le formulaire SvelteKit (<code>projects/new/+page.svelte</code>) envoie un <code>POST /projects</code> avec : nom, domaine, type de tâche, modèle de base sélectionné, description.</div>
+            <div class="step-detail">Domaines supportés : code, legal, hr, finance, defense, healthcare, sales, compliance, customer-support</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-left"><div class="step-num">2</div><div class="step-line"></div></div>
+          <div class="step-body">
+            <div class="step-title">Création du fichier de config YAML</div>
+            <div class="step-desc">Le router <code>api/routers/projects.py</code> génère <code>config/projects/{projet_id}.yaml</code> avec les hyperparamètres par défaut du modèle choisi.</div>
+            <div class="step-detail">Contenu : model_id, domain, task_type, LoRA config (rank, layers, lr), seuils d'évaluation, paths datalake, baseline AWS, blacklist patterns</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-left"><div class="step-num">3</div><div class="step-line"></div></div>
+          <div class="step-body">
+            <div class="step-title">Création des répertoires datalake dédiés</div>
+            <div class="step-desc">La plateforme initialise l'arborescence isolée du projet dans le datalake.</div>
+            <div class="step-detail">
+              <code>datalake/projects/{id}/raw/</code> — espace immuable d'ingestion<br>
+              <code>datalake/projects/{id}/processed/</code> — post-nettoyage<br>
+              <code>datalake/projects/{id}/fine-tuning-ready/</code> — JSONL prêt pour MLX
+            </div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-left"><div class="step-num">4</div><div class="step-line"></div></div>
+          <div class="step-body">
+            <div class="step-title">Insertion en base SQLite</div>
+            <div class="step-desc"><code>api/db.py</code> insère une ligne dans la table <code>projects</code> avec : id, name, domain, task_type, model_id, created_at.</div>
+            <div class="step-detail">WAL mode activé → accès concurrent safe · Foreign keys activés · DB : <code>experiments/mlops.db</code></div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-left"><div class="step-num">5</div><div class="step-line"></div></div>
+          <div class="step-body">
+            <div class="step-title">Initialisation de l'index LanceDB vectoriel</div>
+            <div class="step-desc">Un namespace vide est réservé dans <code>lancedb/{projet_id}/</code>. L'index sera peuplé lors du step RAG build (via <code>rag_index.py</code>).</div>
+            <div class="step-detail">Embeddings : nomic-embed-text v1.5 via Ollama :11434 — 100% local</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-left"><div class="step-num">6</div><div class="step-line"></div></div>
+          <div class="step-body">
+            <div class="step-title">Réponse → UI affiche le projet dans la liste</div>
+            <div class="step-desc">L'API retourne l'objet projet créé. SvelteKit redirige vers la page détail du projet.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout callout-warn">
+      <div class="callout-icon">⚠️</div>
+      <div>
+        <strong>Point de vigilance :</strong> pour l'instant, il n'y a pas d'instance de processus dédiée par projet (pas de container, pas de VM).
+        Tout tourne dans le même processus FastAPI. L'isolation est <em>logique</em> (config YAML + répertoires séparés),
+        pas <em>physique</em>. Pour des projets Defense/Juridique ultra-sensibles, on pourrait envisager
+        un namespace réseau séparé ou une instance FastAPI par projet. C'est un point d'architecture à discuter.
+      </div>
+    </div>
+
+    <!-- ANATOMIE DES MODULES -->
+    <h3 style="margin-top:28px">Modules backend par responsabilité</h3>
+    <div class="anatomy-grid" style="margin-top:12px">
+      <div class="anatomy-card">
+        <div class="anatomy-card-icon">📁</div>
+        <div class="anatomy-card-title">Gestion des projets</div>
+        <ul class="anatomy-card-items">
+          <li>projects.py — CRUD projets</li>
+          <li>config.py — chargeur YAML</li>
+          <li>db.py — SQLite helpers (WAL)</li>
+        </ul>
+      </div>
+      <div class="anatomy-card">
+        <div class="anatomy-card-icon">🔄</div>
+        <div class="anatomy-card-title">Pipeline données</div>
+        <ul class="anatomy-card-items">
+          <li>data.py — collect/ingest/pipeline/review</li>
+          <li>datasets.py — stats datalake</li>
+          <li>rag.py — LanceDB index management</li>
+        </ul>
+      </div>
+      <div class="anatomy-card">
+        <div class="anatomy-card-icon">🏋️</div>
+        <div class="anatomy-card-title">Fine-tuning</div>
+        <ul class="anatomy-card-items">
+          <li>runs.py — orchestration subprocess</li>
+          <li>base_models.py — catalogue HF</li>
+          <li>adapters.py — registre des adapters</li>
+        </ul>
+      </div>
+      <div class="anatomy-card">
+        <div class="anatomy-card-icon">📊</div>
+        <div class="anatomy-card-title">Évaluation & suivi</div>
+        <ul class="anatomy-card-items">
+          <li>runs.py — métriques MLflow/SQLite</li>
+          <li>playground.py — inférence live</li>
+          <li>stream.py — SSE long jobs</li>
+        </ul>
+      </div>
+      <div class="anatomy-card">
+        <div class="anatomy-card-icon">🚀</div>
+        <div class="anatomy-card-title">Delivery</div>
+        <ul class="anatomy-card-items">
+          <li>models.py — fuse + serve</li>
+          <li>delivery.py — packaging ZIP</li>
+          <li>health.py — statut services</li>
+        </ul>
+      </div>
+      <div class="anatomy-card">
+        <div class="anatomy-card-icon">🤖</div>
+        <div class="anatomy-card-title">Agents autonomes</div>
+        <ul class="anatomy-card-items">
+          <li>web_collector.py — crawl données</li>
+          <li>quality_scorer.py — scoring LLM</li>
+          <li>watchdog.py — monitoring 60s</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- ════════════════════════════════════════════════════
+       CAS D'USAGE 1 — JURIDIQUE
+       ════════════════════════════════════════════════════ -->
+  <section id="cas-juridique">
+    <div class="case-header case-header-legal">
+      <div class="case-title">Cas d'usage #1 — Cabinet Juridique Confidentiel</div>
+      <div class="case-subtitle">
+        Un grand cabinet d'avocats traite des dossiers ultra-sensibles : préparation de défenses pénales,
+        attaques juridiques en propriété intellectuelle, questions légales sur des projets d'infrastructure
+        classifiés. Données internes non exportables. Besoin d'un assistant juridique on-premise.
+      </div>
+      <div class="case-badges">
+        <span class="badge badge-blue">Domaine : legal</span>
+        <span class="badge badge-purple">Tâches : qa · summarization · extraction</span>
+        <span class="badge badge-red">Classifié — zéro cloud</span>
+        <span class="badge badge-green">Modèle : Mistral 7B 4-bit</span>
+      </div>
+    </div>
+
+    <!-- PARCOURS UTILISATEUR -->
+    <h3>Parcours complet dans l'UI — étape par étape</h3>
+    <div class="diagram" style="margin-top:16px">
+      <div class="diagram-title">Flow E2E — de la découverte du besoin au modèle en production</div>
+      <div class="pipeline">
+        <div class="pipe-stage">
+          <div class="pipe-icon">📋</div>
+          <div class="pipe-name">Nouveau Projet</div>
+          <div class="pipe-sub">UI → /projects/new</div>
+          <div class="pipe-badge badge-blue">Étape 1</div>
+        </div>
+        <div class="pipe-stage">
+          <div class="pipe-icon">📥</div>
+          <div class="pipe-name">Ingestion</div>
+          <div class="pipe-sub">UI → /data/ingest</div>
+          <div class="pipe-badge badge-purple">Étape 2</div>
+        </div>
+        <div class="pipe-stage">
+          <div class="pipe-icon">⚗️</div>
+          <div class="pipe-name">Pipeline</div>
+          <div class="pipe-sub">extract → clean</div>
+          <div class="pipe-badge badge-yellow">Étape 3</div>
+        </div>
+        <div class="pipe-stage">
+          <div class="pipe-icon">🔍</div>
+          <div class="pipe-name">Review</div>
+          <div class="pipe-sub">UI → /data/review</div>
+          <div class="pipe-badge badge-orange">Étape 4</div>
+        </div>
+        <div class="pipe-stage">
+          <div class="pipe-icon">🏋️</div>
+          <div class="pipe-name">Fine-tuning</div>
+          <div class="pipe-sub">UI → /train</div>
+          <div class="pipe-badge badge-red">Étape 5</div>
+        </div>
+        <div class="pipe-stage">
+          <div class="pipe-icon">📊</div>
+          <div class="pipe-name">Évaluation</div>
+          <div class="pipe-sub">UI → /playground</div>
+          <div class="pipe-badge badge-green">Étape 6</div>
+        </div>
+        <div class="pipe-stage">
+          <div class="pipe-icon">📦</div>
+          <div class="pipe-name">Delivery</div>
+          <div class="pipe-sub">UI → /delivery</div>
+          <div class="pipe-badge badge-blue">Étape 7</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DÉTAIL DES ÉTAPES -->
+    <div class="steps" style="margin-top:28px">
+
+      <div class="step">
+        <div class="step-left"><div class="step-num">1</div><div class="step-line"></div></div>
+        <div class="step-body">
+          <div class="step-title">Créer le projet "cabinet-legal-confidentiel"</div>
+          <div class="step-desc">Dans l'UI, aller sur <strong>Factory → Projets → Nouveau</strong>. Remplir le formulaire :</div>
+          <div class="step-detail">
+            Nom : <code>cabinet-legal-confidentiel</code><br>
+            Domaine : <code>legal</code><br>
+            Type de tâche : <code>qa</code> (répondre à des questions légales) + plus tard <code>summarization</code><br>
+            Modèle de base : <code>Mistral 7B Instruct 4-bit</code> — compact, rapide, excellent sur le français<br>
+            <br>
+            <strong>Côté backend :</strong><br>
+            → Génère <code>config/projects/cabinet-legal-confidentiel.yaml</code><br>
+            → Crée <code>datalake/projects/cabinet-legal-confidentiel/{raw,processed,fine-tuning-ready}/</code><br>
+            → Insère dans SQLite table <code>projects</code><br>
+            → Réserve <code>lancedb/cabinet-legal-confidentiel/</code>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-left"><div class="step-num">2</div><div class="step-line"></div></div>
+        <div class="step-body">
+          <div class="step-title">Ingérer les données internes du cabinet</div>
+          <div class="step-desc">Aller sur <strong>Données → Ingestion</strong>. Uploader un ZIP contenant les documents juridiques préalablement anonymisés.</div>
+          <div class="step-detail">
+            Formats acceptés : dossiers de plaidoirie (TXT), jugements commentés (DOCX), FAQ juridiques (JSON), procédures internes (Markdown).<br>
+            <br>
+            <strong>Côté backend :</strong> <code>POST /data/ingest</code> → <code>api/routers/data.py</code><br>
+            → Extraction du ZIP dans <code>datalake/projects/.../raw/</code> (immuable dès ce moment)<br>
+            → Aucune donnée ne transite par le réseau — tout reste en local<br>
+            <br>
+            <strong>Recommandation :</strong> avant d'ingérer, préparer des paires (question, réponse) annotées manuellement.
+            C'est de l'or pour le fine-tuning supervisé. Même 200 paires de qualité > 5000 paires brutes.
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-left"><div class="step-num">3</div><div class="step-line"></div></div>
+        <div class="step-body">
+          <div class="step-title">Lancer le pipeline de préparation</div>
+          <div class="step-desc">Aller sur <strong>Données → Pipeline</strong>. Sélectionner le projet et lancer.</div>
+          <div class="step-detail">
+            Ce que fait le pipeline automatiquement :<br>
+            <strong>extract.py</strong> → extrait des paires (instruction, réponse) depuis les documents, génère le format chat Mistral <code>[INST]{question}[/INST]{réponse}</code><br>
+            <strong>clean.py</strong> → déduplique (MD5 exact + MinHash near-dup), filtre les patterns blacklistés (password, secret, api_key), score chaque paire 0-1 via le modèle local, garde seulement celles > seuil<br>
+            → Résultat dans <code>processed/</code> puis split train/valid dans <code>fine-tuning-ready/</code><br>
+            → Métriques loguées dans MLflow
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-left"><div class="step-num">4</div><div class="step-line"></div></div>
+        <div class="step-body">
+          <div class="step-title">Révision humaine des paires (optionnel mais recommandé)</div>
+          <div class="step-desc">Aller sur <strong>Données → Révision</strong>. Valider, rejeter ou corriger les paires générées automatiquement.</div>
+          <div class="step-detail">
+            Interface de révision : 3 boutons par paire — ✅ Valider · ❌ Rejeter · ✏️ Corriger<br>
+            Pour le juridique confidentiel : <strong>cette étape est critique</strong>. Un avocat doit vérifier que la réponse générée est juridiquement correcte.<br>
+            Les corrections manuelles sont sauvegardées et retournent dans le dataset.
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-left"><div class="step-num">5</div><div class="step-line"></div></div>
+        <div class="step-body">
+          <div class="step-title">Lancer le fine-tuning</div>
+          <div class="step-desc">Aller sur <strong>Entraînement → Lancer</strong>. L'estimateur VRAM aide à choisir batch_size et rank.</div>
+          <div class="step-detail">
+            Config recommandée pour Mistral 7B juridique :<br>
+            <code>iters: 800, batch_size: 8, learning_rate: 1e-4, lora_rank: 16, lora_layers: 16</code><br>
+            <br>
+            <strong>Côté backend :</strong> <code>POST /runs</code> → lance <code>python -m mlx_lm.lora</code> en subprocess Python 3.11<br>
+            → MLflow tracke chaque 100 steps (train_loss, val_loss)<br>
+            → L'adapter est sauvegardé dans <code>adapters/cabinet-legal-confidentiel/{run_id}/</code><br>
+            → SSE stream vers l'UI pour voir la loss en temps réel
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-left"><div class="step-num">6</div><div class="step-line"></div></div>
+        <div class="step-body">
+          <div class="step-title">Évaluer le modèle</div>
+          <div class="step-desc">Aller sur <strong>Test → Playground</strong>. Tester des questions réelles, comparer avec la baseline.</div>
+          <div class="step-detail">
+            Métriques calculées : ROUGE-L (similarité de texte), pass_rate (% de réponses valides), latence p50/p99<br>
+            Comparaison optionnelle vs AWS Nova Pro (baseline) — uniquement pour calibrage, jamais en prod client<br>
+            Seuils à atteindre : <code>pass_rate ≥ 0.85</code>, <code>rouge_l ≥ 0.65</code>, <code>latence ≤ 2× baseline</code>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-left"><div class="step-num">7</div><div class="step-line"></div></div>
+        <div class="step-body">
+          <div class="step-title">Déployer ou livrer le modèle</div>
+          <div class="step-desc">Aller sur <strong>Livraison</strong>. Choisir entre "Servir localement" ou "Exporter".</div>
+          <div class="step-detail">
+            Option A — <strong>Servir on-premise</strong> : <code>mlx_lm.server</code> sur port configuré → API OpenAI-compatible → le cabinet intègre dans son outil interne<br>
+            Option B — <strong>Package ZIP livrable</strong> : télécharger le modèle fusionné (base + adapter) ou l'adapter seul pour déploiement air-gap sur la machine du client<br>
+            <br>
+            <strong>Côté backend :</strong> <code>mlx_lm.fuse</code> fusionne les poids, sanity check avec prompts génériques, rollback automatique si échec
+          </div>
+        </div>
+      </div>
+
+    </div><!-- end steps -->
+
+    <!-- SCHÉMA DONNÉES -->
+    <div class="diagram" style="margin-top:32px">
+      <div class="diagram-title">Flux de données — Cas juridique (isolation totale)</div>
+      <div style="display:flex;flex-direction:column;gap:8px;align-items:center;min-width:700px">
+        <!-- Entrées -->
+        <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+          <div style="background:rgba(163,113,247,0.1);border:1px dashed rgba(163,113,247,0.3);border-radius:6px;padding:10px 16px;text-align:center;font-size:11px">
+            <div style="font-weight:600;color:var(--purple)">Dossiers de plaidoirie</div>
+            <div style="color:var(--text-muted)">format TXT/DOCX</div>
+          </div>
+          <div style="background:rgba(163,113,247,0.1);border:1px dashed rgba(163,113,247,0.3);border-radius:6px;padding:10px 16px;text-align:center;font-size:11px">
+            <div style="font-weight:600;color:var(--purple)">FAQ juridiques annotées</div>
+            <div style="color:var(--text-muted)">paires (Q, R) validées</div>
+          </div>
+          <div style="background:rgba(163,113,247,0.1);border:1px dashed rgba(163,113,247,0.3);border-radius:6px;padding:10px 16px;text-align:center;font-size:11px">
+            <div style="font-weight:600;color:var(--purple)">Procédures internes</div>
+            <div style="color:var(--text-muted)">connaissance métier</div>
+          </div>
+        </div>
+        <div style="color:var(--text-muted)">↓ ZIP upload via UI /data/ingest ↓</div>
+        <!-- Raw -->
+        <div style="background:rgba(248,81,73,0.1);border:1px solid rgba(248,81,73,0.2);border-radius:6px;padding:10px 200px;text-align:center;font-size:12px">
+          <span style="color:var(--red);font-weight:700">datalake/projects/cabinet-legal/.../raw/</span>
+          <span style="color:var(--text-muted);margin-left:12px">IMMUABLE — versionné DVC</span>
+        </div>
+        <div style="color:var(--text-muted)">↓ extract.py + clean.py ↓</div>
+        <!-- Processed -->
+        <div style="background:rgba(210,153,34,0.1);border:1px solid rgba(210,153,34,0.2);border-radius:6px;padding:10px 180px;text-align:center;font-size:12px">
+          <span style="color:var(--yellow);font-weight:700">processed/</span>
+          <span style="color:var(--text-muted);margin-left:12px">~800 paires · dédupliquées · scorées</span>
+        </div>
+        <div style="color:var(--text-muted)">↓ révision humaine ↓</div>
+        <!-- Ready -->
+        <div style="background:rgba(63,185,80,0.1);border:1px solid rgba(63,185,80,0.2);border-radius:6px;padding:10px 160px;text-align:center;font-size:12px">
+          <span style="color:var(--green);font-weight:700">fine-tuning-ready/train.jsonl + valid.jsonl</span>
+        </div>
+        <div style="color:var(--text-muted)">↓ mlx_lm.lora (Python 3.11) ↓</div>
+        <!-- Adapter -->
+        <div style="background:rgba(240,136,62,0.1);border:1px solid rgba(240,136,62,0.2);border-radius:6px;padding:10px 180px;text-align:center;font-size:12px">
+          <span style="color:var(--orange);font-weight:700">adapters/cabinet-legal/{run_id}/</span>
+          <span style="color:var(--text-muted);margin-left:12px">LoRA adapter · ~50MB</span>
+        </div>
+        <div style="color:var(--text-muted)">↓ mlx_lm.fuse ↓</div>
+        <!-- Modèle final -->
+        <div style="background:rgba(31,111,235,0.1);border:1px solid rgba(31,111,235,0.3);border-radius:6px;padding:12px 160px;text-align:center;font-size:12px">
+          <span style="color:var(--accent2);font-weight:700">models/cabinet-legal/mistral-legal-v1/</span>
+          <br><span style="color:var(--text-muted)">Modèle fusionné · Serving API :8081 · Zippable pour air-gap</span>
+        </div>
+        <!-- Isolation badge -->
+        <div style="margin-top:12px">
+          <span class="badge badge-red">🔒 Aucune donnée ne sort de la machine — zéro appel réseau en prod</span>
+        </div>
+      </div>
+    </div>
+
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- ════════════════════════════════════════════════════
+       CAS D'USAGE 2 — DÉFENSE / IMAGERIE AÉRONAUTIQUE
+       ════════════════════════════════════════════════════ -->
+  <section id="cas-defense">
+    <div class="case-header case-header-defense">
+      <div class="case-title">Cas d'usage #2 — Reconnaissance Optique sur Avions de Chasse</div>
+      <div class="case-subtitle">
+        Un programme de défense nationale a besoin d'un modèle capable d'analyser des images
+        de capteurs optiques embarqués sur Rafale et de générer des rapports techniques structurés :
+        identification d'aéronefs, anomalies de maintenance, état de piste. Données classifiées Défense.
+        Déploiement air-gap sur poste durci.
+      </div>
+      <div class="case-badges">
+        <span class="badge badge-orange">Domaine : defense</span>
+        <span class="badge badge-red">Tâches : classification · generation · extraction</span>
+        <span class="badge badge-red">SECRET — air-gap total</span>
+        <span class="badge badge-yellow">Modèle : Qwen 14B 4-bit (vision)</span>
+      </div>
+    </div>
+
+    <div class="callout callout-warn">
+      <div class="callout-icon">🛡️</div>
+      <div>
+        <strong>Contrainte Défense :</strong> les données d'entraînement (images de capteurs, annotations tactiques)
+        ne peuvent jamais quitter le réseau classifié. Le modèle est entraîné sur une machine dédiée en réseau
+        isolé, puis livré sur support chiffré. Aucune connexion internet pendant la phase d'entraînement ou de serving.
+        Le skip de l'étape "web collector" est obligatoire ici — les sources sont exclusivement internes.
+      </div>
+    </div>
+
+    <!-- PARCOURS -->
+    <h3 style="margin-top:24px">Parcours E2E — ce cas est structurellement identique mais avec des contraintes renforcées</h3>
+
+    <div class="diagram" style="margin-top:16px">
+      <div class="diagram-title">Pipeline défense — imagerie optique Rafale</div>
+      <div class="pipeline">
+        <div class="pipe-stage">
+          <div class="pipe-icon">🛩️</div>
+          <div class="pipe-name">Sources</div>
+          <div class="pipe-sub">Capteurs internes uniquement</div>
+          <div class="pipe-badge badge-red">Air-gap</div>
+        </div>
+        <div class="pipe-stage">
+          <div class="pipe-icon">🗃️</div>
+          <div class="pipe-name">Ingestion</div>
+          <div class="pipe-sub">Support chiffré → ingest</div>
+          <div class="pipe-badge badge-orange">Étape 2</div>
+        </div>
+        <div class="pipe-stage">
+          <div class="pipe-icon">🏷️</div>
+          <div class="pipe-name">Annotation</div>
+          <div class="pipe-sub">Experts militaires</div>
+          <div class="pipe-badge badge-yellow">Critique</div>
+        </div>
+        <div class="pipe-stage">
+          <div class="pipe-icon">🧹</div>
+          <div class="pipe-name">Pipeline</div>
+          <div class="pipe-sub">extract → clean</div>
+          <div class="pipe-badge badge-blue">Étape 4</div>
+        </div>
+        <div class="pipe-stage">
+          <div class="pipe-icon">🏋️</div>
+          <div class="pipe-name">Fine-tuning</div>
+          <div class="pipe-sub">Qwen 14B 4-bit</div>
+          <div class="pipe-badge badge-purple">Étape 5</div>
+        </div>
+        <div class="pipe-stage">
+          <div class="pipe-icon">🎯</div>
+          <div class="pipe-name">Eval tactique</div>
+          <div class="pipe-sub">F1 classification</div>
+          <div class="pipe-badge badge-green">Étape 6</div>
+        </div>
+        <div class="pipe-stage">
+          <div class="pipe-icon">🔐</div>
+          <div class="pipe-name">Livraison chiffrée</div>
+          <div class="pipe-sub">ZIP → support</div>
+          <div class="pipe-badge badge-red">Étape 7</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DIFFÉRENCES CLÉS -->
+    <h3 style="margin-top:28px">Différences clés vs le cas juridique</h3>
+    <table style="margin-top:12px">
+      <thead>
+        <tr>
+          <th>Dimension</th>
+          <th>Cas Juridique</th>
+          <th>Cas Défense</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Type de données</td>
+          <td>Texte (dossiers, FAQ, procédures)</td>
+          <td>Images capteurs + descriptions texte structurées</td>
+        </tr>
+        <tr>
+          <td>Modèle cible</td>
+          <td>Mistral 7B 4-bit — ~4GB VRAM</td>
+          <td>Qwen 14B 4-bit — ~8GB VRAM (vision + texte)</td>
+        </tr>
+        <tr>
+          <td>Collecte auto (web)</td>
+          <td>Possible sur sources publiques anonymisées</td>
+          <td>Interdite — 100% sources internes classifiées</td>
+        </tr>
+        <tr>
+          <td>Annotation</td>
+          <td>Avocats internes (révision UI)</td>
+          <td>Experts militaires habilités (accès physique)</td>
+        </tr>
+        <tr>
+          <td>Métriques d'éval</td>
+          <td>ROUGE-L + pass_rate</td>
+          <td>F1 classification + précision identification + taux fausse alarme</td>
+        </tr>
+        <tr>
+          <td>Baseline comparaison</td>
+          <td>AWS Nova Pro (hors prod)</td>
+          <td>Aucune baseline cloud — baseline interne uniquement</td>
+        </tr>
+        <tr>
+          <td>Delivery</td>
+          <td>API serving on-premise ou ZIP</td>
+          <td>ZIP chiffré sur support physique, déploiement air-gap</td>
+        </tr>
+        <tr>
+          <td>Isolation</td>
+          <td>Logique (datalake dédié)</td>
+          <td>Physique recommandée — instance FastAPI dédiée ou machine séparée</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- SCHÉMA BACKEND DÉFENSE -->
+    <div class="diagram" style="margin-top:28px">
+      <div class="diagram-title">Architecture backend renforcée — scénario Défense</div>
+      <div style="display:grid;grid-template-columns:1fr 2fr 1fr;gap:16px;min-width:700px">
+        <!-- Gauche -->
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div style="background:var(--surface2);border:1px solid rgba(240,136,62,0.3);border-radius:6px;padding:12px;font-size:11px">
+            <div style="font-weight:600;color:var(--orange);margin-bottom:4px">Entrées</div>
+            <div style="color:var(--text-muted)">Images FLIR/EO<br>Annotées par experts<br>Via support chiffré</div>
+          </div>
+          <div style="background:var(--surface2);border:1px solid rgba(248,81,73,0.3);border-radius:6px;padding:12px;font-size:11px">
+            <div style="font-weight:600;color:var(--red);margin-bottom:4px">Réseau</div>
+            <div style="color:var(--text-muted)">Zéro accès internet<br>Ollama offline<br>Embeddings locaux</div>
+          </div>
+        </div>
+        <!-- Centre -->
+        <div style="background:var(--surface);border:1px solid rgba(240,136,62,0.3);border-radius:8px;padding:16px">
+          <div style="font-size:12px;font-weight:700;color:var(--orange);margin-bottom:12px;text-align:center">MLOps Factory — Mode Défense</div>
+          <div style="display:flex;flex-direction:column;gap:6px;font-size:11px;color:var(--text-dim)">
+            <div style="padding:6px 10px;background:var(--surface2);border-radius:4px">① <code>POST /data/ingest</code> → raw/ immuable</div>
+            <div style="padding:6px 10px;background:var(--surface2);border-radius:4px">② <code>POST /data/pipeline</code> → extract + clean</div>
+            <div style="padding:6px 10px;background:var(--surface2);border-radius:4px">③ <code>GET /data/review</code> → validation expert</div>
+            <div style="padding:6px 10px;background:var(--surface2);border-radius:4px">④ <code>POST /runs</code> → mlx_lm.lora Qwen 14B</div>
+            <div style="padding:6px 10px;background:var(--surface2);border-radius:4px">⑤ <code>POST /runs/{id}/evaluate</code> → F1 + pass_rate</div>
+            <div style="padding:6px 10px;background:var(--surface2);border-radius:4px">⑥ <code>GET /models/{id}/download/fused</code> → ZIP chiffré</div>
+          </div>
+        </div>
+        <!-- Droite -->
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div style="background:var(--surface2);border:1px solid rgba(63,185,80,0.3);border-radius:6px;padding:12px;font-size:11px">
+            <div style="font-weight:600;color:var(--green);margin-bottom:4px">Sortie</div>
+            <div style="color:var(--text-muted)">Modèle fusionné<br>~8GB (Qwen 14B 4-bit)<br>API :8082 air-gap</div>
+          </div>
+          <div style="background:var(--surface2);border:1px solid rgba(57,211,83,0.2);border-radius:6px;padding:12px;font-size:11px">
+            <div style="font-weight:600;color:var(--cyan);margin-bottom:4px">Audit trail</div>
+            <div style="color:var(--text-muted)">SQLite local<br>MLflow local<br>Logs par run_id</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- STEPS DÉFENSE -->
+    <div class="steps" style="margin-top:28px">
+      <div class="step">
+        <div class="step-left"><div class="step-num">1</div><div class="step-line"></div></div>
+        <div class="step-body">
+          <div class="step-title">Projet "rafale-vision-optique"</div>
+          <div class="step-desc">Domaine : <code>defense</code> · Tâche : <code>classification</code> + <code>generation</code> · Modèle : <code>Qwen 14B 4-bit</code></div>
+          <div class="step-detail">
+            Le YAML généré active : blacklist élargie (coordonnées GPS, identifiants tactiques), seuils plus stricts (<code>min_pass_rate: 0.92</code>), aucune référence à une baseline cloud.
+          </div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-left"><div class="step-num">2</div><div class="step-line"></div></div>
+        <div class="step-body">
+          <div class="step-title">Ingestion depuis support physique chiffré</div>
+          <div class="step-desc">Les images annotées (format décrit : image + JSON de description structurée) sont copiées via l'UI d'ingestion depuis une clé chiffrée.</div>
+          <div class="step-detail">
+            Structure d'une paire d'entraînement :<br>
+            <code>prompt</code> : "Analyser l'image capteur EO suivante et identifier l'aéronef"<br>
+            <code>completion</code> : "Identification : Sukhoi Su-35 · Confiance : 0.87 · Anomalie : train d'atterrissage gauche · Recommandation : inspection 72h"<br>
+            Méta : source_sensor, altitude, timestamp_utc, classification_level
+          </div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-left"><div class="step-num">3</div><div class="step-line"></div></div>
+        <div class="step-body">
+          <div class="step-title">Annotation obligatoire par expert habilité</div>
+          <div class="step-desc">L'interface de révision est utilisée non pas pour corriger mais pour <em>valider</em> chaque paire. Aucune paire non validée ne passe en fine-tuning-ready.</div>
+          <div class="step-detail">
+            Recommandation architecture : pour ce niveau de criticité, envisager un double workflow de validation (deux experts indépendants valident chaque paire) — ce qui impliquerait une évolution de l'UI review.
+          </div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-left"><div class="step-num">4</div><div class="step-line"></div></div>
+        <div class="step-body">
+          <div class="step-title">Fine-tuning Qwen 14B — config M4 Pro</div>
+          <div class="step-desc">Config recommandée : <code>batch_size: 4, rank: 16, lora_layers: 20, iters: 1200, lr: 5e-5</code></div>
+          <div class="step-detail">
+            Le <code>train.py</code> détecte la RAM disponible (48GB) et ajuste automatiquement.<br>
+            Durée estimée : ~3h pour 1200 iters sur Qwen 14B 4-bit sur M4 Pro.<br>
+            L'adapter résultant est ~120MB pour le modèle 14B.
+          </div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-left"><div class="step-num">5</div><div class="step-line"></div></div>
+        <div class="step-body">
+          <div class="step-title">Évaluation tactique — métriques personnalisées</div>
+          <div class="step-desc">Le playground permet de tester des cas réels. Pour la défense, on ajoute un critère : taux de fausse alarme (FPR) doit rester &lt; 2%.</div>
+          <div class="step-detail">
+            Métriques standards : ROUGE-L, pass_rate<br>
+            Métriques domaine-spécifiques à ajouter dans <code>pipeline/utils/metrics.py</code> : F1 classification, FPR, recall sur anomalies critiques<br>
+            — c'est un point d'extension clair de la plateforme actuelle
+          </div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-left"><div class="step-num">6</div><div class="step-line"></div></div>
+        <div class="step-body">
+          <div class="step-title">Livraison chiffrée sur support physique</div>
+          <div class="step-desc">Le ZIP téléchargé depuis <code>/delivery/{id}/download/fused</code> est chiffré avec la clé du client avant transfert sur support physique.</div>
+          <div class="step-detail">
+            Sur le poste durci cible : extraction + lancement de <code>mlx_lm.server</code> — aucune dépendance externe.<br>
+            L'API est exposée uniquement sur <code>127.0.0.1:8082</code> — jamais sur le réseau.
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- ════════════════════════════════════════════════════
+       SECTION 4 — RECOMMANDATIONS & POINTS OUVERTS
+       ════════════════════════════════════════════════════ -->
+  <section>
+    <h2><span class="icon">🔭</span> Recommandations & Points ouverts — ma lecture critique</h2>
+
+    <div class="card-grid card-grid-2" style="gap:16px">
+
+      <div class="card">
+        <h3 style="color:var(--yellow)">⚠️ Isolation physique par projet — à discuter</h3>
+        <p>Aujourd'hui, l'isolation est <em>logique</em> : des répertoires séparés et des configs YAML distinctes,
+        mais tout tourne dans le même processus FastAPI et la même DB SQLite.
+        Pour des projets Defense et Juridique <em>simultanés</em> sur la même machine, c'est un risque d'audit :
+        un bug dans le router <code>data.py</code> pourrait théoriquement accéder au mauvais projet.</p>
+        <p><strong>Option :</strong> une instance FastAPI par projet sensible, chacune sur son port.
+        Ou namespace SQLite séparé. Trade-off : complexité opérationnelle vs garantie d'isolation.</p>
+      </div>
+
+      <div class="card">
+        <h3 style="color:var(--orange)">🧪 Métriques domaine-spécifiques manquantes</h3>
+        <p>Le fichier <code>pipeline/utils/metrics.py</code> couvre ROUGE-L et CodeBLEU.
+        Pour le juridique, il manque : BLEU légal, cohérence sémantique des arguments, détection de contradiction.
+        Pour la défense : F1 classification, FPR, recall sur classes critiques.</p>
+        <p><strong>Recommandation :</strong> créer un fichier <code>metrics_{domaine}.py</code> par domaine,
+        chargé dynamiquement depuis le YAML du projet. Le skill <code>/eval-model</code> doit être étendu.</p>
+      </div>
+
+      <div class="card">
+        <h3 style="color:var(--accent2)">💾 Capitalisation — skills &amp; scripts comme actifs</h3>
+        <p>Chaque script fonctionnel est de la donnée réutilisable. Les skills CC (<code>/train-lora</code>, <code>/eval-model</code>, etc.)
+        sont des actifs à versionner au même titre que les adapters.
+        Actuellement, les skills ne sont pas dans le suivi DVC — ils sont dans <code>.claude/</code> uniquement.</p>
+        <p><strong>Recommandation :</strong> versionner les skills dans <code>config/skills/</code> ou <code>skills/</code>
+        dans le repo git. Un skill parfaitement fonctionnel est aussi précieux qu'un adapter de qualité.</p>
+      </div>
+
+      <div class="card">
+        <h3 style="color:var(--green)">✅ Multi-LoRA — brique à anticiper</h3>
+        <p>La roadmap Phase 2 prévoit multi-LoRA. C'est la clé pour faire coexister "cabinet-legal" et "rafale-vision"
+        sur la même machine sans doubler la consommation RAM :
+        un seul Mistral 7B en mémoire, deux adapters swappés selon le projet appelant.</p>
+        <p><strong>Prérequis :</strong> le registre <code>adapters.py</code> existe déjà.
+        Il faut ajouter la logique de routing dans <code>playground.py</code> et le serving multi-adapter dans le <code>models.py</code>.</p>
+      </div>
+
+      <div class="card">
+        <h3 style="color:var(--purple)">🔁 Boucle de ré-entraînement — feedback loop</h3>
+        <p>Aujourd'hui, un utilisateur qui corrige une réponse du modèle en production ne réinjecte pas
+        automatiquement cette correction dans le dataset. C'est de la valeur perdue.</p>
+        <p><strong>Recommandation :</strong> ajouter un endpoint "feedback en production" qui enregistre
+        les corrections dans <code>datalake/projects/{id}/feedback/</code> et les intègre au prochain cycle de nettoyage.
+        C'est la boucle vertueuse de l'amélioration continue.</p>
+      </div>
+
+      <div class="card">
+        <h3 style="color:var(--cyan)">📊 Dashboard temps réel — observable mais pas encore live</h3>
+        <p>Le frontend existe avec les composants <code>LossChart</code>, <code>MetricCard</code>, <code>ProgressRing</code>.
+        Le SSE est câblé pour les jobs longs.
+        Mais le dashboard principal agrège depuis SQLite par polling — pas en temps réel.</p>
+        <p><strong>Recommandation :</strong> pousser les événements clés (run terminé, eval passée, modèle déployé)
+        via SSE au dashboard. Cela donnerait une vraie expérience "control tower" sans infrastructure supplémentaire.</p>
+      </div>
+
+    </div>
+
+    <!-- ROADMAP VISUELLE -->
+    <h3 style="margin-top:32px">Roadmap — où on va</h3>
+    <div class="diagram" style="margin-top:12px">
+      <div class="diagram-title">Phases de développement</div>
+      <div style="display:flex;gap:0;min-width:800px">
+        <div style="flex:1;background:rgba(63,185,80,0.08);border:1px solid rgba(63,185,80,0.2);border-radius:8px 0 0 8px;padding:16px">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--green);margin-bottom:10px">Phase 1 — DONE</div>
+          <div style="font-size:11px;color:var(--text-dim);line-height:1.8">
+            ✅ Backend FastAPI (12 routers)<br>
+            ✅ Frontend SvelteKit (17 pages)<br>
+            ✅ Pipeline extract/clean/train<br>
+            ✅ MLflow + SQLite<br>
+            ✅ LanceDB RAG dev<br>
+            ✅ 11 skills CC<br>
+            ✅ Delivery & packaging
+          </div>
+        </div>
+        <div style="flex:1;background:rgba(210,153,34,0.08);border:1px solid rgba(210,153,34,0.2);padding:16px;border-left:none;border-right:none">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--yellow);margin-bottom:10px">Phase 2 — En cours</div>
+          <div style="font-size:11px;color:var(--text-dim);line-height:1.8">
+            🔄 Qdrant (vecteurs prod)<br>
+            🔄 PostgreSQL (metadata prod)<br>
+            🔄 Multi-LoRA serving<br>
+            🔄 Métriques domaine-spécifiques<br>
+            🔄 Feedback loop production<br>
+            🔄 Isolation physique projets<br>
+            🔄 Dashboard SSE live
+          </div>
+        </div>
+        <div style="flex:1;background:rgba(163,113,247,0.08);border:1px solid rgba(163,113,247,0.2);border-radius:0 8px 8px 0;padding:16px">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--purple);margin-bottom:10px">Phase 3 — Roadmap</div>
+          <div style="font-size:11px;color:var(--text-dim);line-height:1.8">
+            ⬡ MinIO (DVC remote)<br>
+            ⬡ CI/CD auto-retrain<br>
+            ⬡ Multi-machine serving<br>
+            ⬡ Interface client (portail)<br>
+            ⬡ Audit trail cryptographique<br>
+            ⬡ Double validation defense<br>
+            ⬡ Versioning skills & configs
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- ════════════════════════════════════════════════════
+       SECTION 5 — COHÉRENCE GLOBALE
+       ════════════════════════════════════════════════════ -->
+  <section>
+    <h2><span class="icon">🔍</span> Vérification de cohérence — est-ce que tout tient ?</h2>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Question de cohérence</th>
+          <th>Réponse</th>
+          <th>Statut</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Un projet crée-t-il bien son espace datalake dédié ?</td>
+          <td>Oui — <code>projects.py</code> + <code>config.py</code> créent les répertoires</td>
+          <td><span class="badge badge-green">OK</span></td>
+        </tr>
+        <tr>
+          <td>Les adapters sont-ils bien isolés par projet ?</td>
+          <td>Oui — <code>adapters/{project_id}/{run_id}/</code></td>
+          <td><span class="badge badge-green">OK</span></td>
+        </tr>
+        <tr>
+          <td>Le datalake raw est-il vraiment immuable ?</td>
+          <td>Convention + DVC. Pas de lock technique côté OS. À renforcer.</td>
+          <td><span class="badge badge-yellow">Partiel</span></td>
+        </tr>
+        <tr>
+          <td>Chaque run est-il tracé dans MLflow ET SQLite ?</td>
+          <td>Oui — double traçabilité dans <code>runs.py</code> + <code>train.py</code></td>
+          <td><span class="badge badge-green">OK</span></td>
+        </tr>
+        <tr>
+          <td>Peut-on déployer sans connexion internet ?</td>
+          <td>Oui si le modèle de base est déjà téléchargé. Embeddings via Ollama local.</td>
+          <td><span class="badge badge-green">OK</span></td>
+        </tr>
+        <tr>
+          <td>Les métriques d'éval couvrent-ils tous les domaines ?</td>
+          <td>ROUGE-L + CodeBLEU uniquement. Legal/Defense nécessitent des métriques métier.</td>
+          <td><span class="badge badge-yellow">À étendre</span></td>
+        </tr>
+        <tr>
+          <td>Le format JSONL est-il vérifié avant training ?</td>
+          <td>Via <code>utils/jsonl.py</code> + vérification tokens spéciaux dans config. Règle CLAUDE.md.</td>
+          <td><span class="badge badge-green">OK</span></td>
+        </tr>
+        <tr>
+          <td>Un modèle peut-il être déployé sans passer l'éval ?</td>
+          <td>Techniquement oui via API directe. La gate est dans <code>deploy.py</code> (sanity check) mais contournable.</td>
+          <td><span class="badge badge-yellow">À renforcer</span></td>
+        </tr>
+        <tr>
+          <td>Multi-LoRA est-il possible aujourd'hui ?</td>
+          <td>Partiellement — le registre d'adapters existe, le serving multi-adapter n'est pas encore implémenté.</td>
+          <td><span class="badge badge-yellow">Phase 2</span></td>
+        </tr>
+        <tr>
+          <td>Les skills CC sont-ils versionnés comme actifs ?</td>
+          <td>Non — uniquement dans <code>.claude/</code>. À migrer dans le repo.</td>
+          <td><span class="badge badge-red">À faire</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+  </section>
+
+</div><!-- end container -->
+
+<footer>
+  MLOps Factory · Capgemini · Document interne — <strong>ne pas distribuer</strong> ·
+  Généré le 28 avril 2026 · Architecture : souveraineté locale, Green IT, zéro cloud en production
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,1643 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MLOps — Architecture des données & RAG</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface2: #1c2128;
+      --border: #30363d;
+      --accent: #1f6feb;
+      --accent2: #388bfd;
+      --green: #3fb950;
+      --yellow: #d29922;
+      --red: #f85149;
+      --purple: #a371f7;
+      --orange: #f0883e;
+      --cyan: #58a6ff;
+      --teal: #2ea043;
+      --pink: #f778ba;
+      --text: #e6edf3;
+      --text-dim: #8b949e;
+      --text-muted: #484f58;
+      --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --mono: 'SF Mono', 'Fira Code', monospace;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      line-height: 1.6;
+      font-size: 15px;
+    }
+
+    /* ── Navigation ───────────────────────────────────────────── */
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(13,17,23,0.95);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 32px;
+      padding: 0 40px; height: 52px;
+    }
+    nav .brand { font-weight: 700; font-size: 14px; color: var(--cyan); letter-spacing: .04em; }
+    nav a { color: var(--text-dim); text-decoration: none; font-size: 13px; transition: color .15s; }
+    nav a:hover { color: var(--text); }
+    nav { flex-wrap: wrap; height: auto; min-height: 52px; padding: 8px 40px; row-gap: 4px; }
+
+    /* ── Hero ─────────────────────────────────────────────────── */
+    .hero {
+      padding: 72px 40px 56px;
+      max-width: 900px; margin: 0 auto;
+      text-align: center;
+    }
+    .hero .tag {
+      display: inline-block;
+      background: rgba(31,111,235,.15);
+      color: var(--accent2);
+      border: 1px solid rgba(31,111,235,.3);
+      border-radius: 20px;
+      padding: 4px 14px; font-size: 12px;
+      letter-spacing: .06em; text-transform: uppercase;
+      margin-bottom: 20px;
+    }
+    .hero h1 { font-size: 42px; font-weight: 700; line-height: 1.2; margin-bottom: 16px; }
+    .hero h1 span { color: var(--cyan); }
+    .hero p { color: var(--text-dim); font-size: 17px; max-width: 620px; margin: 0 auto; }
+
+    /* ── Section layout ──────────────────────────────────────── */
+    .section {
+      max-width: 960px; margin: 0 auto;
+      padding: 48px 40px;
+    }
+    .section + .section { border-top: 1px solid var(--border); }
+    .section-label {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 11px; font-weight: 700;
+      letter-spacing: .1em; text-transform: uppercase;
+      color: var(--text-dim); margin-bottom: 12px;
+    }
+    .section-label .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+    }
+    h2 { font-size: 28px; font-weight: 700; margin-bottom: 10px; }
+    h3 { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+    p { color: var(--text-dim); margin-bottom: 12px; }
+    p strong { color: var(--text); }
+
+    /* ── Source types grid ───────────────────────────────────── */
+    .source-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 12px; margin-top: 28px;
+    }
+    .source-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      text-align: center;
+      transition: border-color .2s;
+    }
+    .source-card:hover { border-color: var(--accent); }
+    .source-card .sc-icon { font-size: 28px; display: block; margin-bottom: 8px; }
+    .source-card .sc-type { font-weight: 700; font-size: 13px; color: var(--text); margin-bottom: 4px; }
+    .source-card .sc-example { font-size: 11px; color: var(--text-dim); }
+    .source-card .sc-steps {
+      margin-top: 10px; padding-top: 10px;
+      border-top: 1px solid var(--border);
+      font-size: 11px; color: var(--text-muted);
+      text-align: left; line-height: 1.7;
+    }
+    .source-card .sc-steps span { color: var(--accent2); font-weight: 600; }
+
+    /* ── Funnel ──────────────────────────────────────────────── */
+    .funnel {
+      margin-top: 32px;
+      display: flex; flex-direction: column; align-items: center; gap: 0;
+    }
+    .funnel-level {
+      width: 100%; max-width: 700px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 20px;
+      display: flex; align-items: center; gap: 14px;
+    }
+    .funnel-level + .funnel-level { margin-top: 4px; }
+    .funnel-arrow-down {
+      font-size: 20px; color: var(--text-muted);
+      text-align: center; padding: 2px 0;
+    }
+    .funnel-level .fl-icon { font-size: 20px; flex-shrink: 0; }
+    .funnel-level .fl-body { flex: 1; }
+    .funnel-level .fl-title { font-weight: 700; font-size: 14px; margin-bottom: 2px; }
+    .funnel-level .fl-desc { font-size: 12.5px; color: var(--text-dim); }
+    .funnel-level .fl-badge {
+      font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 20px;
+      flex-shrink: 0;
+    }
+
+    /* ── Two-col comparison ──────────────────────────────────── */
+    .two-col {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 20px; margin-top: 28px;
+    }
+    @media (max-width: 600px) { .two-col { grid-template-columns: 1fr; } }
+    .tcol {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 22px;
+    }
+    .tcol .tc-header {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 14px; padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .tcol .tc-icon { font-size: 24px; }
+    .tcol .tc-title { font-weight: 700; font-size: 16px; }
+    .tcol .tc-sub { font-size: 12px; color: var(--text-dim); }
+    .tcol ul { list-style: none; padding: 0; }
+    .tcol ul li {
+      display: flex; gap: 10px; align-items: flex-start;
+      padding: 7px 0; border-bottom: 1px solid rgba(48,54,61,.5);
+      font-size: 13.5px;
+    }
+    .tcol ul li:last-child { border-bottom: none; }
+    .tcol ul li .li-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      flex-shrink: 0; margin-top: 7px;
+    }
+    .tcol ul li .li-text { color: var(--text-dim); }
+    .tcol ul li .li-text strong { color: var(--text); }
+
+    /* ── Venn-style overlap diagram ──────────────────────────── */
+    .overlap-diagram {
+      margin: 28px auto 0; max-width: 680px;
+      position: relative;
+    }
+    .overlap-row {
+      display: grid; grid-template-columns: 1fr auto 1fr;
+      gap: 16px; align-items: center;
+    }
+    .overlap-box {
+      border-radius: 12px; padding: 18px;
+      border: 2px solid;
+    }
+    .overlap-box.ob-train { border-color: var(--orange); background: rgba(240,136,62,.07); }
+    .overlap-box.ob-rag   { border-color: var(--purple); background: rgba(163,113,247,.07); }
+    .overlap-center {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 6px; flex-shrink: 0;
+    }
+    .overlap-center .oc-label {
+      font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .06em; color: var(--text-dim);
+    }
+    .overlap-center .oc-icon { font-size: 24px; }
+    .overlap-box .ob-title { font-weight: 700; font-size: 15px; margin-bottom: 8px; }
+    .overlap-box.ob-train .ob-title { color: var(--orange); }
+    .overlap-box.ob-rag   .ob-title { color: var(--purple); }
+    .overlap-box ul { list-style: none; padding: 0; }
+    .overlap-box ul li { font-size: 13px; color: var(--text-dim); padding: 3px 0; }
+    .overlap-box ul li::before { content: "• "; color: var(--text-muted); }
+    .overlap-shared {
+      margin-top: 14px;
+      background: var(--surface2);
+      border: 1px dashed var(--border);
+      border-radius: 10px; padding: 14px 18px;
+      text-align: center;
+    }
+    .overlap-shared .os-title { font-size: 12px; font-weight: 700; color: var(--text-dim); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .06em; }
+    .overlap-shared p { font-size: 13px; color: var(--text-dim); margin: 0; }
+
+    /* ── LanceDB hybrid search ───────────────────────────────── */
+    .hybrid-grid {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 16px; margin-top: 24px;
+    }
+    @media (max-width: 600px) { .hybrid-grid { grid-template-columns: 1fr; } }
+    .hybrid-card {
+      border-radius: 12px; padding: 20px;
+      border: 2px solid;
+    }
+    .hybrid-card.hc-vec { border-color: var(--purple); background: rgba(163,113,247,.07); }
+    .hybrid-card.hc-kw  { border-color: var(--cyan);   background: rgba(88,166,255,.07); }
+    .hybrid-card .hc-header {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 12px;
+    }
+    .hybrid-card .hc-icon { font-size: 22px; }
+    .hybrid-card .hc-title { font-weight: 700; font-size: 15px; }
+    .hybrid-card.hc-vec .hc-title { color: var(--purple); }
+    .hybrid-card.hc-kw  .hc-title { color: var(--cyan); }
+    .hybrid-card p { font-size: 13px; color: var(--text-dim); margin-bottom: 10px; }
+    .hybrid-card .hc-example {
+      background: var(--surface2); border-radius: 8px;
+      padding: 10px 12px; font-family: var(--mono); font-size: 11.5px;
+      color: var(--text-dim); margin-top: 10px;
+    }
+    .hybrid-card .hc-example span { color: var(--text); }
+    .hybrid-result {
+      margin-top: 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px; padding: 16px 20px;
+      display: flex; gap: 14px; align-items: flex-start;
+    }
+    .hybrid-result .hr-icon { font-size: 22px; flex-shrink: 0; }
+    .hybrid-result p { font-size: 13.5px; color: var(--text-dim); margin: 0; }
+
+    /* ── Definition cards ────────────────────────────────────── */
+    .def-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px; margin-top: 28px;
+    }
+    .def-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 22px 24px;
+      position: relative; overflow: hidden;
+      transition: border-color .2s;
+    }
+    .def-card:hover { border-color: var(--accent); }
+    .def-card::before {
+      content: ''; position: absolute;
+      top: 0; left: 0; right: 0; height: 3px;
+    }
+    .def-card.c-yaml::before { background: var(--yellow); }
+    .def-card.c-sqlite::before { background: var(--cyan); }
+    .def-card.c-lance::before { background: var(--purple); }
+    .def-card.c-lake::before { background: var(--green); }
+
+    .def-card .icon {
+      font-size: 28px; margin-bottom: 12px;
+      display: block;
+    }
+    .def-card h3 { margin-bottom: 6px; }
+    .def-card .subtitle {
+      font-size: 12px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: .08em;
+      margin-bottom: 10px;
+    }
+    .def-card.c-yaml .subtitle { color: var(--yellow); }
+    .def-card.c-sqlite .subtitle { color: var(--cyan); }
+    .def-card.c-lance .subtitle { color: var(--purple); }
+    .def-card.c-lake .subtitle { color: var(--green); }
+    .def-card p { font-size: 13.5px; margin: 0; }
+    .def-card .question {
+      margin-top: 14px; padding: 10px 12px;
+      background: var(--surface2);
+      border-radius: 8px;
+      border-left: 3px solid;
+      font-size: 13px; color: var(--text); font-style: italic;
+    }
+    .def-card.c-yaml .question { border-color: var(--yellow); }
+    .def-card.c-sqlite .question { border-color: var(--cyan); }
+    .def-card.c-lance .question { border-color: var(--purple); }
+    .def-card.c-lake .question { border-color: var(--green); }
+
+    /* ── Analogy box ─────────────────────────────────────────── */
+    .analogy {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px 32px;
+      margin-top: 32px;
+      display: grid; grid-template-columns: auto 1fr;
+      gap: 20px; align-items: start;
+    }
+    .analogy .emoji { font-size: 36px; }
+    .analogy h3 { color: var(--orange); margin-bottom: 6px; }
+    .analogy p { margin: 0; font-size: 14px; }
+
+    /* ── Flow diagram ─────────────────────────────────────────── */
+    .flow-container {
+      margin-top: 36px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 36px 28px;
+    }
+    .flow-title {
+      font-size: 13px; font-weight: 700;
+      letter-spacing: .08em; text-transform: uppercase;
+      color: var(--text-dim); margin-bottom: 28px;
+      text-align: center;
+    }
+    /* Row 1 : steps in a wrapping grid */
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+      gap: 12px;
+      align-items: start;
+    }
+    .flow-step {
+      display: flex; flex-direction: column; align-items: center;
+    }
+    .flow-node {
+      width: 100%;
+      padding: 14px 8px;
+      border-radius: 12px;
+      text-align: center;
+      border: 2px solid;
+    }
+    .flow-node .fn-icon { font-size: 22px; display: block; margin-bottom: 6px; }
+    .flow-node .fn-title { font-size: 12px; font-weight: 700; line-height: 1.2; }
+    .flow-node .fn-sub { font-size: 10px; margin-top: 4px; opacity: .7; }
+
+    /* Connector row between grid and outputs */
+    .flow-connectors {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+      gap: 12px;
+      margin-top: 6px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 16px;
+    }
+
+    .fn-action { background: rgba(31,111,235,.1); border-color: var(--accent2); }
+    .fn-action .fn-title { color: var(--accent2); }
+    .fn-yaml { background: rgba(210,153,34,.1); border-color: var(--yellow); }
+    .fn-yaml .fn-title { color: var(--yellow); }
+    .fn-sqlite { background: rgba(88,166,255,.1); border-color: var(--cyan); }
+    .fn-sqlite .fn-title { color: var(--cyan); }
+    .fn-lake { background: rgba(63,185,80,.1); border-color: var(--green); }
+    .fn-lake .fn-title { color: var(--green); }
+    .fn-lance { background: rgba(163,113,247,.1); border-color: var(--purple); }
+    .fn-lance .fn-title { color: var(--purple); }
+    .fn-train { background: rgba(240,136,62,.1); border-color: var(--orange); }
+    .fn-train .fn-title { color: var(--orange); }
+
+    /* Kept for unused .flow-arrow references — hidden */
+    .flow-arrow { display: none; }
+
+    .flow-outputs {
+      display: flex; flex-direction: column;
+      gap: 6px; margin-top: 8px;
+      width: 100%;
+      align-items: center;
+    }
+    .flow-badge {
+      font-size: 10px; font-weight: 700;
+      padding: 3px 8px; border-radius: 20px;
+      letter-spacing: .04em; text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .fb-yaml { background: rgba(210,153,34,.15); color: var(--yellow); border: 1px solid rgba(210,153,34,.3); }
+    .fb-sqlite { background: rgba(88,166,255,.15); color: var(--cyan); border: 1px solid rgba(88,166,255,.3); }
+    .fb-lake { background: rgba(63,185,80,.15); color: var(--green); border: 1px solid rgba(63,185,80,.3); }
+    .fb-lance { background: rgba(163,113,247,.15); color: var(--purple); border: 1px solid rgba(163,113,247,.3); }
+    .fb-train { background: rgba(240,136,62,.15); color: var(--orange); border: 1px solid rgba(240,136,62,.3); }
+
+    /* ── Table ───────────────────────────────────────────────── */
+    .comparison-table {
+      width: 100%; border-collapse: collapse;
+      margin-top: 28px; font-size: 13.5px;
+    }
+    .comparison-table th {
+      padding: 12px 16px; text-align: left;
+      background: var(--surface2);
+      color: var(--text-dim);
+      font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+      border-bottom: 2px solid var(--border);
+    }
+    .comparison-table td {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    .comparison-table tr:last-child td { border-bottom: none; }
+    .comparison-table tr:hover td { background: rgba(255,255,255,.02); }
+    .comparison-table .system-name {
+      font-weight: 700; font-size: 14px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .dot-yaml { background: var(--yellow); }
+    .dot-sqlite { background: var(--cyan); }
+    .dot-lance { background: var(--purple); }
+    .dot-lake { background: var(--green); }
+    .color-yaml { color: var(--yellow); }
+    .color-sqlite { color: var(--cyan); }
+    .color-lance { color: var(--purple); }
+    .color-lake { color: var(--green); }
+
+    code {
+      font-family: var(--mono);
+      font-size: 12px;
+      background: var(--surface2);
+      padding: 1px 6px; border-radius: 4px;
+      color: var(--pink);
+    }
+
+    /* ── Creation flow ──────────────────────────────────────── */
+    .creation-steps {
+      margin-top: 28px;
+      display: flex; flex-direction: column; gap: 0;
+    }
+    .cstep {
+      display: flex; gap: 0; align-items: stretch;
+    }
+    .cstep-left {
+      display: flex; flex-direction: column; align-items: center;
+      width: 48px; flex-shrink: 0;
+    }
+    .cstep-num {
+      width: 36px; height: 36px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 14px; flex-shrink: 0;
+      border: 2px solid;
+    }
+    .cstep-line {
+      width: 2px; background: var(--border);
+      flex: 1; margin: 4px 0;
+      min-height: 20px;
+    }
+    .cstep:last-child .cstep-line { display: none; }
+    .cstep-content {
+      padding: 0 0 28px 20px; flex: 1;
+    }
+    .cstep-content h3 {
+      margin-bottom: 4px; font-size: 16px; margin-top: 6px;
+    }
+    .cstep-content p { font-size: 13.5px; margin-bottom: 8px; }
+
+    .cstep-n1 .cstep-num { border-color: var(--accent2); color: var(--accent2); background: rgba(31,111,235,.1); }
+    .cstep-n2 .cstep-num { border-color: var(--yellow); color: var(--yellow); background: rgba(210,153,34,.1); }
+    .cstep-n3 .cstep-num { border-color: var(--cyan); color: var(--cyan); background: rgba(88,166,255,.1); }
+    .cstep-n4 .cstep-num { border-color: var(--green); color: var(--green); background: rgba(63,185,80,.1); }
+    .cstep-n5 .cstep-num { border-color: var(--purple); color: var(--purple); background: rgba(163,113,247,.1); }
+    .cstep-n6 .cstep-num { border-color: var(--orange); color: var(--orange); background: rgba(240,136,62,.1); }
+
+    .path-block {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 6px 12px;
+      font-family: var(--mono); font-size: 12px;
+      color: var(--text-dim); margin: 4px 0;
+    }
+    .path-block .path-icon { font-size: 14px; }
+
+    /* ── RAG explainer ──────────────────────────────────────── */
+    .rag-visual {
+      margin-top: 32px;
+      display: grid; grid-template-columns: 1fr auto 1fr;
+      gap: 20px; align-items: center;
+    }
+    .rag-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+    }
+    .rag-box h3 { font-size: 14px; margin-bottom: 8px; }
+    .rag-box p { font-size: 13px; margin: 0; }
+    .rag-arrow-center {
+      display: flex; flex-direction: column;
+      align-items: center; gap: 6px;
+    }
+    .rag-arrow-center .big-arrow {
+      font-size: 32px; color: var(--purple);
+    }
+    .rag-arrow-center .label {
+      font-size: 11px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .06em;
+      color: var(--purple);
+    }
+    .rag-steps {
+      margin-top: 24px;
+      display: grid; grid-template-columns: repeat(4,1fr);
+      gap: 12px;
+    }
+    .rag-step {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      text-align: center;
+    }
+    .rag-step .rs-icon { font-size: 24px; margin-bottom: 8px; }
+    .rag-step .rs-num {
+      font-size: 10px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .08em;
+      color: var(--purple); margin-bottom: 4px;
+    }
+    .rag-step h3 { font-size: 13px; margin-bottom: 4px; }
+    .rag-step p { font-size: 12px; margin: 0; }
+
+    /* ── Callout ─────────────────────────────────────────────── */
+    .callout {
+      border-radius: 10px; padding: 18px 20px;
+      margin: 20px 0;
+      display: flex; gap: 14px; align-items: flex-start;
+    }
+    .callout.info { background: rgba(31,111,235,.1); border: 1px solid rgba(31,111,235,.3); }
+    .callout.warn { background: rgba(210,153,34,.1); border: 1px solid rgba(210,153,34,.3); }
+    .callout.tip  { background: rgba(63,185,80,.1);  border: 1px solid rgba(63,185,80,.3); }
+    .callout .ci { font-size: 20px; flex-shrink: 0; margin-top: 1px; }
+    .callout p { margin: 0; font-size: 13.5px; color: var(--text); }
+    .callout strong { color: var(--text); }
+
+    /* ── SQLite schema ──────────────────────────────────────── */
+    .schema-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(220px,1fr));
+      gap: 14px; margin-top: 24px;
+    }
+    .schema-table {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px; overflow: hidden;
+    }
+    .schema-table .st-header {
+      padding: 10px 14px;
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .schema-table .st-header .st-icon { font-size: 16px; }
+    .schema-table .st-header .st-name { font-weight: 700; font-size: 14px; }
+    .schema-table .st-header .st-desc { font-size: 11px; color: var(--text-dim); margin-left: auto; }
+    .schema-table .st-fields { padding: 10px 14px; }
+    .schema-table .st-field {
+      display: flex; align-items: center; gap: 8px;
+      padding: 5px 0;
+      border-bottom: 1px solid rgba(48,54,61,.5);
+      font-size: 12.5px;
+    }
+    .schema-table .st-field:last-child { border-bottom: none; }
+    .schema-table .st-field .sf-name { color: var(--text); font-family: var(--mono); flex: 1; }
+    .schema-table .st-field .sf-type { color: var(--text-dim); font-size: 11px; font-family: var(--mono); }
+    .schema-table .st-field .sf-tag {
+      font-size: 10px; padding: 1px 6px; border-radius: 4px; font-weight: 700;
+    }
+    .sf-pk { background: rgba(210,153,34,.2); color: var(--yellow); }
+    .sf-fk { background: rgba(88,166,255,.2); color: var(--cyan); }
+
+    /* ── Footer ──────────────────────────────────────────────── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 32px 40px;
+      text-align: center;
+      color: var(--text-muted); font-size: 13px;
+    }
+    footer span { color: var(--text-dim); }
+  </style>
+</head>
+<body>
+
+<!-- ────────────────────────── NAV ────────────────────────── -->
+<nav>
+  <span class="brand">MLOps · Capgemini</span>
+  <a href="#systems">Les 4 systèmes</a>
+  <a href="#roles">Rôles & questions</a>
+  <a href="#sources">Sources → JSONL</a>
+  <a href="#rag-vs-train">RAG ≠ Entraînement</a>
+  <a href="#creation">Création projet</a>
+  <a href="#pipeline">Pipeline complet</a>
+  <a href="#rag">LanceDB & RAG</a>
+  <a href="#schema">Schéma BDD</a>
+  <a href="#rat">RAT & Embarqué</a>
+</nav>
+
+<!-- ────────────────────────── HERO ────────────────────────── -->
+<div class="hero">
+  <div class="tag">Guide technique · Architecture données</div>
+  <h1>Où vont les données ?<br><span>4 systèmes, 1 objectif</span></h1>
+  <p>Ce document explique comment les données sont stockées, transformées et utilisées dans la plateforme MLOps — du dépôt source au modèle fine-tuné.</p>
+</div>
+
+<!-- ────────────────────────── SECTION 0 : Pourquoi plusieurs systèmes ? ── -->
+<div class="section">
+  <div class="section-label">
+    <div class="dot" style="background:var(--orange)"></div>
+    Contexte
+  </div>
+  <h2>Pourquoi plusieurs systèmes de stockage ?</h2>
+  <p>En ingénierie classique, on a tendance à tout mettre dans une seule base de données. En MLOps, ce n'est pas possible : les données d'entraînement, les configurations, les vecteurs sémantiques et les métriques de runs ont des <strong>natures fondamentalement différentes</strong>.</p>
+
+  <div class="analogy">
+    <span class="emoji">🏗️</span>
+    <div>
+      <h3>Analogie chantier</h3>
+      <p>Imagine un chantier de construction. Tu as <strong>les plans d'architecte</strong> (YAML), <strong>le journal de chantier</strong> (SQLite), <strong>la bibliothèque de matériaux de référence</strong> (LanceDB), et <strong>l'entrepôt physique de matériaux</strong> (Datalake). Chacun a son rôle précis — les confondre serait une erreur de conception.</p>
+    </div>
+  </div>
+
+  <div class="callout info" style="margin-top:20px">
+    <span class="ci">💡</span>
+    <p><strong>À retenir :</strong> Ce n'est pas de la complexité pour rien. Chaque système est optimisé pour un type de requête spécifique. LanceDB ne peut pas remplacer SQLite, et SQLite ne peut pas faire ce que fait LanceDB.</p>
+  </div>
+</div>
+
+<!-- ────────────────────────── SECTION 1 : Les 4 systèmes ── -->
+<div class="section" id="systems">
+  <div class="section-label">
+    <div class="dot" style="background:var(--cyan)"></div>
+    Vue d'ensemble
+  </div>
+  <h2>Les 4 systèmes de stockage</h2>
+  <p>La plateforme repose sur quatre systèmes complémentaires. Chacun stocke un type de données différent et répond à une question différente.</p>
+
+  <div class="def-grid">
+
+    <div class="def-card c-yaml">
+      <span class="icon">📋</span>
+      <div class="subtitle">YAML Config</div>
+      <h3>Fichier de configuration</h3>
+      <p>Texte structuré définissant les paramètres du projet : quel modèle utiliser, quels seuils de qualité appliquer, quels chemins de données utiliser.</p>
+      <div class="question">❓ "Comment ce projet est-il configuré ?"</div>
+    </div>
+
+    <div class="def-card c-sqlite">
+      <span class="icon">🗄️</span>
+      <div class="subtitle">SQLite · Base de données relationnelle</div>
+      <h3>Historique opérationnel</h3>
+      <p>Base de données classique (comme MySQL mais locale). Stocke tout ce qui change dans le temps : les runs d'entraînement, les métriques, les évaluations, les modèles déployés.</p>
+      <div class="question">❓ "Qu'est-ce qui s'est passé au fil du temps ?"</div>
+    </div>
+
+    <div class="def-card c-lance">
+      <span class="icon">🧠</span>
+      <div class="subtitle">LanceDB · Base vectorielle</div>
+      <h3>Index de similarité sémantique</h3>
+      <p>Base de données spécialisée pour la recherche par <em>sens</em> plutôt que par mot-clé. Stocke des représentations mathématiques (vecteurs) de patterns de code.</p>
+      <div class="question">❓ "Quels exemples ressemblent à cette entrée ?"</div>
+    </div>
+
+    <div class="def-card c-lake">
+      <span class="icon">📁</span>
+      <div class="subtitle">Datalake · Système de fichiers</div>
+      <h3>Entrepôt de données brutes</h3>
+      <p>Répertoires organisés contenant les fichiers JSONL de paires d'entraînement. Trois niveaux : brut, nettoyé, prêt-à-l'emploi.</p>
+      <div class="question">❓ "Où sont les fichiers de données ?"</div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ────────────────────────── SECTION 2 : Tableau comparatif ── -->
+<div class="section" id="roles">
+  <div class="section-label">
+    <div class="dot" style="background:var(--purple)"></div>
+    Comparaison détaillée
+  </div>
+  <h2>Rôles, formats et moments d'écriture</h2>
+
+  <table class="comparison-table">
+    <thead>
+      <tr>
+        <th>Système</th>
+        <th>Format</th>
+        <th>Écrit quand ?</th>
+        <th>Lu quand ?</th>
+        <th>Immuable ?</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>
+          <div class="system-name">
+            <div class="dot" style="width:10px;height:10px;border-radius:50%;background:var(--yellow)"></div>
+            <span class="color-yaml">YAML Config</span>
+          </div>
+          <div style="font-size:12px;color:var(--text-dim);margin-top:4px;font-family:var(--mono)">config/models/&lt;projet&gt;.yaml</div>
+        </td>
+        <td>Texte YAML</td>
+        <td>Création du projet<br><span style="font-size:12px;color:var(--text-dim)">+ patch si modification</span></td>
+        <td>À chaque lancement<br>du pipeline</td>
+        <td><span style="color:var(--yellow)">Quasi-immuable</span><br><span style="font-size:12px;color:var(--text-dim)">modifiable via API</span></td>
+      </tr>
+      <tr>
+        <td>
+          <div class="system-name">
+            <div class="dot" style="width:10px;height:10px;border-radius:50%;background:var(--cyan)"></div>
+            <span class="color-sqlite">SQLite</span>
+          </div>
+          <div style="font-size:12px;color:var(--text-dim);margin-top:4px;font-family:var(--mono)">experiments/mlops.db</div>
+        </td>
+        <td>Base relationnelle<br><span style="font-size:12px;color:var(--text-dim)">6 tables SQL</span></td>
+        <td>Création + chaque<br>étape du pipeline</td>
+        <td>Dashboards,<br>comparaisons</td>
+        <td><span style="color:var(--green)">Non</span><br><span style="font-size:12px;color:var(--text-dim)">append-only en pratique</span></td>
+      </tr>
+      <tr>
+        <td>
+          <div class="system-name">
+            <div class="dot" style="width:10px;height:10px;border-radius:50%;background:var(--purple)"></div>
+            <span class="color-lance">LanceDB</span>
+          </div>
+          <div style="font-size:12px;color:var(--text-dim);margin-top:4px;font-family:var(--mono)">lancedb/&lt;projet&gt;/</div>
+        </td>
+        <td>Vecteurs float32<br><span style="font-size:12px;color:var(--text-dim)">768 dimensions</span></td>
+        <td>Premier <code>build_index()</code><br><span style="font-size:12px;color:var(--text-dim)">PAS à la création projet</span></td>
+        <td>Pendant le nettoyage<br>/ enrichissement JSONL</td>
+        <td><span style="color:var(--yellow)">Stable</span><br><span style="font-size:12px;color:var(--text-dim)">rebuild explicite requis</span></td>
+      </tr>
+      <tr>
+        <td>
+          <div class="system-name">
+            <div class="dot" style="width:10px;height:10px;border-radius:50%;background:var(--green)"></div>
+            <span class="color-lake">Datalake</span>
+          </div>
+          <div style="font-size:12px;color:var(--text-dim);margin-top:4px;font-family:var(--mono)">datalake/projects/&lt;projet&gt;/</div>
+        </td>
+        <td>Fichiers JSONL<br><span style="font-size:12px;color:var(--text-dim)">+ JSON seeds</span></td>
+        <td>Ingestion (raw)<br>Nettoyage (processed)<br>Enrichissement (ft-ready)</td>
+        <td>mlx_lm.lora<br>directement</td>
+        <td><span style="color:var(--red)">raw/ = immuable</span><br><span style="font-size:12px;color:var(--text-dim)">les autres écrasables</span></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ────────────────────────── SECTION : Sources → JSONL ── -->
+<div class="section" id="sources">
+  <div class="section-label">
+    <div class="dot" style="background:var(--orange)"></div>
+    Données d'entraînement
+  </div>
+  <h2>Les sources de données sont très variées — tout finit en JSONL</h2>
+
+  <p>On parle souvent de "paires d'entraînement", mais c'est un abus de langage qui prête à confusion. La réalité : <strong>n'importe quel document peut devenir une donnée d'entraînement</strong>, à condition de le transformer correctement.</p>
+
+  <div class="callout info">
+    <span class="ci">📖</span>
+    <p><strong>Définition d'une "paire" :</strong> un objet JSON avec au minimum un champ <code>instruction</code> (ce qu'on demande au modèle) et un champ <code>output</code> (la réponse attendue). C'est le format universel que <code>mlx_lm.lora</code> comprend. Peu importe l'origine de la donnée — PDF, code, scan — tout doit arriver sous cette forme.</p>
+  </div>
+
+  <h3 style="margin-top:32px; margin-bottom:16px">Types de sources et transformations nécessaires</h3>
+
+  <div class="source-grid">
+
+    <div class="source-card">
+      <span class="sc-icon">💻</span>
+      <div class="sc-type">Code source</div>
+      <div class="sc-example">Python, Java, C++, SQL…</div>
+      <div class="sc-steps">
+        <span>→</span> Lecture directe<br>
+        <span>→</span> extract_pairs.py<br>
+        <span>→</span> JSONL immédiat
+      </div>
+    </div>
+
+    <div class="source-card">
+      <span class="sc-icon">📄</span>
+      <div class="sc-type">PDF / Word</div>
+      <div class="sc-example">Specs, manuels, contrats…</div>
+      <div class="sc-steps">
+        <span>→</span> Extraction texte<br>
+        <span>→</span> Segmentation<br>
+        <span>→</span> Génération Q/R
+      </div>
+    </div>
+
+    <div class="source-card" style="border-color: var(--red);">
+      <span class="sc-icon">🖨️</span>
+      <div class="sc-type">Scan / Image</div>
+      <div class="sc-example">Docs papier numérisés</div>
+      <div class="sc-steps">
+        <span style="color:var(--red)">→</span> <strong style="color:var(--red)">OCR requis</strong><br>
+        <span>→</span> Correction erreurs<br>
+        <span>→</span> Extraction texte
+      </div>
+    </div>
+
+    <div class="source-card">
+      <span class="sc-icon">📧</span>
+      <div class="sc-type">Emails / Tickets</div>
+      <div class="sc-example">JIRA, ServiceNow…</div>
+      <div class="sc-steps">
+        <span>→</span> Export API<br>
+        <span>→</span> Nettoyage HTML<br>
+        <span>→</span> Paires Q/R
+      </div>
+    </div>
+
+    <div class="source-card">
+      <span class="sc-icon">🌐</span>
+      <div class="sc-type">Web / Documentation</div>
+      <div class="sc-example">Stack Overflow, GitHub…</div>
+      <div class="sc-steps">
+        <span>→</span> collect-web<br>
+        <span>→</span> Filtrage qualité<br>
+        <span>→</span> Déduplication
+      </div>
+    </div>
+
+    <div class="source-card">
+      <span class="sc-icon">🗣️</span>
+      <div class="sc-type">Transcriptions</div>
+      <div class="sc-example">Réunions, entretiens…</div>
+      <div class="sc-steps">
+        <span>→</span> STT (Whisper)<br>
+        <span>→</span> Segmentation<br>
+        <span>→</span> Synthèse Q/R
+      </div>
+    </div>
+
+    <div class="source-card" style="border-color:var(--purple)">
+      <span class="sc-icon">🤖</span>
+      <div class="sc-type">Données synthétiques</div>
+      <div class="sc-example">Générées par LLM</div>
+      <div class="sc-steps">
+        <span>→</span> augment-dataset<br>
+        <span>→</span> Validation humaine<br>
+        <span>→</span> Scoring qualité
+      </div>
+    </div>
+
+    <div class="source-card">
+      <span class="sc-icon">📊</span>
+      <div class="sc-type">CSV / Bases de données</div>
+      <div class="sc-example">Données structurées</div>
+      <div class="sc-steps">
+        <span>→</span> Export / requête<br>
+        <span>→</span> Templatisation<br>
+        <span>→</span> Paires structurées
+      </div>
+    </div>
+
+  </div>
+
+  <div class="callout warn" style="margin-top:24px">
+    <span class="ci">⚠️</span>
+    <p><strong>Le cas OCR :</strong> un document scanné passe par plusieurs étapes supplémentaires avant d'arriver dans le datalake — OCR → correction des erreurs de reconnaissance → extraction du texte utile → construction de la paire instruction/output. C'est une transformation coûteuse mais inévitable pour les archives papier.</p>
+  </div>
+
+  <h3 style="margin-top:32px; margin-bottom:12px">L'entonnoir vers le JSONL final</h3>
+
+  <div class="funnel">
+    <div class="funnel-level">
+      <span class="fl-icon">🌍</span>
+      <div class="fl-body">
+        <div class="fl-title" style="color:var(--text-dim)">Sources hétérogènes</div>
+        <div class="fl-desc">Scans, PDFs, code, emails, web, données synthétiques — formats et qualités très variables</div>
+      </div>
+      <span class="fl-badge" style="background:rgba(255,255,255,.08);color:var(--text-dim);border:1px solid var(--border)">N formats</span>
+    </div>
+    <div class="funnel-arrow-down" style="width:100%;max-width:700px;text-align:center">↓</div>
+
+    <div class="funnel-level" style="border-color:var(--red)">
+      <span class="fl-icon">🔒</span>
+      <div class="fl-body">
+        <div class="fl-title" style="color:var(--red)">raw/ — Ingestion brute (IMMUABLE)</div>
+        <div class="fl-desc">Le fichier source est déposé tel quel. Aucune transformation. On ne touche plus jamais à ce dossier.</div>
+      </div>
+      <span class="fl-badge" style="background:rgba(248,81,73,.15);color:var(--red);border:1px solid rgba(248,81,73,.3)">LOCK</span>
+    </div>
+    <div class="funnel-arrow-down" style="width:100%;max-width:700px;text-align:center">↓  OCR · extraction · nettoyage · déduplication</div>
+
+    <div class="funnel-level" style="border-color:var(--yellow)">
+      <span class="fl-icon">🔧</span>
+      <div class="fl-body">
+        <div class="fl-title" style="color:var(--yellow)">processed/ — Données nettoyées</div>
+        <div class="fl-desc">Texte extrait, normalisé, filtré par longueur et blacklist. Encore au format source (pas encore des paires).</div>
+      </div>
+      <span class="fl-badge" style="background:rgba(210,153,34,.15);color:var(--yellow);border:1px solid rgba(210,153,34,.3)">clean.py</span>
+    </div>
+    <div class="funnel-arrow-down" style="width:100%;max-width:700px;text-align:center">↓  construction paires instruction/output + injection RAG context</div>
+
+    <div class="funnel-level" style="border-color:var(--green)">
+      <span class="fl-icon">✅</span>
+      <div class="fl-body">
+        <div class="fl-title" style="color:var(--green)">fine-tuning-ready/ — JSONL prêt à l'emploi</div>
+        <div class="fl-desc">Chaque ligne = un objet JSON <code>{"instruction": "…", "output": "…", "rag_context": "…"}</code>. C'est ce que lit directement <code>mlx_lm.lora</code>.</div>
+      </div>
+      <span class="fl-badge" style="background:rgba(63,185,80,.15);color:var(--green);border:1px solid rgba(63,185,80,.3)">JSONL</span>
+    </div>
+  </div>
+</div>
+
+<!-- ────────────────────────── SECTION : RAG vs Entraînement ── -->
+<div class="section" id="rag-vs-train">
+  <div class="section-label">
+    <div class="dot" style="background:var(--purple)"></div>
+    Distinction clé
+  </div>
+  <h2>RAG ≠ Données d'entraînement — deux populations distinctes</h2>
+
+  <p>C'est la confusion la plus fréquente. Les données qui alimentent le RAG et celles qui servent à entraîner le modèle <strong>ne sont pas les mêmes</strong>, même si elles peuvent parfois provenir des mêmes sources.</p>
+
+  <div class="overlap-diagram">
+    <div class="overlap-row">
+
+      <div class="overlap-box ob-train">
+        <div class="ob-title">🏋️ Données d'entraînement</div>
+        <p style="font-size:13px;color:var(--text-dim);margin-bottom:8px">Stockées dans :</p>
+        <p style="font-size:12px;font-family:var(--mono);color:var(--orange);margin-bottom:12px">datalake/…/fine-tuning-ready/</p>
+        <ul>
+          <li><span style="color:var(--orange)">•</span> <span style="font-size:13px;color:var(--text-dim)">Paires instruction/output complètes</span></li>
+          <li><span style="color:var(--orange)">•</span> <span style="font-size:13px;color:var(--text-dim)">Format JSONL ligne par ligne</span></li>
+          <li><span style="color:var(--orange)">•</span> <span style="font-size:13px;color:var(--text-dim)">Lues par <code>mlx_lm.lora</code> pendant le training</span></li>
+          <li><span style="color:var(--orange)">•</span> <span style="font-size:13px;color:var(--text-dim)">Volume : des milliers à des millions de lignes</span></li>
+          <li><span style="color:var(--orange)">•</span> <span style="font-size:13px;color:var(--text-dim)">Qualité contrôlée (scoring, filtrage)</span></li>
+        </ul>
+      </div>
+
+      <div class="overlap-center">
+        <div class="oc-icon">⚡</div>
+        <div class="oc-label">vs</div>
+      </div>
+
+      <div class="overlap-box ob-rag">
+        <div class="ob-title">🧠 Index RAG (LanceDB)</div>
+        <p style="font-size:13px;color:var(--text-dim);margin-bottom:8px">Stocké dans :</p>
+        <p style="font-size:12px;font-family:var(--mono);color:var(--purple);margin-bottom:12px">lancedb/&lt;projet&gt;/</p>
+        <ul>
+          <li><span style="color:var(--purple)">•</span> <span style="font-size:13px;color:var(--text-dim)">Fragments de référence (idiomes, patterns)</span></li>
+          <li><span style="color:var(--orange)">•</span> <span style="font-size:13px;color:var(--text-dim)">Vecteurs d'embeddings 768 dimensions</span></li>
+          <li><span style="color:var(--purple)">•</span> <span style="font-size:13px;color:var(--text-dim)">Consultés pour enrichir les paires JSONL</span></li>
+          <li><span style="color:var(--purple)">•</span> <span style="font-size:13px;color:var(--text-dim)">Volume : quelques centaines à milliers de patterns</span></li>
+          <li><span style="color:var(--purple)">•</span> <span style="font-size:13px;color:var(--text-dim)">Curatés manuellement ou semi-auto</span></li>
+        </ul>
+      </div>
+
+    </div>
+
+    <div class="overlap-shared">
+      <div class="os-title">⚠️ Ce qui peut se recouper</div>
+      <p>Un bon exemple de code Java peut servir <em>à la fois</em> comme donnée d'entraînement (paire instruction/output) ET être indexé dans le RAG comme pattern de référence. Mais ce sont deux copies distinctes dans deux systèmes séparés, avec deux rôles différents.</p>
+    </div>
+  </div>
+
+  <div class="two-col" style="margin-top:28px">
+    <div class="tcol">
+      <div class="tc-header">
+        <span class="tc-icon">🎯</span>
+        <div>
+          <div class="tc-title" style="color:var(--orange)">Données d'entraînement</div>
+          <div class="tc-sub">Ce que le modèle apprend à faire</div>
+        </div>
+      </div>
+      <ul>
+        <li><div class="li-dot" style="background:var(--orange)"></div><div class="li-text"><strong>But :</strong> modifier les poids du modèle</div></li>
+        <li><div class="li-dot" style="background:var(--orange)"></div><div class="li-text"><strong>Utilisées :</strong> uniquement pendant le fine-tuning</div></li>
+        <li><div class="li-dot" style="background:var(--orange)"></div><div class="li-text"><strong>Format :</strong> JSONL <code>instruction/output</code></div></li>
+        <li><div class="li-dot" style="background:var(--orange)"></div><div class="li-text"><strong>Volume :</strong> élevé (+ c'est mieux dans la limite du raisonnable)</div></li>
+        <li><div class="li-dot" style="background:var(--orange)"></div><div class="li-text"><strong>Après training :</strong> plus jamais consultées directement</div></li>
+      </ul>
+    </div>
+    <div class="tcol">
+      <div class="tc-header">
+        <span class="tc-icon">🔍</span>
+        <div>
+          <div class="tc-title" style="color:var(--purple)">Index RAG</div>
+          <div class="tc-sub">Ce qui contextualise la génération</div>
+        </div>
+      </div>
+      <ul>
+        <li><div class="li-dot" style="background:var(--purple)"></div><div class="li-text"><strong>But :</strong> fournir du contexte à la génération</div></li>
+        <li><div class="li-dot" style="background:var(--purple)"></div><div class="li-text"><strong>Utilisé :</strong> avant/pendant la construction du dataset</div></li>
+        <li><div class="li-dot" style="background:var(--purple)"></div><div class="li-text"><strong>Format :</strong> vecteurs + texte original</div></li>
+        <li><div class="li-dot" style="background:var(--purple)"></div><div class="li-text"><strong>Volume :</strong> faible, très curatés</div></li>
+        <li><div class="li-dot" style="background:var(--purple)"></div><div class="li-text"><strong>Après training :</strong> aussi utile à l'inférence (Phase 2)</div></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout tip" style="margin-top:24px">
+    <span class="ci">💡</span>
+    <p><strong>Analogie :</strong> les données d'entraînement sont les <em>exercices</em> que fait un étudiant. Le RAG est la <em>bibliothèque de référence</em> qu'il consulte en faisant ces exercices. Ce ne sont pas les mêmes livres, même si certains auteurs apparaissent dans les deux.</p>
+  </div>
+</div>
+
+<!-- ────────────────────────── SECTION 3 : Création projet ── -->
+<div class="section" id="creation">
+  <div class="section-label">
+    <div class="dot" style="background:var(--green)"></div>
+    Étape par étape
+  </div>
+  <h2>Ce qui se passe quand tu crées un projet</h2>
+  <p>Un seul appel API <code>POST /api/projects</code> déclenche plusieurs actions en cascade. Voici leur ordre et leur cible.</p>
+
+  <div class="creation-steps">
+
+    <div class="cstep cstep-n1">
+      <div class="cstep-left">
+        <div class="cstep-num">1</div>
+        <div class="cstep-line"></div>
+      </div>
+      <div class="cstep-content">
+        <h3 style="color:var(--accent2)">Réception de la requête API</h3>
+        <p>Le frontend envoie <code>POST /api/projects</code> avec les paramètres : nom, domaine, modèle de base, seuils qualité. L'API valide les champs (domaine supporté ? nom déjà pris ?).</p>
+        <div class="path-block"><span class="path-icon">🌐</span> FastAPI · port 8000</div>
+      </div>
+    </div>
+
+    <div class="cstep cstep-n2">
+      <div class="cstep-left">
+        <div class="cstep-num">2</div>
+        <div class="cstep-line"></div>
+      </div>
+      <div class="cstep-content">
+        <h3 style="color:var(--yellow)">Écriture du fichier YAML</h3>
+        <p>La configuration complète est sérialisée en YAML. C'est le "contrat" du projet : modèle, domaine, seuils, chemins, format de sortie attendu. Tout le pipeline en aval le lira.</p>
+        <div class="path-block"><span class="path-icon">📋</span> config/models/&lt;projet&gt;.yaml</div>
+        <div class="callout warn" style="margin-top:12px;margin-bottom:0">
+          <span class="ci">⚠️</span>
+          <p>Le champ <code>rag_index</code> est déjà défini dans le YAML (<code>lancedb/&lt;projet&gt;</code>), mais le dossier LanceDB n'est <strong>pas encore créé</strong> — c'est une référence future.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="cstep cstep-n3">
+      <div class="cstep-left">
+        <div class="cstep-num">3</div>
+        <div class="cstep-line"></div>
+      </div>
+      <div class="cstep-content">
+        <h3 style="color:var(--cyan)">Insertion en base SQLite</h3>
+        <p>Un enregistrement minimal est inséré dans la table <code>projects</code> : id, nom, description, modèle de base, timestamps. Le reste (runs, evals) sera ajouté plus tard.</p>
+        <div class="path-block"><span class="path-icon">🗄️</span> experiments/mlops.db · table projects</div>
+      </div>
+    </div>
+
+    <div class="cstep cstep-n4">
+      <div class="cstep-left">
+        <div class="cstep-num">4</div>
+        <div class="cstep-line"></div>
+      </div>
+      <div class="cstep-content">
+        <h3 style="color:var(--green)">Création de l'arborescence datalake</h3>
+        <p>Trois dossiers sont créés pour organiser les données au fil du pipeline. Ils sont vides à ce stade.</p>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
+          <div class="path-block"><span class="path-icon">🔒</span> datalake/projects/&lt;projet&gt;/raw/ <span style="color:var(--red);margin-left:8px;font-size:11px">IMMUABLE</span></div>
+          <div class="path-block"><span class="path-icon">🔧</span> datalake/projects/&lt;projet&gt;/processed/</div>
+          <div class="path-block"><span class="path-icon">✅</span> datalake/projects/&lt;projet&gt;/fine-tuning-ready/</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="cstep cstep-n5">
+      <div class="cstep-left">
+        <div class="cstep-num">5</div>
+        <div class="cstep-line"></div>
+      </div>
+      <div class="cstep-content">
+        <h3 style="color:var(--purple)">LanceDB — pas encore créé !</h3>
+        <p>L'index vectoriel n'est créé qu'à la première exécution de <code>build_index()</code> — c'est-à-dire lors du premier lancement du pipeline d'enrichissement. Il n'y a rien à vectoriser à ce stade.</p>
+        <div class="path-block"><span class="path-icon">⏳</span> lancedb/&lt;projet&gt;/ · créé plus tard</div>
+      </div>
+    </div>
+
+    <div class="cstep cstep-n6">
+      <div class="cstep-left">
+        <div class="cstep-num">6</div>
+        <div class="cstep-line"></div>
+      </div>
+      <div class="cstep-content">
+        <h3 style="color:var(--orange)">Réponse à l'utilisateur</h3>
+        <p>L'API retourne la configuration complète avec l'id généré. Le frontend affiche le projet dans la liste. Il est maintenant prêt à recevoir des données.</p>
+        <div class="callout tip" style="margin-top:12px;margin-bottom:0">
+          <span class="ci">✅</span>
+          <p>Le projet existe. Prochaine étape : <strong>déposer des fichiers dans raw/</strong> puis lancer le pipeline de nettoyage.</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ────────────────────────── SECTION 4 : Pipeline complet ── -->
+<div class="section" id="pipeline">
+  <div class="section-label">
+    <div class="dot" style="background:var(--orange)"></div>
+    Vue globale
+  </div>
+  <h2>Le pipeline complet : de la source au modèle</h2>
+  <p>Une fois le projet créé, les données traversent plusieurs étapes. Chaque étape écrit dans un système spécifique.</p>
+
+  <div class="flow-container">
+    <div class="flow-title">Flux de données complet — de la source au modèle déployé</div>
+
+    <!-- Étapes numérotées -->
+    <div class="flow">
+      <div class="flow-step">
+        <div class="flow-node fn-action">
+          <span class="fn-icon">📂</span>
+          <div class="fn-title">1. Source</div>
+          <div class="fn-sub">repo / fichiers</div>
+        </div>
+        <div class="flow-outputs">
+          <span class="flow-badge fb-lake">→ raw/</span>
+        </div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-node fn-lake">
+          <span class="fn-icon">🔧</span>
+          <div class="fn-title">2. clean.py</div>
+          <div class="fn-sub">déduplication</div>
+        </div>
+        <div class="flow-outputs">
+          <span class="flow-badge fb-lake">processed/</span>
+          <span class="flow-badge fb-sqlite">SQLite datasets</span>
+        </div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-node fn-lance">
+          <span class="fn-icon">🧠</span>
+          <div class="fn-title">3. RAG index</div>
+          <div class="fn-sub">build_index()</div>
+        </div>
+        <div class="flow-outputs">
+          <span class="flow-badge fb-lance">LanceDB</span>
+        </div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-node fn-lake">
+          <span class="fn-icon">✨</span>
+          <div class="fn-title">4. Enrich</div>
+          <div class="fn-sub">inject RAG ctx</div>
+        </div>
+        <div class="flow-outputs">
+          <span class="flow-badge fb-lake">fine-tuning-ready/</span>
+        </div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-node fn-train">
+          <span class="fn-icon">🏋️</span>
+          <div class="fn-title">5. train.py</div>
+          <div class="fn-sub">mlx_lm.lora</div>
+        </div>
+        <div class="flow-outputs">
+          <span class="flow-badge fb-train">adapters/</span>
+          <span class="flow-badge fb-sqlite">SQLite runs</span>
+        </div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-node fn-train">
+          <span class="fn-icon">📊</span>
+          <div class="fn-title">6. eval.py</div>
+          <div class="fn-sub">BLEU / ROUGE</div>
+        </div>
+        <div class="flow-outputs">
+          <span class="flow-badge fb-sqlite">SQLite evals</span>
+        </div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-node fn-lance">
+          <span class="fn-icon">🚀</span>
+          <div class="fn-title">7. deploy.py</div>
+          <div class="fn-sub">fuse + serve</div>
+        </div>
+        <div class="flow-outputs">
+          <span class="flow-badge fb-train">models/</span>
+          <span class="flow-badge fb-sqlite">SQLite models</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Barre de progression visuelle -->
+    <div style="margin-top:28px;display:flex;align-items:center;gap:0">
+      <div style="height:4px;background:linear-gradient(90deg,var(--accent2),var(--green),var(--purple),var(--green),var(--orange),var(--orange),var(--purple));border-radius:4px;flex:1"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:11px;color:var(--text-muted)">
+      <span>Données brutes</span>
+      <span>Nettoyage</span>
+      <span>Vectorisation</span>
+      <span>Enrichissement</span>
+      <span>Entraînement</span>
+      <span>Évaluation</span>
+      <span>Déploiement</span>
+    </div>
+  </div>
+
+  <div class="callout info" style="margin-top:24px">
+    <span class="ci">🔑</span>
+    <p><strong>Règle clé :</strong> Le dossier <code>raw/</code> est <strong>immuable après ingestion</strong>. On ne peut que lire dedans. Toute transformation produit un nouveau fichier dans <code>processed/</code> ou <code>fine-tuning-ready/</code>. C'est une garantie de traçabilité.</p>
+  </div>
+</div>
+
+<!-- ────────────────────────── SECTION 5 : LanceDB & RAG ── -->
+<div class="section" id="rag">
+  <div class="section-label">
+    <div class="dot" style="background:var(--purple)"></div>
+    LanceDB & RAG
+  </div>
+  <h2>LanceDB : recherche hybride sémantique + mots-clés</h2>
+
+  <div class="callout info">
+    <span class="ci">📖</span>
+    <p><strong>Pourquoi LanceDB plutôt qu'un autre ?</strong> LanceDB supporte nativement la <strong>recherche hybride</strong> : tu peux combiner une recherche vectorielle (par sens) ET une recherche plein texte (par mots exacts) dans la même requête. C'est précisément pour ça qu'il a été choisi — les deux modes se complètent, aucun autre outil serverless local ne fait les deux aussi simplement.</p>
+  </div>
+
+  <h3 style="margin-top:28px; margin-bottom:16px">Les deux modes de recherche</h3>
+
+  <div class="hybrid-grid">
+    <div class="hybrid-card hc-vec">
+      <div class="hc-header">
+        <span class="hc-icon">🧠</span>
+        <div class="hc-title">Recherche vectorielle (sémantique)</div>
+      </div>
+      <p>Cherche par <strong>sens</strong>, pas par mot. Deux phrases totalement différentes mais qui veulent dire la même chose seront trouvées ensemble.</p>
+      <p style="color:var(--text-dim);font-size:13px">Utilise le modèle <code>nomic-embed-text</code> pour transformer le texte en vecteur de 768 nombres, puis mesure la distance cosinus entre vecteurs.</p>
+      <div class="hc-example">
+        Requête : <span>"convertir une liste Python"</span><br>
+        → trouve aussi : <span>"transformer un tableau en Java"</span><br>
+        → et : <span>"itération sur collection"</span>
+      </div>
+    </div>
+    <div class="hybrid-card hc-kw">
+      <div class="hc-header">
+        <span class="hc-icon">🔤</span>
+        <div class="hc-title">Recherche plein texte (mots-clés)</div>
+      </div>
+      <p>Cherche les <strong>mots exacts</strong>. Indispensable quand le sens ne suffit pas — noms de classes, APIs, termes techniques spécifiques.</p>
+      <p style="color:var(--text-dim);font-size:13px">Indexation BM25 (algorithme standard des moteurs de recherche). Insensible à la casse, supporte les jokers et la troncature.</p>
+      <div class="hc-example">
+        Requête : <span>"ArrayList"</span><br>
+        → trouve tous les patterns contenant <span>"ArrayList"</span><br>
+        → ne remonte pas <span>"List"</span> ou <span>"Collection"</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="hybrid-result">
+    <span class="hr-icon">⚡</span>
+    <p><strong>Recherche hybride :</strong> en production, les deux modes sont combinés avec un score fusionné (RRF — Reciprocal Rank Fusion). Un résultat qui apparaît en tête dans les deux modes remonte en premier. On obtient ainsi les patterns à la fois <em>sémantiquement proches</em> ET qui <em>contiennent les bons termes techniques</em>.</p>
+  </div>
+
+  <h3 style="margin-top:32px; margin-bottom:16px">Comment le RAG enrichit les données d'entraînement</h3>
+
+  <div class="rag-visual">
+    <div class="rag-box">
+      <h3 style="color:var(--text-dim)">Sans RAG</h3>
+      <p>La paire JSONL contient seulement la question et la réponse. Le modèle apprend sans contexte.</p>
+      <div style="margin-top:12px;padding:10px;background:var(--surface2);border-radius:8px;font-family:var(--mono);font-size:11.5px;color:var(--text-dim);line-height:1.6">
+        {<br>
+        &nbsp;&nbsp;"instruction": "Convertis ce code Python",<br>
+        &nbsp;&nbsp;"output": "...code Java..."<br>
+        }
+      </div>
+    </div>
+    <div class="rag-arrow-center">
+      <div class="big-arrow">✦</div>
+      <div class="label">vs</div>
+    </div>
+    <div class="rag-box" style="border-color:var(--purple)">
+      <h3 style="color:var(--purple)">Avec RAG</h3>
+      <p>La paire contient aussi des patterns trouvés par recherche hybride dans LanceDB — exemples concrets du domaine.</p>
+      <div style="margin-top:12px;padding:10px;background:var(--surface2);border-radius:8px;font-family:var(--mono);font-size:11.5px;color:var(--text-dim);line-height:1.6">
+        {<br>
+        &nbsp;&nbsp;"instruction": "Convertis ce code Python",<br>
+        &nbsp;&nbsp;<span style="color:var(--purple)">"rag_context": "[java/loop] for(int i=0; i&lt;n; i++) {...}\n[java/list] List&lt;T&gt; list = new ArrayList&lt;&gt;();"</span>,<br>
+        &nbsp;&nbsp;"output": "...code Java..."<br>
+        }
+      </div>
+    </div>
+  </div>
+
+  <h3 style="margin-top:32px; margin-bottom:16px">Les 4 étapes de la recherche RAG</h3>
+
+  <div class="rag-steps">
+    <div class="rag-step">
+      <div class="rs-icon">📝</div>
+      <div class="rs-num">Étape 1</div>
+      <h3>Texte → Vecteur</h3>
+      <p><code>nomic-embed-text</code> transforme chaque fragment en 768 nombres. C'est l'empreinte numérique du sens.</p>
+    </div>
+    <div class="rag-step">
+      <div class="rs-icon">🗃️</div>
+      <div class="rs-num">Étape 2</div>
+      <h3>Stockage LanceDB</h3>
+      <p>Le vecteur + le texte original + les métadonnées (domaine, catégorie) sont indexés ensemble.</p>
+    </div>
+    <div class="rag-step">
+      <div class="rs-icon">🔍</div>
+      <div class="rs-num">Étape 3</div>
+      <h3>Recherche hybride</h3>
+      <p>Pour chaque paire à enrichir : requête vectorielle + requête BM25, scores fusionnés, top-K résultats.</p>
+    </div>
+    <div class="rag-step">
+      <div class="rs-icon">💉</div>
+      <div class="rs-num">Étape 4</div>
+      <h3>Injection JSONL</h3>
+      <p>Les patterns trouvés sont sérialisés dans <code>rag_context</code>. La paire est maintenant prête pour le training.</p>
+    </div>
+  </div>
+
+  <div class="callout tip" style="margin-top:24px">
+    <span class="ci">🎯</span>
+    <p><strong>Pourquoi c'est plus puissant ?</strong> Le modèle voit des exemples Java concrets <em>pendant</em> l'apprentissage, pas seulement la paire isolée. Avec la recherche hybride, on récupère les patterns les plus proches sémantiquement ET qui contiennent les bons identifiants techniques — les deux critères sont nécessaires pour du code de qualité.</p>
+  </div>
+</div>
+
+<!-- ────────────────────────── SECTION 6 : Schéma BDD ── -->
+<div class="section" id="schema">
+  <div class="section-label">
+    <div class="dot" style="background:var(--cyan)"></div>
+    Référence technique
+  </div>
+  <h2>Schéma de la base SQLite</h2>
+  <p>La base <code>experiments/mlops.db</code> contient 6 tables. Voici leur structure et leur rôle.</p>
+
+  <div class="schema-grid">
+
+    <div class="schema-table">
+      <div class="st-header">
+        <span class="st-icon">📁</span>
+        <span class="st-name" style="color:var(--cyan)">projects</span>
+        <span class="st-desc">1 ligne / projet</span>
+      </div>
+      <div class="st-fields">
+        <div class="st-field"><span class="sf-name">id</span><span class="sf-type">TEXT</span><span class="sf-tag sf-pk">PK</span></div>
+        <div class="st-field"><span class="sf-name">name</span><span class="sf-type">TEXT</span></div>
+        <div class="st-field"><span class="sf-name">description</span><span class="sf-type">TEXT</span></div>
+        <div class="st-field"><span class="sf-name">base_model</span><span class="sf-type">TEXT</span></div>
+        <div class="st-field"><span class="sf-name">created_at</span><span class="sf-type">TEXT</span></div>
+        <div class="st-field"><span class="sf-name">updated_at</span><span class="sf-type">TEXT</span></div>
+      </div>
+    </div>
+
+    <div class="schema-table">
+      <div class="st-header">
+        <span class="st-icon">📊</span>
+        <span class="st-name" style="color:var(--cyan)">datasets</span>
+        <span class="st-desc">stats par version</span>
+      </div>
+      <div class="st-fields">
+        <div class="st-field"><span class="sf-name">id</span><span class="sf-type">TEXT</span><span class="sf-tag sf-pk">PK</span></div>
+        <div class="st-field"><span class="sf-name">project_id</span><span class="sf-type">TEXT</span><span class="sf-tag sf-fk">FK</span></div>
+        <div class="st-field"><span class="sf-name">stage</span><span class="sf-type">raw|proc|ft</span></div>
+        <div class="st-field"><span class="sf-name">n_pairs</span><span class="sf-type">INTEGER</span></div>
+        <div class="st-field"><span class="sf-name">avg_quality</span><span class="sf-type">REAL</span></div>
+        <div class="st-field"><span class="sf-name">path</span><span class="sf-type">TEXT</span></div>
+      </div>
+    </div>
+
+    <div class="schema-table">
+      <div class="st-header">
+        <span class="st-icon">🏋️</span>
+        <span class="st-name" style="color:var(--orange)">runs</span>
+        <span class="st-desc">1 ligne / entraînement</span>
+      </div>
+      <div class="st-fields">
+        <div class="st-field"><span class="sf-name">id</span><span class="sf-type">TEXT</span><span class="sf-tag sf-pk">PK</span></div>
+        <div class="st-field"><span class="sf-name">project_id</span><span class="sf-type">TEXT</span><span class="sf-tag sf-fk">FK</span></div>
+        <div class="st-field"><span class="sf-name">model_name</span><span class="sf-type">TEXT</span></div>
+        <div class="st-field"><span class="sf-name">status</span><span class="sf-type">running|done…</span></div>
+        <div class="st-field"><span class="sf-name">train_loss</span><span class="sf-type">REAL</span></div>
+        <div class="st-field"><span class="sf-name">adapter_path</span><span class="sf-type">TEXT</span></div>
+      </div>
+    </div>
+
+    <div class="schema-table">
+      <div class="st-header">
+        <span class="st-icon">📏</span>
+        <span class="st-name" style="color:var(--green)">evaluations</span>
+        <span class="st-desc">métriques par run</span>
+      </div>
+      <div class="st-fields">
+        <div class="st-field"><span class="sf-name">id</span><span class="sf-type">TEXT</span><span class="sf-tag sf-pk">PK</span></div>
+        <div class="st-field"><span class="sf-name">run_id</span><span class="sf-type">TEXT</span><span class="sf-tag sf-fk">FK</span></div>
+        <div class="st-field"><span class="sf-name">bleu</span><span class="sf-type">REAL</span></div>
+        <div class="st-field"><span class="sf-name">rouge_l</span><span class="sf-type">REAL</span></div>
+        <div class="st-field"><span class="sf-name">pass_rate</span><span class="sf-type">REAL</span></div>
+        <div class="st-field"><span class="sf-name">latency_ms</span><span class="sf-type">INTEGER</span></div>
+      </div>
+    </div>
+
+    <div class="schema-table">
+      <div class="st-header">
+        <span class="st-icon">🚀</span>
+        <span class="st-name" style="color:var(--purple)">models</span>
+        <span class="st-desc">modèles déployés</span>
+      </div>
+      <div class="st-fields">
+        <div class="st-field"><span class="sf-name">id</span><span class="sf-type">TEXT</span><span class="sf-tag sf-pk">PK</span></div>
+        <div class="st-field"><span class="sf-name">project_id</span><span class="sf-type">TEXT</span><span class="sf-tag sf-fk">FK</span></div>
+        <div class="st-field"><span class="sf-name">fused_path</span><span class="sf-type">TEXT</span></div>
+        <div class="st-field"><span class="sf-name">serving_port</span><span class="sf-type">INTEGER</span></div>
+        <div class="st-field"><span class="sf-name">status</span><span class="sf-type">serving|…</span></div>
+        <div class="st-field"><span class="sf-name">deployed_at</span><span class="sf-type">TEXT</span></div>
+      </div>
+    </div>
+
+    <div class="schema-table">
+      <div class="st-header">
+        <span class="st-icon">📝</span>
+        <span class="st-name" style="color:var(--text-dim)">cc_actions</span>
+        <span class="st-desc">audit Claude Code</span>
+      </div>
+      <div class="st-fields">
+        <div class="st-field"><span class="sf-name">id</span><span class="sf-type">INTEGER</span><span class="sf-tag sf-pk">PK</span></div>
+        <div class="st-field"><span class="sf-name">ts</span><span class="sf-type">TEXT</span></div>
+        <div class="st-field"><span class="sf-name">tool</span><span class="sf-type">BASH|WRITE…</span></div>
+        <div class="st-field"><span class="sf-name">command</span><span class="sf-type">TEXT</span></div>
+        <div class="st-field"><span class="sf-name">session_id</span><span class="sf-type">TEXT</span></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ────────────────────────── SECTION 7 : Résumé mémo ── -->
+<div class="section">
+  <div class="section-label">
+    <div class="dot" style="background:var(--green)"></div>
+    Mémo
+  </div>
+  <h2>La règle des 4 questions</h2>
+  <p>Quand tu te demandes où chercher ou où écrire, pose-toi la bonne question :</p>
+
+  <div class="def-grid" style="margin-top:24px">
+    <div class="def-card c-yaml">
+      <span class="icon">📋</span>
+      <h3>YAML</h3>
+      <div class="question">"Comment ce projet est-il <strong>configuré</strong> ?"<br><br>Modèle, domaine, seuils, chemins → YAML</div>
+    </div>
+    <div class="def-card c-sqlite">
+      <span class="icon">🗄️</span>
+      <h3>SQLite</h3>
+      <div class="question">"Qu'est-ce qui s'est passé <strong>dans le temps</strong> ?"<br><br>Historique, métriques, comparaisons → SQLite</div>
+    </div>
+    <div class="def-card c-lance">
+      <span class="icon">🧠</span>
+      <h3>LanceDB</h3>
+      <div class="question">"Quels patterns <strong>ressemblent</strong> ou <strong>contiennent</strong> ça ?"<br><br>Recherche hybride (sémantique + mots-clés) → LanceDB</div>
+    </div>
+    <div class="def-card c-lake">
+      <span class="icon">📁</span>
+      <h3>Datalake</h3>
+      <div class="question">"Où sont les <strong>fichiers</strong> de données ?"<br><br>Paires JSONL brutes/nettoyées → Datalake</div>
+    </div>
+  </div>
+
+  <div class="callout tip" style="margin-top:32px">
+    <span class="ci">🔑</span>
+    <p><strong>La confusion la plus fréquente :</strong> SQLite et YAML contiennent tous les deux des infos sur le projet. La distinction — <strong>YAML = ce qui ne change pas entre deux runs</strong> (la configuration), <strong>SQLite = ce qui s'accumule</strong> (l'historique des runs, des métriques, des déploiements).</p>
+  </div>
+</div>
+
+<!-- ────────────────────────── SECTION RAT & EMBARQUÉ ── -->
+<div class="section" id="rat">
+  <div class="section-label">
+    <div class="dot" style="background:var(--red)"></div>
+    Contexte défense & embarqué
+  </div>
+  <h2>RAT — Retrieval-Augmented Training : pourquoi et pour qui</h2>
+
+  <div class="callout warn">
+    <span class="ci">✈️</span>
+    <p><strong>Contrainte non-négociable :</strong> les systèmes cibles (avions de chasse, drones, systèmes embarqués) sont <strong>air-gapped</strong> — aucun réseau, aucune RAM disponible pour une base vectorielle, aucune dépendance externe possible à runtime. Le modèle doit être <strong>autosuffisant</strong> avant d'être embarqué.</p>
+  </div>
+
+  <h3 style="margin-top:28px;margin-bottom:16px">Deux environnements, deux architectures</h3>
+
+  <div class="two-col">
+    <div class="tcol" style="border-color:var(--red)">
+      <div class="tc-header">
+        <span class="tc-icon">✈️</span>
+        <div>
+          <div class="tc-title" style="color:var(--red)">Embarqué (avion en vol)</div>
+          <div class="tc-sub">Air-gapped — zéro dépendance externe</div>
+        </div>
+      </div>
+      <ul>
+        <li><div class="li-dot" style="background:var(--red)"></div><div class="li-text"><strong>Modèle fine-tuné</strong> — tout le savoir est dedans</div></li>
+        <li><div class="li-dot" style="background:var(--red)"></div><div class="li-text"><strong>Adapters LoRA</strong> — spécialisation par domaine</div></li>
+        <li><div class="li-dot" style="background:var(--red)"></div><div class="li-text">Pas de RAG, pas de LanceDB, pas de réseau</div></li>
+        <li><div class="li-dot" style="background:var(--red)"></div><div class="li-text">Latence déterministe, ressources maîtrisées</div></li>
+        <li><div class="li-dot" style="background:var(--red)"></div><div class="li-text">Version figée jusqu'à la prochaine mise à jour sol</div></li>
+      </ul>
+    </div>
+    <div class="tcol" style="border-color:var(--green)">
+      <div class="tc-header">
+        <span class="tc-icon">🏢</span>
+        <div>
+          <div class="tc-title" style="color:var(--green)">Sol (équipes client)</div>
+          <div class="tc-sub">Infrastructure MLOps complète</div>
+        </div>
+      </div>
+      <ul>
+        <li><div class="li-dot" style="background:var(--green)"></div><div class="li-text"><strong>Modèle + Adapters</strong> — même version que l'embarqué</div></li>
+        <li><div class="li-dot" style="background:var(--green)"></div><div class="li-text"><strong>RAG (LanceDB/Qdrant)</strong> — outil de travail quotidien</div></li>
+        <li><div class="li-dot" style="background:var(--green)"></div><div class="li-text"><strong>Pipeline MLOps</strong> — réentraînement quand seuil atteint</div></li>
+        <li><div class="li-dot" style="background:var(--green)"></div><div class="li-text">Équipes métier qui enrichissent le RAG en continu</div></li>
+        <li><div class="li-dot" style="background:var(--green)"></div><div class="li-text">Prépare la prochaine version du modèle embarqué</div></li>
+      </ul>
+    </div>
+  </div>
+
+  <h3 style="margin-top:36px;margin-bottom:16px">Pourquoi s'appelle-t-on RAT et pas RAG ?</h3>
+
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px 28px;margin-bottom:20px">
+    <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:20px;align-items:center">
+      <div style="text-align:center">
+        <div style="font-size:13px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px">RAG classique</div>
+        <div style="font-family:var(--mono);font-size:12px;color:var(--text-dim);background:var(--surface2);border-radius:8px;padding:12px;line-height:2">
+          Input<br>↓<br><span style="color:var(--purple)">Recherche vectorielle</span><br>↓<br>Contexte + Input<br>↓<br>Modèle<br>↓<br>Réponse
+        </div>
+        <div style="font-size:12px;color:var(--text-dim);margin-top:10px">La recherche se fait <strong>à chaque requête</strong></div>
+      </div>
+      <div style="text-align:center;font-size:28px;color:var(--text-muted)">→</div>
+      <div style="text-align:center">
+        <div style="font-size:13px;font-weight:700;color:var(--orange);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px">RAT (notre approche)</div>
+        <div style="font-family:var(--mono);font-size:12px;color:var(--text-dim);background:var(--surface2);border-radius:8px;padding:12px;line-height:2">
+          <span style="color:var(--purple)">RAG enrichit le JSONL</span><br>↓<br><span style="color:var(--orange)">Fine-tuning</span><br>↓<br>Modèle "tout-en-un"<br><br>Input → Modèle → Réponse
+        </div>
+        <div style="font-size:12px;color:var(--text-dim);margin-top:10px">Le contexte est <strong>cuit dans le modèle</strong> une fois pour toutes</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout info">
+    <span class="ci">💡</span>
+    <p>Ce n'est pas un compromis — c'est une <strong>contrainte métier</strong>. Pour les systèmes embarqués défense, un modèle autosuffisant n'est pas une option parmi d'autres, c'est la seule architecture possible.</p>
+  </div>
+
+  <h3 style="margin-top:36px;margin-bottom:16px">Le cycle de vie complet sol ↔ embarqué</h3>
+
+  <div class="creation-steps">
+
+    <div class="cstep cstep-n1">
+      <div class="cstep-left">
+        <div class="cstep-num">1</div>
+        <div class="cstep-line"></div>
+      </div>
+      <div class="cstep-content">
+        <h3 style="color:var(--accent2)">Livraison initiale</h3>
+        <p>Capgemini livre au client : le modèle fine-tuné + les adapters + la base RAG sol déjà peuplée avec les mêmes données qui ont servi à l'entraînement. Le client peut immédiatement interroger le RAG et utiliser le modèle embarqué.</p>
+        <div class="path-block"><span class="path-icon">📦</span> Modèle + Adapters + RAG initial (même corpus)</div>
+      </div>
+    </div>
+
+    <div class="cstep cstep-n2">
+      <div class="cstep-left">
+        <div class="cstep-num">2</div>
+        <div class="cstep-line"></div>
+      </div>
+      <div class="cstep-content">
+        <h3 style="color:var(--yellow)">Enrichissement continu du RAG sol</h3>
+        <p>Les équipes sol alimentent le RAG au fil du temps : nouvelles procédures, retours terrain, cas limites rencontrés, correctifs validés. Le RAG sol devient progressivement plus riche que ce qui a servi à l'entraînement initial.</p>
+        <div class="callout warn" style="margin-top:10px;margin-bottom:0">
+          <span class="ci">⚠️</span>
+          <p><strong>Point critique :</strong> l'alimentation manuelle ne tiendra pas dans le temps. Il faut un pipeline de feedback automatisé — logs d'utilisation, cas d'échec, corrections humaines — qui remontent dans le RAG après validation.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="cstep cstep-n3">
+      <div class="cstep-left">
+        <div class="cstep-num">3</div>
+        <div class="cstep-line"></div>
+      </div>
+      <div class="cstep-content">
+        <h3 style="color:var(--cyan)">Déclenchement du réentraînement</h3>
+        <p>Quand le RAG sol a accumulé suffisamment de nouvelles données (seuil configurable : volume, qualité, delta depuis le dernier training), un réentraînement est déclenché. Le RAG enrichi devient la nouvelle source pour construire le JSONL d'entraînement.</p>
+        <div class="path-block"><span class="path-icon">🔁</span> Seuil atteint → nouveau cycle RAT → nouvelle version modèle</div>
+      </div>
+    </div>
+
+    <div class="cstep cstep-n4">
+      <div class="cstep-left">
+        <div class="cstep-num">4</div>
+        <div class="cstep-line"></div>
+      </div>
+      <div class="cstep-content">
+        <h3 style="color:var(--green)">Mise à jour embarquée</h3>
+        <p>Avion au sol → fenêtre de maintenance → nouveau modèle + adapters chargés. Le cycle reprend. La base RAG sol reste vivante et continue de s'enrichir pour le prochain cycle.</p>
+        <div class="path-block"><span class="path-icon">✈️</span> Avion au sol → mise à jour → redécollage avec nouvelle version</div>
+      </div>
+    </div>
+
+  </div>
+
+  <h3 style="margin-top:12px;margin-bottom:16px">Ce que le RAG sol apporte aux équipes au quotidien</h3>
+
+  <div class="def-grid">
+    <div class="def-card c-lance">
+      <span class="icon">🔍</span>
+      <h3>Outil de travail</h3>
+      <p>Les ingénieurs sol interrogent le RAG pour retrouver des patterns, de la documentation technique, des décisions d'architecture passées — sans avoir besoin du modèle embarqué.</p>
+    </div>
+    <div class="def-card c-lake">
+      <span class="icon">📥</span>
+      <h3>Réservoir de réentraînement</h3>
+      <p>Chaque nouvelle entrée validée dans le RAG est un candidat pour le prochain cycle d'entraînement. Le RAG sol est à la fois une base de connaissance ET un entrepôt de données futures.</p>
+    </div>
+    <div class="def-card c-sqlite">
+      <span class="icon">📊</span>
+      <h3>Traçabilité</h3>
+      <p>SQLite trace quelles données RAG ont été utilisées dans quel cycle d'entraînement. On sait exactement d'où vient chaque version du modèle embarqué — essentiel en contexte défense.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ────────────────────────── FOOTER ── -->
+<footer>
+  <span>MLOps Factory · Capgemini Defense</span> &nbsp;·&nbsp;
+  Architecture 100% locale, zéro appel cloud en production &nbsp;·&nbsp;
+  <span>2026</span>
+</footer>
+
+</body>
+</html>
