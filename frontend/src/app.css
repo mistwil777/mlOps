@@ -1,24 +1,70 @@
 /* Design tokens */
 :root {
-  --bg:         #0f1117;
-  --surface:    #1a1d27;
-  --surface-2:  #252836;
-  --surface-3:  #2e3348;
-  --border:     #2e3348;
-  --text:       #e2e5f0;
-  --text-muted: #8b92a8;
-  --accent:     #4f8ef7;
-  --accent-dim: rgba(79,142,247,.15);
+  /* Backgrounds */
+  --bg:         #0d0f18;
+  --surface:    #151720;
+  --surface-2:  #1e2130;
+  --surface-3:  #272b3a;
+
+  /* Borders */
+  --border:     #2a2e3f;
+  --border-2:   #363b50;
+
+  /* Text — WCAG AA compliant (≥4.5:1 on --bg) */
+  --text:       #e4e7f2;
+  --text-muted: #9aa0ba;   /* was #8b92a8 — +0.4 contrast bump */
+  --text-dim:   #6b7191;
+
+  /* Accent */
+  --accent:     #5b98f8;
+  --accent-dim: rgba(91,152,248,.14);
+  --accent-hover: #6fa6f9;
+
+  /* Status */
   --green:      #3ecf8e;
-  --green-dim:  rgba(62,207,142,.15);
-  --red:        #f74f4f;
-  --red-dim:    rgba(247,79,79,.15);
-  --yellow:     #f7a94f;
-  --yellow-dim: rgba(247,169,79,.15);
+  --green-dim:  rgba(62,207,142,.12);
+  --red:        #f75454;
+  --red-dim:    rgba(247,84,84,.12);
+  --yellow:     #f7aa50;
+  --yellow-dim: rgba(247,170,80,.12);
+  --orange:     #f78450;
+  --orange-dim: rgba(247,132,80,.12);
+
+  /* Typography */
   --font-mono:  'JetBrains Mono', 'Fira Mono', monospace;
+  --font-ui:    -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --text-xs:    11px;
+  --text-sm:    12px;
+  --text-base:  14px;
+  --text-md:    15px;
+  --text-lg:    17px;
+  --text-xl:    20px;
+  --text-2xl:   24px;
+
+  /* Spacing scale */
+  --sp-1:  4px;
+  --sp-2:  8px;
+  --sp-3:  12px;
+  --sp-4:  16px;
+  --sp-5:  20px;
+  --sp-6:  24px;
+  --sp-8:  32px;
+  --sp-10: 40px;
+
+  /* Shape */
   --radius:     6px;
+  --radius-md:  8px;
   --radius-lg:  12px;
+  --radius-xl:  16px;
+
+  /* Elevation */
+  --shadow-sm:  0 1px 4px rgba(0,0,0,.3);
   --shadow:     0 2px 12px rgba(0,0,0,.4);
+  --shadow-lg:  0 4px 24px rgba(0,0,0,.5);
+
+  /* Layout */
+  --sidebar-w:  232px;
+  --topbar-h:   52px;
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -27,8 +73,8 @@ html, body {
   height: 100%;
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  font-size: 14px;
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
   line-height: 1.6;
 }
 
@@ -41,7 +87,7 @@ code, pre, .mono { font-family: var(--font-mono); font-size: 13px; }
 .layout { display: flex; height: 100vh; overflow: hidden; }
 
 .sidebar {
-  width: 220px;
+  width: var(--sidebar-w);
   flex-shrink: 0;
   background: var(--surface);
   border-right: 1px solid var(--border);
@@ -52,30 +98,74 @@ code, pre, .mono { font-family: var(--font-mono); font-size: 13px; }
 }
 
 .sidebar-logo {
-  padding: 20px 16px 16px;
+  padding: 18px var(--sp-4) 14px;
   border-bottom: 1px solid var(--border);
   font-weight: 700;
-  font-size: 15px;
+  font-size: var(--text-md);
   letter-spacing: .5px;
   color: var(--text);
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-shrink: 0;
 }
 
 .sidebar-logo .dot {
   width: 8px; height: 8px;
   border-radius: 50%;
   background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  flex-shrink: 0;
 }
 
-.sidebar nav { padding: 12px 0; flex: 1; }
+.sidebar-logo .logo-sub {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-weight: 400;
+  margin-top: 1px;
+}
+
+/* Nav groups (numbered sections) */
+.nav-group { margin-top: 4px; }
+
+.nav-group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px 4px;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  user-select: none;
+}
+
+.nav-group-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px; height: 16px;
+  border-radius: 4px;
+  background: var(--surface-3);
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+}
+
+.nav-group.active-group .nav-group-num {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+.sidebar nav { padding: 8px 0; flex: 1; }
 
 .nav-section {
   padding: 6px 16px 4px;
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 600;
-  letter-spacing: 1px;
+  letter-spacing: .08em;
   text-transform: uppercase;
   color: var(--text-muted);
   margin-top: 8px;
@@ -84,11 +174,15 @@ code, pre, .mono { font-family: var(--font-mono); font-size: 13px; }
 .sidebar nav a {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 16px;
+  gap: 8px;
+  padding: 7px 14px 7px 34px;
   color: var(--text-muted);
-  transition: background 200ms, color 200ms;
+  font-size: var(--text-sm);
+  transition: background 150ms, color 150ms;
   border-radius: 0;
+  border-left: 2px solid transparent;
+  margin: 0 4px 1px;
+  border-radius: var(--radius);
 }
 
 .sidebar nav a:hover,
@@ -98,24 +192,49 @@ code, pre, .mono { font-family: var(--font-mono); font-size: 13px; }
   text-decoration: none;
 }
 
-.sidebar nav a.active { color: var(--accent); }
+.sidebar nav a.active {
+  color: var(--accent);
+  border-left-color: var(--accent);
+  background: var(--accent-dim);
+}
+
+/* Top-level nav items (no group indentation) */
+.sidebar nav a.nav-top {
+  padding-left: 14px;
+  font-size: var(--text-base);
+  font-weight: 500;
+}
 
 .main { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
 
 .topbar {
-  height: 52px;
+  height: var(--topbar-h);
   flex-shrink: 0;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
-  padding: 0 24px;
-  gap: 16px;
+  padding: 0 var(--sp-6);
+  gap: var(--sp-4);
 }
 
-.topbar-title { font-weight: 600; font-size: 16px; flex: 1; }
+.topbar-title { font-weight: 600; font-size: var(--text-md); flex: 1; }
 
-.content { padding: 24px; flex: 1; max-width: 1400px; }
+.topbar-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  flex: 1;
+}
+
+.topbar-breadcrumb .bc-sep { color: var(--text-dim); }
+.topbar-breadcrumb .bc-current { color: var(--text); font-weight: 500; }
+.topbar-breadcrumb a { color: var(--text-muted); }
+.topbar-breadcrumb a:hover { color: var(--accent); text-decoration: none; }
+
+.content { padding: var(--sp-6); flex: 1; max-width: 1440px; }
 
 /* Cards */
 .card {

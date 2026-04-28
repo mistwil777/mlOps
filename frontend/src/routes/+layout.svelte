@@ -1,7 +1,7 @@
 <script lang="ts">
   import '../app.css';
-  import { page } from '$app/stores';
   import { getHealth } from '$lib/api';
+  import SidebarNav from '$lib/components/SidebarNav.svelte';
   import type { Health } from '$lib/types';
 
   let { children } = $props();
@@ -12,62 +12,28 @@
   }
   refreshHealth();
   setInterval(refreshHealth, 15000);
-
-  const nav = [
-    { href: '/',             icon: '⬡', label: 'Dashboard' },
-    { href: '/advisor',      icon: '◎', label: 'Analyse besoin', section: 'Scoping' },
-    { href: '/projects',     icon: '◈', label: 'Projets',      section: 'Factory' },
-    { href: '/base-models',  icon: '◫', label: 'Modèles base' },
-    { href: '/data',         icon: '◧', label: 'Données',      section: 'Data' },
-    { href: '/rag',          icon: '◩', label: 'RAG' },
-    { href: '/train',        icon: '▷', label: 'Fine-tuning',  section: 'Training' },
-    { href: '/models',       icon: '◉', label: 'Modèles fine-tunés' },
-    { href: '/adapters',     icon: '◈', label: 'Adaptateurs LoRA' },
-    { href: '/playground',   icon: '◐', label: 'Playground',   section: 'Test' },
-    { href: '/delivery',     icon: '⬡', label: 'Livraison',    section: 'Delivery' },
-    { href: '/lifecycle',    icon: '✈', label: 'Sol ↔ Embarqué', section: 'Embarqué' },
-  ];
-
-  function isActive(href: string) {
-    if (href === '/') return $page.url.pathname === '/';
-    return $page.url.pathname.startsWith(href);
-  }
 </script>
 
 <div class="layout">
-  <aside class="sidebar">
-    <div class="sidebar-logo">
-      <div class="dot"></div>
-      MLOps Factory
-    </div>
-
-    <nav>
-      {#each nav as item}
-        {#if item.section}
-          <div class="nav-section">{item.section}</div>
-        {/if}
-        <a href={item.href} class:active={isActive(item.href)}>
-          <span style="font-size:16px">{item.icon}</span>
-          {item.label}
-        </a>
-      {/each}
-    </nav>
-
-    <div class="sidebar-health">
-      <div class="health-row">
-        <span class="health-dot {health?.mlx_server ? 'ok' : health === null ? 'unk' : 'err'}"></span>
-        <span>mlx_lm.server</span>
+  <SidebarNav>
+    {#snippet healthPanel()}
+      <div class="health-panel">
+        <div class="health-label">Services</div>
+        <div class="health-row">
+          <span class="health-dot {health?.mlx_server ? 'ok' : health === null ? 'unk' : 'err'}"></span>
+          <span>mlx_lm.server</span>
+        </div>
+        <div class="health-row">
+          <span class="health-dot {health?.mlflow ? 'ok' : health === null ? 'unk' : 'err'}"></span>
+          <span>MLflow</span>
+        </div>
+        <div class="health-row">
+          <span class="health-dot {health?.serving ? 'ok' : health === null ? 'unk' : 'err'}"></span>
+          <span>Serving</span>
+        </div>
       </div>
-      <div class="health-row">
-        <span class="health-dot {health?.mlflow ? 'ok' : health === null ? 'unk' : 'err'}"></span>
-        <span>MLflow</span>
-      </div>
-      <div class="health-row">
-        <span class="health-dot {health?.serving ? 'ok' : health === null ? 'unk' : 'err'}"></span>
-        <span>Serving</span>
-      </div>
-    </div>
-  </aside>
+    {/snippet}
+  </SidebarNav>
 
   <main class="main">
     {@render children()}
@@ -75,18 +41,26 @@
 </div>
 
 <style>
-  .sidebar-health {
-    padding: 12px 16px;
-    border-top: 1px solid var(--border);
+  .health-panel {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 5px;
   }
+
+  .health-label {
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--text-dim);
+    font-weight: 600;
+    margin-bottom: 2px;
+  }
+
   .health-row {
     display: flex;
     align-items: center;
     gap: 8px;
-    font-size: 12px;
+    font-size: var(--text-sm);
     color: var(--text-muted);
   }
 </style>
