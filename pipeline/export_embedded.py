@@ -52,11 +52,16 @@ def _dir_sha256(directory: Path) -> str:
 
 
 def _rag_corpus_hash(project: str) -> str:
-    """Hash of the RAG corpus used (LanceDB dir) to stamp the bundle."""
-    rag_dir = Path(f"lancedb/{project}")
-    if not rag_dir.exists():
+    """Hash of the RAG corpus — stamped via Qdrant collection point count + collection name."""
+    try:
+        from qdrant_client import QdrantClient  # noqa: PLC0415
+        client = QdrantClient(host="localhost", port=6333)
+        info = client.get_collection(f"patterns_{project}")
+        raw = f"patterns_{project}:{info.points_count}"
+        import hashlib  # noqa: PLC0415
+        return hashlib.sha256(raw.encode()).hexdigest()[:16]
+    except Exception:
         return "no-rag-index"
-    return _dir_sha256(rag_dir)[:16]
 
 
 def _get_model_info(model_id: str) -> dict[str, Any] | None:
@@ -177,13 +182,13 @@ def export_bundle(
         ],
         "rag_corpus": {
             "hash":    corpus_hash,
-            "comment": "Hash of LanceDB patterns used during JSONL enrichment (RAT).",
+            "comment": "Hash of Qdrant patterns used during JSONL enrichment.",
         },
         "deployment": {
             "target":    "embedded-airgap",
             "runtime":   "mlx_lm",
             "requires":  ["model/", "adapter/"],
-            "excludes":  ["lancedb", "sqlite", "network"],
+            "excludes":  ["qdrant-dev", "sqlite", "network"],
         },
     }
 

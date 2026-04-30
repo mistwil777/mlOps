@@ -30,6 +30,8 @@ Rules:
   adapter fusion at deploy time
 - Estimated pairs must be realistic for LoRA fine-tuning (200-2000 per adapter)
 - Output ONLY valid JSON, no markdown, no explanation outside the JSON structure
+- All text fields (description, pros, cons, team_note, notes, data_types, data_sources) \
+  MUST be written in French
 """
 
 _USER_TEMPLATE = """\
@@ -87,7 +89,7 @@ class AdvisorRequest(BaseModel):
 def _call_claude(model: str, need: str) -> str:
     response = _client.messages.create(
         model=model,
-        max_tokens=2048,
+        max_tokens=4096,
         system=[
             {
                 "type": "text",
@@ -183,6 +185,7 @@ Respond with a JSON array matching exactly this schema:
     "team_note": "one sentence explaining the team fit score"
   }}
 ]
+All text fields MUST be in French.
 Output ONLY valid JSON, no markdown, no explanation.
 """
 
@@ -216,6 +219,7 @@ Respond with JSON matching exactly:
   "overlaps": [["adapter-a", "adapter-b"]],
   "recommendation": "one sentence"
 }}
+All text fields (gaps, recommendation) MUST be in French.
 Output ONLY valid JSON, no markdown, no explanation.
 """
 

@@ -1,4 +1,4 @@
-"""LanceDB RAG index — hybrid (vector + full-text) pattern retrieval."""
+"""Qdrant RAG index — hybrid (vector + full-text) pattern retrieval."""
 
 from __future__ import annotations
 
@@ -6,17 +6,27 @@ import json
 from pathlib import Path
 from typing import Any, Literal
 
-import lancedb
 import numpy as np
 import yaml
+from qdrant_client import QdrantClient
+from qdrant_client.models import (
+    Distance,
+    FieldCondition,
+    Filter,
+    MatchText,
+    MatchValue,
+    PayloadSchemaType,
+    PointStruct,
+    VectorParams,
+)
 
 from pipeline.utils.logger import get_logger
 
 logger = get_logger("mlops.rag_index")
 
-_DEFAULT_DB_BASE = Path("lancedb")
-_SEEDS_INDEX     = Path("config/rag_seeds/index.yaml")
-_EMBED_DIM       = 768  # nomic-embed-text v1.5
+_SEEDS_INDEX = Path("config/rag_seeds/index.yaml")
+_EMBED_DIM   = 768  # nomic-embed-text v1.5
+_COLLECTION  = "patterns"
 
 _ST_MODEL = None
 
@@ -44,13 +54,179 @@ def _embed(texts: list[str]) -> list[list[float]]:
         return _dummy_embed(texts)
 
 
+def _qdrant_client(host: str = "localhost", port: int = 6333) -> QdrantClient:
+    return QdrantClient(host=host, port=port)
+
+
+# ── Index ─────────────────────────────────────────────────────────────────────
+
+SearchMode = Literal["vector", "fulltext", "hybrid"]
+
+
+class RagIndex:
+    """
+    Qdrant-backed index for RAG retrieval — used both at training time and in production.
+
+    Each project gets its own Qdrant collection: patterns_<project_id>.
+    Supports three search modes:
+      - "vector"   : semantic similarity (cosine distance on embeddings)
+      - "fulltext" : keyword filter on payload fields
+      - "hybrid"   : RRF fusion of both (default)
+
+    The index aggregates patterns from:
+      - config/rag_seeds/<domain>/       (domain idioms)
+      - datalake/projects/<project>/raw/ (project-specific .json seeds)
+      - datalake/projects/<project>/raw/feedback/ (validated feedback)
+    """
+
+    def __init__(self, project: str, host: str = "localhost", port: int = 6333):
+        self._project    = project
+        self._collection = f"patterns_{project}"
+        self._client     = _qdrant_client(host, port)
+        self._ensure_collection()
+
+    def _ensure_collection(self) -> None:
+        existing = [c.name for c in self._client.get_collections().collections]
+        if self._collection not in existing:
+            self._client.create_collection(
+                collection_name=self._collection,
+                vectors_config=VectorParams(size=_EMBED_DIM, distance=Distance.COSINE),
+            )
+            self._client.create_payload_index(
+                collection_name=self._collection,
+                field_name="content",
+                field_schema=PayloadSchemaType.TEXT,
+            )
+            logger.info("Created Qdrant collection '%s'", self._collection)
+
+    def ingest_seeds(self, seeds_path: Path) -> int:
+        """Ingest a RAG seed JSON file. Returns number of records inserted."""
+        with seeds_path.open(encoding="utf-8") as fh:
+            data = json.load(fh)
+
+        patterns = data.get("patterns", [])
+        if not patterns:
+            logger.warning("No patterns found in %s", seeds_path)
+            return 0
+
+        texts   = [p["content"] for p in patterns]
+        vectors = _embed(texts)
+
+        points = [
+            PointStruct(
+                id=abs(hash(p["content"])) % (2**63),
+                vector=vec,
+                payload={
+                    "content":       p["content"],
+                    "domain":        data.get("domain", data.get("lang", "")),
+                    "category":      p["metadata"].get("category", ""),
+                    "quality_label": p["metadata"].get("quality_label", ""),
+                    "source_file":   str(seeds_path.name),
+                },
+            )
+            for p, vec in zip(patterns, vectors)
+        ]
+
+        self._client.upsert(collection_name=self._collection, points=points)
+        logger.info("Upserted %d records into '%s'", len(points), self._collection)
+        return len(points)
+
+    def ingest_feedback(self, entry: dict[str, Any]) -> int:
+        """Ingest a single validated feedback entry."""
+        content = entry.get("content", "").strip()
+        if not content:
+            return 0
+
+        vec = _embed([content])[0]
+        point = PointStruct(
+            id=abs(hash(content)) % (2**63),
+            vector=vec,
+            payload={
+                "content":       content,
+                "domain":        entry.get("domain", ""),
+                "category":      entry.get("category", "feedback"),
+                "quality_label": entry.get("quality_label", "validated"),
+                "source_file":   "feedback",
+            },
+        )
+        self._client.upsert(collection_name=self._collection, points=[point])
+        logger.info("Ingested feedback entry (domain=%s)", entry.get("domain", "?"))
+        return 1
+
+    def search(
+        self,
+        query: str,
+        k: int = 3,
+        domain_filter: str | None = None,
+        mode: SearchMode = "hybrid",
+    ) -> list[dict[str, Any]]:
+        """Return top-k patterns. mode: 'vector' | 'fulltext' | 'hybrid'."""
+        qfilter: Filter | None = None
+        if domain_filter:
+            qfilter = Filter(
+                must=[FieldCondition(key="domain", match=MatchValue(value=domain_filter))]
+            )
+
+        vec = _embed([query])[0]
+
+        if mode in ("vector", "hybrid"):
+            vec_hits = self._client.search(
+                collection_name=self._collection,
+                query_vector=vec,
+                query_filter=qfilter,
+                limit=k * 4 if mode == "hybrid" else k,
+                with_payload=True,
+            )
+            vec_results = [h.payload for h in vec_hits]
+        else:
+            vec_results = []
+
+        if mode in ("fulltext", "hybrid"):
+            # MatchText does token-level substring matching (requires a text index on content)
+            must = [FieldCondition(key="content", match=MatchText(text=query))]
+            if domain_filter:
+                must.append(FieldCondition(key="domain", match=MatchValue(value=domain_filter)))
+            scroll_filter = Filter(must=must)
+            scroll_hits, _ = self._client.scroll(
+                collection_name=self._collection,
+                scroll_filter=scroll_filter,
+                limit=k * 4 if mode == "hybrid" else k,
+                with_payload=True,
+            )
+            fts_results = [h.payload for h in scroll_hits]
+        else:
+            fts_results = []
+
+        if mode == "hybrid":
+            return _rrf(vec_results, fts_results, k=k)
+        return (vec_results or fts_results)[:k]
+
+    def format_context(self, results: list[dict[str, Any]]) -> str:
+        """Serialize search results into the rag_context field of a JSONL pair."""
+        if not results:
+            return ""
+        return "\n\n".join(
+            f"[{r.get('domain', '?')} / {r.get('category', '?')}] {r['content']}"
+            for r in results
+        )
+
+    @property
+    def count(self) -> int:
+        info = self._client.get_collection(self._collection)
+        return info.points_count or 0
+
+    def drop(self) -> None:
+        self._client.delete_collection(self._collection)
+        logger.info("Dropped Qdrant collection '%s'", self._collection)
+        self._ensure_collection()
+
+
 def _rrf(
     vec_results: list[dict[str, Any]],
     fts_results: list[dict[str, Any]],
     k: int = 3,
     rrf_k: int = 60,
 ) -> list[dict[str, Any]]:
-    """Reciprocal Rank Fusion — merge vector and full-text ranked lists."""
     scores: dict[str, float] = {}
     items:  dict[str, dict[str, Any]] = {}
 
@@ -66,196 +242,6 @@ def _rrf(
 
     ranked = sorted(scores.keys(), key=lambda x: scores[x], reverse=True)
     return [items[key] for key in ranked[:k]]
-
-
-# ── Index ─────────────────────────────────────────────────────────────────────
-
-SearchMode = Literal["vector", "fulltext", "hybrid"]
-
-
-class RagIndex:
-    """
-    LanceDB-backed index for training-time RAG retrieval.
-
-    Each project gets its own LanceDB directory under lancedb/<project>/.
-    Supports three search modes:
-      - "vector"    : semantic similarity (cosine distance on embeddings)
-      - "fulltext"  : BM25 keyword search (exact terms, identifiers, APIs)
-      - "hybrid"    : RRF fusion of both (default — best of both worlds)
-
-    The index aggregates patterns from:
-      - config/rag_seeds/<domain>/       (domain idioms)
-      - datalake/projects/<project>/raw/ (project-specific .json seeds)
-      - datalake/projects/<project>/raw/feedback/ (ground feedback from sol teams)
-    """
-
-    def __init__(self, project: str, db_base: Path = _DEFAULT_DB_BASE):
-        self._db_path = db_base / project
-        self._db = lancedb.connect(str(self._db_path))
-        self._table_name = "patterns"
-        self._table = self._open_or_none()
-
-    def _open_or_none(self):
-        try:
-            return self._db.open_table(self._table_name)
-        except Exception:
-            return None
-
-    def _ensure_fts_index(self) -> None:
-        if self._table is None:
-            return
-        try:
-            self._table.create_fts_index("content", replace=False)
-        except Exception:
-            pass  # index already exists or FTS unavailable
-
-    def ingest_seeds(self, seeds_path: Path) -> int:
-        """Ingest a RAG seed JSON file. Returns number of records inserted."""
-        with seeds_path.open(encoding="utf-8") as fh:
-            data = json.load(fh)
-
-        patterns = data.get("patterns", [])
-        if not patterns:
-            logger.warning("No patterns found in %s", seeds_path)
-            return 0
-
-        texts   = [p["content"] for p in patterns]
-        vectors = _embed(texts)
-
-        records = [
-            {
-                "vector":        vec,
-                "content":       p["content"],
-                "domain":        data.get("domain", data.get("lang", "")),
-                "category":      p["metadata"].get("category", ""),
-                "quality_label": p["metadata"].get("quality_label", ""),
-                "source_file":   str(seeds_path.name),
-            }
-            for p, vec in zip(patterns, vectors)
-        ]
-
-        if self._table is None:
-            self._table = self._db.create_table(self._table_name, data=records)
-            logger.info("Created '%s' with %d records", self._table_name, len(records))
-        else:
-            self._table.add(records)
-            logger.info("Added %d records to '%s'", len(records), self._table_name)
-
-        self._ensure_fts_index()
-        return len(records)
-
-    def ingest_feedback(self, entry: dict[str, Any]) -> int:
-        """Ingest a single validated feedback entry from sol teams."""
-        content = entry.get("content", "").strip()
-        if not content:
-            return 0
-
-        vec = _embed([content])[0]
-        record = {
-            "vector":        vec,
-            "content":       content,
-            "domain":        entry.get("domain", ""),
-            "category":      entry.get("category", "feedback"),
-            "quality_label": entry.get("quality_label", "validated"),
-            "source_file":   "feedback",
-        }
-
-        if self._table is None:
-            self._table = self._db.create_table(self._table_name, data=[record])
-        else:
-            self._table.add([record])
-
-        self._ensure_fts_index()
-        logger.info("Ingested feedback entry (domain=%s)", entry.get("domain", "?"))
-        return 1
-
-    def search(
-        self,
-        query: str,
-        k: int = 3,
-        domain_filter: str | None = None,
-        mode: SearchMode = "hybrid",
-    ) -> list[dict[str, Any]]:
-        """Return top-k patterns. mode: 'vector' | 'fulltext' | 'hybrid'."""
-        if self._table is None:
-            return []
-
-        fetch_k = k * 4  # over-fetch before RRF pruning
-
-        def _apply_filter(search_obj: Any) -> Any:
-            if domain_filter:
-                return search_obj.where(f"domain = '{domain_filter}'")
-            return search_obj
-
-        cols = ["content", "domain", "category", "quality_label"]
-
-        if mode == "vector":
-            vec = _embed([query])[0]
-            q = _apply_filter(self._table.search(vec).limit(k))
-            return q.select(cols).to_list()
-
-        if mode == "fulltext":
-            try:
-                q = _apply_filter(
-                    self._table.search(query, query_type="fts").limit(k)
-                )
-                return q.select(cols).to_list()
-            except Exception as exc:
-                logger.warning("FTS search failed (%s) — falling back to vector", exc)
-                vec = _embed([query])[0]
-                return _apply_filter(self._table.search(vec).limit(k)).select(cols).to_list()
-
-        # hybrid: RRF fusion
-        vec = _embed([query])[0]
-        vec_results: list[dict[str, Any]] = []
-        fts_results: list[dict[str, Any]] = []
-
-        try:
-            vec_results = (
-                _apply_filter(self._table.search(vec).limit(fetch_k))
-                .select(cols)
-                .to_list()
-            )
-        except Exception as exc:
-            logger.warning("Vector search failed (%s)", exc)
-
-        try:
-            fts_results = (
-                _apply_filter(self._table.search(query, query_type="fts").limit(fetch_k))
-                .select(cols)
-                .to_list()
-            )
-        except Exception as exc:
-            logger.warning("FTS search failed (%s) — hybrid degraded to vector only", exc)
-
-        if not fts_results:
-            return vec_results[:k]
-        if not vec_results:
-            return fts_results[:k]
-
-        return _rrf(vec_results, fts_results, k=k)
-
-    def format_context(self, results: list[dict[str, Any]]) -> str:
-        """Serialize search results into the rag_context field of a JSONL pair."""
-        if not results:
-            return ""
-        return "\n\n".join(
-            f"[{r.get('domain', '?')} / {r.get('category', '?')}] {r['content']}"
-            for r in results
-        )
-
-    @property
-    def count(self) -> int:
-        if self._table is None:
-            return 0
-        return self._table.count_rows()
-
-    def drop(self) -> None:
-        try:
-            self._db.drop_table(self._table_name)
-        except Exception:
-            pass
-        self._table = None
 
 
 # ── Build helpers ─────────────────────────────────────────────────────────────
@@ -275,9 +261,11 @@ def build_index(
     project: str,
     domain: str,
     rebuild: bool = False,
+    host: str = "localhost",
+    port: int = 6333,
 ) -> RagIndex:
     """Build (or reuse) a RAG index for a project domain."""
-    idx = RagIndex(project)
+    idx = RagIndex(project, host=host, port=port)
 
     if rebuild:
         idx.drop()

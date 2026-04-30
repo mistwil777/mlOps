@@ -15,6 +15,7 @@
   let adapters = $state<AdvisorAdapter[]>([]);
   let orchestrator = $state<AdvisorAdapter | null>(null);
 
+  let showAllGlobalSources = $state(false);
   let altTarget   = $state<AdvisorAdapter | null>(null);
   let altLoading  = $state(false);
   let altError    = $state('');
@@ -26,9 +27,9 @@
   let evalLoading = $state(false);
 
   const models = [
-    { id: 'us.anthropic.claude-sonnet-4-6',              label: 'Sonnet 4.6 (recommandé)' },
-    { id: 'us.anthropic.claude-opus-4-7',                label: 'Opus 4.7 (plus précis)' },
-    { id: 'us.anthropic.claude-haiku-4-5-20251001-v1:0', label: 'Haiku 4.5 (rapide)' },
+    { id: 'us.anthropic.claude-sonnet-4-6',              label: 'Claude Sonnet 4.6 — via AWS Bedrock (recommandé)' },
+    { id: 'us.anthropic.claude-opus-4-7',                label: 'Claude Opus 4.7 — via AWS Bedrock (plus précis)' },
+    { id: 'us.anthropic.claude-haiku-4-5-20251001-v1:0', label: 'Claude Haiku 4.5 — via AWS Bedrock (rapide)' },
   ];
 
   // ── Derived ────────────────────────────────────────────────────────────────
@@ -73,7 +74,6 @@
     altLoading   = true;
     altError     = '';
     alternatives = [];
-    sourcesAdapter = null;
     try {
       alternatives = await advisorAlternatives(need, adapter.name, adapter.description, selection, model);
     } catch (e) { altError = (e as Error).message; }
@@ -115,7 +115,6 @@
 
   function openSources(adapter: AdvisorAdapter) {
     sourcesAdapter = adapter;
-    altTarget = null; alternatives = [];
   }
 
   function scoreColor(s: number): string {
@@ -256,13 +255,18 @@
         <div class="card">
           <div class="card-title mb-12">Sources ({allSources.length})</div>
           <div class="sources-grid">
-            {#each allSources as { source, adapter }}
+            {#each allSources.slice(0, showAllGlobalSources ? undefined : 5) as { source, adapter }}
               <a href={sourceUrl(source)} target="_blank" rel="noopener noreferrer" class="source-chip" title="{adapter}">
                 <span class="source-chip-name">{source}</span>
                 <span class="source-chip-icon">↗</span>
               </a>
             {/each}
           </div>
+          {#if allSources.length > 5}
+            <button class="sources-toggle mt-8" onclick={() => showAllGlobalSources = !showAllGlobalSources}>
+              {showAllGlobalSources ? '▾ Réduire' : `▸ Voir les ${allSources.length - 5} autres sources`}
+            </button>
+          {/if}
         </div>
       {/if}
     </div>
@@ -409,6 +413,14 @@
   .score-bar-val   { font-size:11px; font-weight:600; width:24px; text-align:right; }
   .eval-section { display:flex; flex-direction:column; }
   .eval-reco { font-size:12px; color:var(--text-muted); background:var(--surface-2); border-radius:var(--radius); padding:8px 12px; font-style:italic; line-height:1.5; }
+
+  .sources-toggle {
+    background: none; border: none; padding: 0;
+    font-size: 11px; color: var(--text-muted); cursor: pointer;
+    text-decoration: underline; text-underline-offset: 2px;
+    transition: color 150ms; display: block;
+  }
+  .sources-toggle:hover { color: var(--accent); }
 
   /* Sources grille compacte */
   .sources-grid { display:flex; flex-wrap:wrap; gap:6px; }

@@ -47,7 +47,6 @@
 
 <Topbar title="Dashboard">
   <SovereigntyBadge mode="local" />
-  <a href="/projects/new" class="btn btn-primary">+ Nouveau projet</a>
 </Topbar>
 
 <div class="content">

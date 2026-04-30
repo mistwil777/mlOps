@@ -28,13 +28,21 @@ Recommended batch_size: 8 (7B 4-bit models) · 4 (14B 4-bit models)
 
 ## Active Tech Stack
 Fine-tuning   : MLX-LM (QLoRA, LoRA) — requires Python 3.11 (see PYTHON_VERSION.md)
-Vector dev    : LanceDB (serverless, ~/Documents/GitHub/mlOps/lancedb/)
-Vector prod   : Qdrant (Docker, port 6333) — after Phase 2
-Tracking      : MLflow local (experiments/, port 5001)
+Vector store  : Qdrant (Docker, port 6333) — training-time AND production (LanceDB removed)
+Tracking      : MLflow local (experiments/, port 5001) — Capgemini internal only, not in client bundle
 Versioning    : DVC (local remote until MinIO is available)
-Metadata DB   : SQLite local (experiments/mlops.db) then PostgreSQL
-Serving       : mlx_lm.server --port 8080
+Metadata DB   : SQLite per project (experiments/projects/<id>/mlops.db)
+Serving       : Ollama (client bundle, Linux) — MLX direct on host (training, macOS)
 Embedding     : nomic-embed-text v1.5 via Ollama (port 11434)
+
+## Client Bundle Architecture
+The deliverable is a Docker bundle (NOT a fused model):
+  - Ollama        : inference server, loads base model + adapters dynamically
+  - Qdrant        : vector store pre-loaded with project RAG vectors (snapshot)
+  - Router        : HTTP orchestrator, routes requests to the right adapter(s)
+Adapters are Capgemini IP — multiple per project, called dynamically by task type.
+Base model is NOT our IP — included in bundle as-is from HuggingFace.
+MLflow is NEVER in the client bundle — internal tool only.
 
 ## Active Projects
 - migrator: Python→Java migration · Base model: Mistral 7B Instruct 4-bit

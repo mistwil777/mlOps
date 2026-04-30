@@ -18,10 +18,10 @@ router = APIRouter(prefix="/api/projects", tags=["lifecycle"])
 
 def _rag_pattern_count(project_id: str) -> int:
     try:
-        import lancedb  # noqa: PLC0415
-        db = lancedb.connect(str(Path(f"lancedb/{project_id}")))
-        tbl = db.open_table("patterns")
-        return tbl.count_rows()
+        from qdrant_client import QdrantClient  # noqa: PLC0415
+        client = QdrantClient(host="localhost", port=6333)
+        info = client.get_collection(f"patterns_{project_id}")
+        return info.points_count or 0
     except Exception:
         return 0
 

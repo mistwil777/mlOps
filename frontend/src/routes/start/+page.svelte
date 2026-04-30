@@ -1,9 +1,10 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { createProject, advisorRecommend, getDataHealth, getRuns, launchEvaluation } from '$lib/api';
-  import type { AdvisorRecommendation } from '$lib/types';
+  import { createProject, advisorRecommend, advisorEvaluateSelection, getDataHealth, launchEvaluation } from '$lib/api';
+  import type { AdvisorRecommendation, AdvisorAdapter, SelectionEval } from '$lib/types';
   import Topbar from '$lib/components/Topbar.svelte';
   import SovereigntyBadge from '$lib/components/SovereigntyBadge.svelte';
+  import AdapterCard from '$lib/components/AdapterCard.svelte';
 
   // ── Étapes du wizard ──────────────────────────────────────────────────────
   // 0 Accueil  1 Besoin  2 Architecture  3 Projet  4 Données  5 Training  6 Évaluation  7 Livraison
@@ -15,6 +16,15 @@
   let analyzing  = $state(false);
   let analyzeErr = $state('');
   let recommendation: AdvisorRecommendation | null = $state(null);
+
+  // Étape 2 — adapters éditables + éval équipe
+  let adapters     = $state<AdvisorAdapter[]>([]);
+  let orchestrator = $state<AdvisorAdapter | null>(null);
+  let selEval      = $state<SelectionEval | null>(null);
+  let evalLoading  = $state(false);
+
+  const wizardSelection = $derived([...adapters, ...(orchestrator ? [orchestrator] : [])]);
+  const wizardTotalPairs = $derived(wizardSelection.reduce((s, a) => s + a.estimated_pairs, 0));
 
   // Étape 3 — création projet
   let projName   = $state('');
@@ -55,17 +65,38 @@
   // ── Actions ───────────────────────────────────────────────────────────────
   async function analyzeNeed() {
     if (!need.trim()) return;
-    analyzing = true; analyzeErr = ''; recommendation = null;
+    analyzing = true; analyzeErr = ''; recommendation = null; selEval = null;
     try {
       recommendation = await advisorRecommend(need.trim(), aiModel);
-      // Pre-fill project name from first adapter
-      const firstAdapter = recommendation.recommendation.adapters[0];
+      adapters     = [...recommendation.recommendation.adapters];
+      orchestrator = { ...recommendation.recommendation.orchestrator };
+      const firstAdapter = adapters[0];
       if (firstAdapter && !projName) {
         projName = firstAdapter.name.split('-').slice(0, 2).join('-');
       }
       step = 2;
+      runWizardEval();
     } catch (e) { analyzeErr = (e as Error).message; }
     finally { analyzing = false; }
+  }
+
+  async function runWizardEval() {
+    if (wizardSelection.length === 0) return;
+    evalLoading = true;
+    try {
+      selEval = await advisorEvaluateSelection(need, wizardSelection, aiModel);
+    } catch { /* non-blocking */ }
+    finally { evalLoading = false; }
+  }
+
+  function scoreColor(s: number): string {
+    if (s >= 15) return 'var(--green)';
+    if (s >= 10) return 'var(--accent)';
+    return 'var(--red)';
+  }
+
+  function scoreBar(s: number): string {
+    return `width:${(s / 20) * 100}%`;
   }
 
   async function createProj() {
@@ -157,9 +188,9 @@
         <div class="form-group mt-12">
           <label class="form-label">Modèle d'analyse</label>
           <select class="form-select" bind:value={aiModel} disabled={analyzing}>
-            <option value="us.anthropic.claude-sonnet-4-6">Sonnet 4.6 (recommandé)</option>
-            <option value="us.anthropic.claude-opus-4-7">Opus 4.7 (plus précis)</option>
-            <option value="us.anthropic.claude-haiku-4-5-20251001-v1:0">Haiku 4.5 (rapide)</option>
+            <option value="us.anthropic.claude-sonnet-4-6">Claude Sonnet 4.6 — via AWS Bedrock (recommandé)</option>
+            <option value="us.anthropic.claude-opus-4-7">Claude Opus 4.7 — via AWS Bedrock (plus précis)</option>
+            <option value="us.anthropic.claude-haiku-4-5-20251001-v1:0">Claude Haiku 4.5 — via AWS Bedrock (rapide)</option>
           </select>
         </div>
 
@@ -187,13 +218,14 @@
       <div class="wc-header">
         <div class="wc-step-badge">2 / {STEPS.length}</div>
         <h2 class="wc-title">Architecture recommandée</h2>
-        <p class="wc-sub">Voici les adapters LoRA proposés. Vous pouvez les ajuster dans l'Advisor complet.</p>
+        <p class="wc-sub">Voici les adapters LoRA proposés. Cliquez sur un adapter pour voir les scores, pros/cons et sources.</p>
       </div>
 
       <div class="wc-body">
+        <!-- Résumé chiffres -->
         <div class="arch-summary">
           <div class="arch-stat">
-            <span class="arch-num">{recommendation.recommendation.adapters.length}</span>
+            <span class="arch-num">{adapters.length}</span>
             <span class="arch-lbl">Spécialistes</span>
           </div>
           <div class="arch-stat">
@@ -201,24 +233,59 @@
             <span class="arch-lbl">Orchestrateur</span>
           </div>
           <div class="arch-stat">
-            <span class="arch-num">~{recommendation.total_estimated_pairs.toLocaleString()}</span>
+            <span class="arch-num">~{wizardTotalPairs.toLocaleString()}</span>
             <span class="arch-lbl">Paires estimées</span>
           </div>
         </div>
 
-        <div class="adapter-list mt-16">
-          {#each recommendation.recommendation.adapters as a}
-            <div class="adapter-row">
-              <span class="adapter-name mono">{a.name}</span>
-              <span class="adapter-desc text-muted">{a.description}</span>
-              <span class="adapter-pairs">~{a.estimated_pairs}</span>
-            </div>
-          {/each}
-          <div class="adapter-row adapter-orch">
-            <span class="adapter-name mono">{recommendation.recommendation.orchestrator.name}</span>
-            <span class="adapter-desc text-muted">{recommendation.recommendation.orchestrator.description}</span>
-            <span class="badge badge-completed">orchestrateur</span>
+        <!-- Score équipe -->
+        <div class="team-eval mt-16">
+          <div class="team-eval-header">
+            <span class="te-label">Score équipe</span>
+            {#if evalLoading}<span class="spinner spinner-sm"></span>{/if}
           </div>
+          {#if selEval}
+            <div class="te-body">
+              <div class="te-hero">
+                <span class="te-value" style="color:{scoreColor(selEval.overall)}">{selEval.overall.toFixed(1)}</span>
+                <span class="te-unit">/20</span>
+              </div>
+              <div class="score-bars">
+                {#each [['Couverture', selEval.coverage], ['Cohésion', selEval.cohesion], ['Équilibre', selEval.balance], ['Orchestrabilité', selEval.orchestrability]] as [label, val]}
+                  <div class="score-bar-row">
+                    <span class="score-bar-label">{label}</span>
+                    <div class="score-bar-track">
+                      <div class="score-bar-fill" style="{scoreBar(val as number)};background:{scoreColor(val as number)}"></div>
+                    </div>
+                    <span class="score-bar-val" style="color:{scoreColor(val as number)}">{val}</span>
+                  </div>
+                {/each}
+              </div>
+              {#if selEval.gaps.length}
+                <div class="te-section mt-10">
+                  <span class="te-meta-label">Lacunes détectées</span>
+                  <div class="tags mt-4">
+                    {#each selEval.gaps as g}<span class="tag tag-warn">{g}</span>{/each}
+                  </div>
+                </div>
+              {/if}
+              {#if selEval.recommendation}
+                <p class="te-reco mt-8">{selEval.recommendation}</p>
+              {/if}
+            </div>
+          {:else if !evalLoading}
+            <p class="te-hint">Évaluation en cours après analyse…</p>
+          {/if}
+        </div>
+
+        <!-- Adapter cards complètes -->
+        <div class="adapter-cards mt-16">
+          {#each adapters as a (a.name)}
+            <AdapterCard adapter={a} />
+          {/each}
+          {#if orchestrator}
+            <AdapterCard adapter={orchestrator} />
+          {/if}
         </div>
 
         {#if recommendation.recommendation.notes}
@@ -228,7 +295,7 @@
 
       <div class="wc-footer">
         <button class="btn btn-ghost" onclick={() => step = 1}>← Modifier le besoin</button>
-        <a href="/advisor" class="btn btn-ghost">Ouvrir l'Advisor complet</a>
+        <a href="/advisor" class="btn btn-ghost">Advisor complet</a>
         <button class="btn btn-primary" onclick={() => step = 3}>Créer le projet →</button>
       </div>
     </div>
@@ -545,17 +612,32 @@
   .arch-lbl { font-size: var(--text-xs); color: var(--text-muted); }
   .arch-notes { font-size: var(--text-sm); color: var(--text-muted); background: var(--surface-2); border-radius: var(--radius); padding: 10px 14px; font-style: italic; line-height: 1.5; }
 
-  .adapter-list { display: flex; flex-direction: column; gap: 4px; }
-  .adapter-row {
-    display: flex; align-items: center; gap: 10px;
-    padding: 8px 10px; border-radius: var(--radius);
-    background: var(--surface-2); border: 1px solid var(--border);
-    font-size: var(--text-sm);
-  }
-  .adapter-orch { border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
-  .adapter-name { font-weight: 600; flex-shrink: 0; min-width: 140px; }
-  .adapter-desc { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .adapter-pairs { font-size: var(--text-xs); color: var(--text-dim); flex-shrink: 0; }
+  /* Team eval */
+  .team-eval { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px 16px; }
+  .team-eval-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .te-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); font-weight: 600; }
+  .te-body { display: flex; flex-direction: column; gap: 0; }
+  .te-hero { display: flex; align-items: baseline; gap: 3px; margin-bottom: 10px; }
+  .te-value { font-size: 32px; font-weight: 800; line-height: 1; }
+  .te-unit  { font-size: 16px; color: var(--text-muted); }
+  .score-bars { display: flex; flex-direction: column; gap: 5px; }
+  .score-bar-row { display: flex; align-items: center; gap: 8px; }
+  .score-bar-label { font-size: 11px; color: var(--text-muted); width: 90px; flex-shrink: 0; }
+  .score-bar-track { flex: 1; height: 5px; background: var(--surface-3, var(--border)); border-radius: 3px; overflow: hidden; }
+  .score-bar-fill  { height: 100%; border-radius: 3px; transition: width 400ms ease; }
+  .score-bar-val   { font-size: 11px; font-weight: 600; width: 24px; text-align: right; }
+  .te-section { display: flex; flex-direction: column; }
+  .te-meta-label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); }
+  .te-reco { font-size: 12px; color: var(--text-muted); background: var(--surface); border-radius: var(--radius); padding: 8px 10px; font-style: italic; line-height: 1.5; margin: 0; }
+  .te-hint { font-size: 12px; color: var(--text-dim); margin: 0; }
+  .tags { display: flex; flex-wrap: wrap; gap: 4px; }
+  .tag { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--surface); color: var(--text-muted); border: 1px solid var(--border); }
+  .tag-warn { color: #f59e0b; border-color: rgba(245,158,11,.3); }
+
+  /* Adapter cards dans wizard */
+  .adapter-cards { display: flex; flex-direction: column; gap: 8px; }
+
+  .spinner-sm { width: 12px; height: 12px; border-width: 2px; }
 
   /* Data checklist */
   .data-checklist { display: flex; flex-direction: column; gap: 8px; }

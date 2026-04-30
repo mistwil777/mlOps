@@ -105,7 +105,7 @@ def create_project(body: ProjectCreate):
         "task_type":   body.task_type,
         "model":       body.model,
         "model_format": body.model_format,
-        "rag_index":   f"lancedb/{project_id}",
+        "rag_collection": f"patterns_{project_id}",
         "baseline":    {"provider": "nova-pro", "model_id": "us.amazon.nova-pro-v1:0", "measured": False, "metrics": {}},
         "quality_thresholds": body.quality_thresholds,
         "min_tokens":  body.min_tokens,
@@ -159,6 +159,14 @@ def delete_project(project_id: str):
     datalake_dir = Path("datalake/projects") / project_id
     if datalake_dir.exists():
         shutil.rmtree(datalake_dir, ignore_errors=True)
+
+    # Drop Qdrant collection (non-blocking)
+    try:
+        from qdrant_client import QdrantClient  # noqa: PLC0415
+        client = QdrantClient(host="localhost", port=6333)
+        client.delete_collection(f"patterns_{project_id}")
+    except Exception:
+        pass
 
 
 @router.patch("/{project_id}")

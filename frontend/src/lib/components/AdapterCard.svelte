@@ -13,6 +13,7 @@
 
   let expanded = $state(false);
   let showDepth = $state(false);
+  let showAllSources = $state(false);
 
   function scoreColor(s: number): string {
     if (s >= 15) return 'var(--green)';
@@ -44,10 +45,7 @@
     <div class="l1-left">
       <span class="chevron">{expanded ? '▾' : '▸'}</span>
       <span class="adapter-name">{adapter.name}</span>
-      <span class="badge {isOrchestrator ? 'badge-running' : 'badge-completed'} ml-6">
-        {isOrchestrator ? 'orchestrateur' : 'specialist'}
-      </span>
-      {#if adapter.rag_recommended}<span class="badge badge-pending ml-4">RAG</span>{/if}
+      {#if isOrchestrator}<span class="badge badge-running ml-6">orchestrateur</span>{/if}
     </div>
     <div class="l1-right" onclick={e => e.stopPropagation()} role="presentation">
       <span class="pairs-count">~{adapter.estimated_pairs}</span>
@@ -92,6 +90,9 @@
         {#if adapter.team_note}
           <p class="team-note mt-6">{adapter.team_note}</p>
         {/if}
+        {#if adapter.rag_recommended}
+          <p class="rag-note mt-6">◈ RAG recommandé pour cet adapter</p>
+        {/if}
 
         {#if adapter.pros?.length || adapter.cons?.length}
           <div class="pros-cons mt-10">
@@ -109,6 +110,7 @@
             {/if}
           </div>
         {/if}
+
       {/if}
 
       <!-- L3 toggle -->
@@ -129,15 +131,20 @@
             {/if}
             {#if adapter.data_sources?.length}
               <div class="depth-section mt-8">
-                <span class="meta-label">Sources</span>
+                <span class="meta-label">Sources ({adapter.data_sources.length})</span>
                 <div class="sources-grid mt-4">
-                  {#each adapter.data_sources as src}
+                  {#each adapter.data_sources.slice(0, showAllSources ? undefined : 4) as src}
                     <a href={sourceUrl(src)} target="_blank" rel="noopener noreferrer" class="source-chip">
                       <span class="source-chip-name">{src}</span>
                       <span class="source-chip-icon">↗</span>
                     </a>
                   {/each}
                 </div>
+                {#if adapter.data_sources.length > 4}
+                  <button class="l3-toggle mt-6" onclick={() => showAllSources = !showAllSources}>
+                    {showAllSources ? '▾ Réduire' : `▸ +${adapter.data_sources.length - 4} sources`}
+                  </button>
+                {/if}
               </div>
             {/if}
           </div>
@@ -189,6 +196,7 @@
   .score-fill  { height: 100%; border-radius: 3px; transition: width 300ms ease; }
   .score-val   { font-size: 11px; font-weight: 600; width: 36px; text-align: right; flex-shrink: 0; }
   .team-note   { font-size: 11px; color: var(--text-muted); font-style: italic; line-height: 1.4; margin: 0; }
+  .rag-note    { font-size: 11px; color: var(--accent); margin: 0; }
 
   .pros-cons     { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .pros-cons-col { display: flex; flex-direction: column; gap: 4px; }

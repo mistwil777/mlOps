@@ -10,7 +10,7 @@ multi_adapter: false
 
 model: qwen2.5-coder-7b-4bit
 model_format: qwen          # chat template used in extract + train
-rag_index: lancedb/migrator # training-time RAG (LanceDB)
+rag_collection: patterns_migrator
 
 baseline:
   provider: nova-pro

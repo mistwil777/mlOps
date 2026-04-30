@@ -8,9 +8,9 @@
   let { mode = 'local', label, size = 'md' }: Props = $props();
 
   const config = $derived({
-    local:  { dot: '#3ecf8e', text: label ?? '🟢 Local',   title: '100% local inference — no cloud calls' },
-    cloud:  { dot: '#f7aa50', text: label ?? '🟠 Cloud',   title: 'Cloud inference — data leaves the machine' },
-    hybrid: { dot: '#5b98f8', text: label ?? '◑ Hybrid',   title: 'Scoping via cloud / inference local' },
+    local:  { dot: '#3ecf8e', text: label ?? '🟢 Serveur ML',   title: 'Serveur d\'inférence local actif — aucun appel cloud' },
+    cloud:  { dot: '#f7aa50', text: label ?? '🟠 Cloud',        title: 'Appel cloud — les données quittent la machine' },
+    hybrid: { dot: '#5b98f8', text: label ?? '◑ Hybride',       title: 'Scoping via cloud / inférence locale' },
   }[mode]);
 </script>
 

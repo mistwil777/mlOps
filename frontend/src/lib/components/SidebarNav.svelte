@@ -46,6 +46,7 @@
       items: [
         { href: '/base-models',  icon: '◫', label: 'Modèles base' },
         { href: '/train',        icon: '▷', label: 'Fine-tuning' },
+        { href: '/runs',         icon: '◌', label: 'Runs' },
         { href: '/adapters',     icon: '◈', label: 'Adaptateurs LoRA' },
       ],
     },
@@ -94,11 +95,6 @@
       <span class="nav-icon">⬡</span>
       Dashboard
     </a>
-    <a href="/start" class:active={isActive('/start')} class="nav-top nav-start">
-      <span class="nav-icon">▶</span>
-      Nouveau projet
-    </a>
-
     <!-- Numbered groups -->
     {#each groups as group}
       <div class="nav-group" class:active-group={groupActive(group)}>
@@ -128,14 +124,6 @@
     font-weight: 500;
     margin: 4px 4px 2px !important;
   }
-
-  .nav-start {
-    background: var(--accent-dim) !important;
-    border: 1px solid rgba(91,152,248,.2) !important;
-    color: var(--accent) !important;
-    margin-bottom: 6px !important;
-  }
-  .nav-start:hover { background: rgba(91,152,248,.2) !important; }
 
   .nav-icon {
     font-size: 14px;

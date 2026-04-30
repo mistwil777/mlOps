@@ -1,4 +1,4 @@
-"""RAG index management per project."""
+"""RAG index management per project — backed by Qdrant."""
 
 from __future__ import annotations
 
@@ -6,57 +6,58 @@ import asyncio
 import json
 import sys
 import uuid
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from qdrant_client import QdrantClient
 from sse_starlette.sse import EventSourceResponse
 
 router = APIRouter(prefix="/api/rag", tags=["rag"])
 
 _JOBS: dict[str, dict[str, Any]] = {}
 
+_QDRANT_HOST = "localhost"
+_QDRANT_PORT = 6333
+
+
+def _qdrant() -> QdrantClient:
+    return QdrantClient(host=_QDRANT_HOST, port=_QDRANT_PORT)
+
 
 def _rag_info(project_id: str) -> dict[str, Any]:
-    db_path = Path(f"lancedb/{project_id}")
-    if not db_path.exists():
-        return {"exists": False, "count": 0, "size_mb": 0, "tables": []}
-
-    tables = [p.name for p in db_path.iterdir() if p.is_dir()]
-    total_size = sum(f.stat().st_size for f in db_path.rglob("*") if f.is_file())
-
-    count = 0
+    collection = f"patterns_{project_id}"
     try:
-        import lancedb  # noqa: PLC0415
-        db = lancedb.connect(str(db_path))
-        tbl = db.open_table("patterns")
-        count = tbl.count_rows()
+        client = _qdrant()
+        existing = [c.name for c in client.get_collections().collections]
+        if collection not in existing:
+            return {"exists": False, "count": 0}
+        info = client.get_collection(collection)
+        return {
+            "exists": True,
+            "count": info.points_count or 0,
+            "collection": collection,
+        }
     except Exception:
-        pass
-
-    return {
-        "exists": True,
-        "count": count,
-        "size_mb": round(total_size / 1e6, 2),
-        "tables": tables,
-        "db_path": str(db_path),
-    }
+        return {"exists": False, "count": 0}
 
 
 @router.get("")
 async def list_rag_indexes() -> list[dict[str, Any]]:
-    """List all existing RAG indexes."""
-    base = Path("lancedb")
-    if not base.exists():
-        return []
-
-    result = []
-    for d in sorted(base.iterdir()):
-        if d.is_dir():
-            info = _rag_info(d.name)
-            result.append({"project_id": d.name, **info})
-    return result
+    """List all existing RAG collections in Qdrant."""
+    try:
+        client = _qdrant()
+        collections = client.get_collections().collections
+        result = []
+        for c in sorted(collections, key=lambda x: x.name):
+            if not c.name.startswith("patterns_"):
+                continue
+            project_id = c.name.removeprefix("patterns_")
+            info = _rag_info(project_id)
+            result.append({"project_id": project_id, **info})
+        return result
+    except Exception as exc:
+        raise HTTPException(503, f"Qdrant unavailable: {exc}") from exc
 
 
 @router.get("/{project_id}")
@@ -75,7 +76,6 @@ async def build_rag_index(project_id: str, rebuild: bool = False) -> dict[str, s
 
 
 async def _run_build(job_id: str, project_id: str, rebuild: bool) -> None:
-    rebuild_flag = ["--rebuild"] if rebuild else []
     cmd = [
         sys.executable, "-c",
         f"""
@@ -88,7 +88,7 @@ if not p.exists():
     sys.exit(1)
 cfg = yaml.safe_load(p.open())
 domain = cfg.get('domain', 'code')
-print(f'Building RAG index for project={project_id} domain={{domain}} rebuild={rebuild}…', flush=True)
+print(f'Building RAG index for project={project_id} domain={{domain}} rebuild={rebuild}...', flush=True)
 idx = build_index('{project_id}', domain, rebuild={rebuild})
 print(f'Done: {{idx.count}} patterns indexed', flush=True)
 """,
@@ -133,14 +133,19 @@ async def stream_build(job_id: str):
 
 @router.delete("/{project_id}")
 async def drop_rag_index(project_id: str) -> dict[str, str]:
-    """Drop a RAG index (removes LanceDB directory)."""
-    db_path = Path(f"lancedb/{project_id}")
-    if not db_path.exists():
-        raise HTTPException(404, f"RAG index for project '{project_id}' not found")
-
-    import shutil  # noqa: PLC0415
-    shutil.rmtree(db_path)
-    return {"ok": f"RAG index for '{project_id}' deleted"}
+    """Drop a project's RAG collection from Qdrant."""
+    collection = f"patterns_{project_id}"
+    try:
+        client = _qdrant()
+        existing = [c.name for c in client.get_collections().collections]
+        if collection not in existing:
+            raise HTTPException(404, f"RAG index for project '{project_id}' not found")
+        client.delete_collection(collection)
+        return {"ok": f"RAG index for '{project_id}' deleted"}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(500, str(exc)) from exc
 
 
 class SearchRequest(BaseModel):
@@ -152,8 +157,8 @@ class SearchRequest(BaseModel):
 @router.post("/{project_id}/search")
 async def search_rag(project_id: str, req: SearchRequest) -> dict[str, Any]:
     """Perform a semantic search against a project's RAG index."""
-    db_path = Path(f"lancedb/{project_id}")
-    if not db_path.exists():
+    info = _rag_info(project_id)
+    if not info.get("exists"):
         raise HTTPException(404, f"No RAG index for project '{project_id}'")
 
     try:
