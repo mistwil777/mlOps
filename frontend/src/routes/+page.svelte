@@ -106,7 +106,7 @@
     <div class="empty-state mb-24">Chargement…</div>
   {:else if projects.length === 0}
     <div class="empty-state mb-24">
-      Aucun projet. <a href="/projects/new">Créer le premier →</a>
+      Aucun projet. <a href="/start">Créer le premier →</a>
     </div>
   {:else}
     <div class="project-list mb-24">

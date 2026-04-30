@@ -17,7 +17,7 @@
 
 <div class="topbar">
   <span class="topbar-title">Projets</span>
-  <a href="/projects/new" class="btn btn-primary">+ Nouveau projet</a>
+  <a href="/start" class="btn btn-primary">+ Nouveau projet</a>
 </div>
 
 <div class="content">
@@ -48,7 +48,7 @@
           {:else}
             <tr>
               <td colspan="6" style="text-align:center;color:var(--text-muted);padding:32px">
-                Aucun projet. <a href="/projects/new">Créer le premier</a>
+                Aucun projet. <a href="/start">Créer le premier</a>
               </td>
             </tr>
           {/each}

@@ -308,7 +308,7 @@
 
           {#if selection.length > 0}
             <div class="validation-bar mt-16">
-              <a href="/projects/new" class="btn btn-primary">✓ Valider et créer les projets</a>
+              <a href="/start" class="btn btn-primary">✓ Valider et créer les projets</a>
             </div>
           {/if}
         </div>
