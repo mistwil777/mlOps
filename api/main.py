@@ -19,7 +19,7 @@ app = FastAPI(title="MLOps Factory API", version="1.0.0", docs_url="/api/docs", 
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:7860"],
+    allow_origins=["http://localhost:5173"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -45,6 +45,9 @@ if _STATIC.exists() and any(_STATIC.iterdir()):
 
     @app.get("/{full_path:path}", include_in_schema=False)
     async def spa_fallback(full_path: str) -> FileResponse:
+        if full_path.startswith("api/"):
+            from fastapi import HTTPException  # noqa: PLC0415
+            raise HTTPException(404)
         static_file = _STATIC / full_path
         if static_file.is_file():
             return FileResponse(static_file)
