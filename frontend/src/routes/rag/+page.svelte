@@ -172,7 +172,7 @@
       <div class="form-col">
         <label class="form-field">
           <span class="field-label">Projet</span>
-          <input bind:value={buildProject} class="input" placeholder="ex: migrator" />
+          <input bind:value={buildProject} class="input" placeholder="ex: defense-maintenance" />
         </label>
         <label class="form-field toggle-row">
           <span class="field-label">Forcer la reconstruction</span>
