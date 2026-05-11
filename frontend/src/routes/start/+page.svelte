@@ -512,6 +512,7 @@
         need, aiModel, adapters, orchestrator,
         selEval, recommendation,
         projName, projDomain, projClass, baseModel,
+        sourceEntries, collectTopic, collectMaxPairs,
         savedAt,
       }));
       analysisSavedAt = savedAt;
@@ -562,8 +563,10 @@
       projDomain   = s.projDomain   ?? projDomain;
       projClass    = s.projClass    ?? projClass;
       baseModel    = s.baseModel    ?? baseModel;
+      sourceEntries   = s.sourceEntries   ?? [];
+      collectTopic    = s.collectTopic    ?? '';
+      collectMaxPairs = s.collectMaxPairs ?? 50;
       analysisSavedAt = s.savedAt ?? null;
-      sourceEntries = [];
       if (adapters.length > 0) {
         step = 2;
         if (!selEval) runWizardEval();
@@ -655,9 +658,10 @@
     }
   });
 
-  // Sauvegarde automatique à chaque modification des adapters, de l'orchestrateur ou du score
+  // Sauvegarde automatique à chaque modification des adapters, sources ou score
   $effect(() => {
     void adapters; void orchestrator; void selEval;
+    void sourceEntries; void collectTopic; void collectMaxPairs;
     if (adapters.length > 0 || orchestrator) saveAnalysis();
   });
 </script>
