@@ -513,6 +513,7 @@
         selEval, recommendation,
         projName, projDomain, projClass, baseModel,
         sourceEntries, collectTopic, collectMaxPairs,
+        step2Tab,
         savedAt,
       }));
       analysisSavedAt = savedAt;
@@ -566,6 +567,7 @@
       sourceEntries   = s.sourceEntries   ?? [];
       collectTopic    = s.collectTopic    ?? '';
       collectMaxPairs = s.collectMaxPairs ?? 50;
+      step2Tab        = s.step2Tab        ?? 'architecture';
       analysisSavedAt = s.savedAt ?? null;
       if (adapters.length > 0) {
         step = 2;
@@ -661,7 +663,7 @@
   // Sauvegarde automatique à chaque modification des adapters, sources ou score
   $effect(() => {
     void adapters; void orchestrator; void selEval;
-    void sourceEntries; void collectTopic; void collectMaxPairs;
+    void sourceEntries; void collectTopic; void collectMaxPairs; void step2Tab;
     if (adapters.length > 0 || orchestrator) saveAnalysis();
   });
 </script>
