@@ -1,9 +1,11 @@
 <script lang="ts">
+  import { goto } from '$app/navigation';
   import { advisorRecommend, advisorAlternatives, advisorEvaluateSelection } from '$lib/api';
   import type { AdvisorRecommendation, AdvisorAdapter, SelectionEval } from '$lib/types';
   import AdapterCard from '$lib/components/AdapterCard.svelte';
   import Topbar from '$lib/components/Topbar.svelte';
   import SovereigntyBadge from '$lib/components/SovereigntyBadge.svelte';
+  import { setWizardHandoff } from '$lib/stores/wizard.svelte';
 
   // ── State ──────────────────────────────────────────────────────────────────
   let need  = $state('');
@@ -308,7 +310,10 @@
 
           {#if selection.length > 0}
             <div class="validation-bar mt-16">
-              <a href="/start" class="btn btn-primary">✓ Valider et créer les projets</a>
+              <button
+                class="btn btn-primary"
+                onclick={() => { setWizardHandoff(need, adapters, orchestrator); goto('/start'); }}
+              >✓ Valider et créer le projet</button>
             </div>
           {/if}
         </div>

@@ -1,10 +1,12 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { createProject, advisorRecommend, advisorEvaluateSelection, getDataHealth, launchEvaluation } from '$lib/api';
   import type { AdvisorRecommendation, AdvisorAdapter, SelectionEval } from '$lib/types';
   import Topbar from '$lib/components/Topbar.svelte';
   import SovereigntyBadge from '$lib/components/SovereigntyBadge.svelte';
   import AdapterCard from '$lib/components/AdapterCard.svelte';
+  import { wizardHandoff, clearWizardHandoff } from '$lib/stores/wizard.svelte';
 
   // ── Étapes du wizard ──────────────────────────────────────────────────────
   // 0 Accueil  1 Besoin  2 Architecture  3 Projet  4 Données  5 Training  6 Évaluation  7 Livraison
@@ -133,6 +135,21 @@
       evalLaunched = true;
     } catch { /* non-blocking */ }
   }
+
+  // ── Handoff depuis l'Advisor (après déclarations des fonctions) ───────────
+  onMount(() => {
+    if (wizardHandoff.adapters.length > 0) {
+      need         = wizardHandoff.need;
+      adapters     = [...wizardHandoff.adapters];
+      orchestrator = wizardHandoff.orchestrator ? { ...wizardHandoff.orchestrator } : null;
+      if (adapters[0] && !projName) {
+        projName = adapters[0].name.split('-').slice(0, 2).join('-');
+      }
+      clearWizardHandoff();
+      step = 2;
+      runWizardEval();
+    }
+  });
 </script>
 
 <Topbar crumbs={[{ label: 'Démarrer un projet' }]}>
@@ -213,7 +230,7 @@
     </div>
 
   <!-- Étape 2 : résultat architecture -->
-  {:else if step === 2 && recommendation}
+  {:else if step === 2 && adapters.length > 0}
     <div class="wizard-card">
       <div class="wc-header">
         <div class="wc-step-badge">2 / {STEPS.length}</div>
@@ -288,7 +305,7 @@
           {/if}
         </div>
 
-        {#if recommendation.recommendation.notes}
+        {#if recommendation?.recommendation.notes}
           <div class="arch-notes mt-12">{recommendation.recommendation.notes}</div>
         {/if}
       </div>
