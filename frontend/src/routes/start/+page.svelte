@@ -128,7 +128,8 @@
 
   async function loadCollectedPairs(pid: string) {
     try {
-      const res = await fetch(`/api/data/review/${pid}?page=0&page_size=20`);
+      const res = await fetch(`/api/data/review/${pid}?stage=raw&page=0&page_size=20`);
+      if (!res.ok) return;
       const page = await res.json();
       collectedPairs = page.items ?? [];
       collectedTotal = page.total ?? 0;
@@ -475,30 +476,108 @@
     } catch { /* non-blocking */ }
   }
 
-  const STORAGE_KEY = 'wizard_analysis_v1';
+  // ── Persistance multi-analyses ────────────────────────────────────────────
+  // Une clé par analyse : wizard_analysis_v2__{projName}
+  // Un index global   : wizard_analyses_index  (liste des analyses sauvegardées)
+
+  const STORAGE_PREFIX = 'wizard_analysis_v2__';
+  const INDEX_KEY      = 'wizard_analyses_index';
+
+  interface AnalysisEntry {
+    key: string;          // clé localStorage complète
+    projName: string;
+    needExcerpt: string;  // 80 premiers caractères du besoin
+    adaptersCount: number;
+    savedAt: string;
+  }
+
+  let savedAnalyses = $state<AnalysisEntry[]>([]);
+
+  function _loadIndex(): AnalysisEntry[] {
+    try {
+      return JSON.parse(localStorage.getItem(INDEX_KEY) ?? '[]');
+    } catch { return []; }
+  }
+
+  function _saveIndex(entries: AnalysisEntry[]) {
+    try { localStorage.setItem(INDEX_KEY, JSON.stringify(entries)); } catch { /* indisponible */ }
+  }
 
   function saveAnalysis() {
+    if (!projName.trim() && adapters.length === 0) return;
+    const key = STORAGE_PREFIX + (projName.trim() || 'sans-nom');
+    const savedAt = new Date().toISOString();
     try {
-      const savedAt = new Date().toISOString();
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      localStorage.setItem(key, JSON.stringify({
         need, aiModel, adapters, orchestrator,
         selEval, recommendation,
         projName, projDomain, projClass, baseModel,
         savedAt,
       }));
       analysisSavedAt = savedAt;
+
+      // Mettre à jour l'index
+      const entry: AnalysisEntry = {
+        key,
+        projName: projName.trim() || 'sans-nom',
+        needExcerpt: need.trim().slice(0, 80),
+        adaptersCount: adapters.length + (orchestrator ? 1 : 0),
+        savedAt,
+      };
+      const idx = _loadIndex().filter(e => e.key !== key);
+      _saveIndex([entry, ...idx]); // plus récent en premier
+      savedAnalyses = _loadIndex();
     } catch { /* localStorage indisponible */ }
   }
 
   function clearSession() {
-    localStorage.removeItem(STORAGE_KEY);
+    const key = STORAGE_PREFIX + (projName.trim() || 'sans-nom');
+    try {
+      localStorage.removeItem(key);
+      _saveIndex(_loadIndex().filter(e => e.key !== key));
+      savedAnalyses = _loadIndex();
+    } catch { /* indisponible */ }
+  }
+
+  function deleteAnalysis(key: string) {
+    try {
+      localStorage.removeItem(key);
+      _saveIndex(_loadIndex().filter(e => e.key !== key));
+      savedAnalyses = _loadIndex();
+    } catch { /* indisponible */ }
+  }
+
+  function loadAnalysis(key: string) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return;
+      const s = JSON.parse(raw);
+      need         = s.need         ?? '';
+      aiModel      = s.aiModel      ?? aiModel;
+      adapters     = s.adapters     ?? [];
+      orchestrator = s.orchestrator ?? null;
+      selEval      = s.selEval      ?? null;
+      recommendation = s.recommendation ?? null;
+      projName     = s.projName     ?? '';
+      projDomain   = s.projDomain   ?? projDomain;
+      projClass    = s.projClass    ?? projClass;
+      baseModel    = s.baseModel    ?? baseModel;
+      analysisSavedAt = s.savedAt ?? null;
+      sourceEntries = [];
+      if (adapters.length > 0) {
+        step = 2;
+        if (!selEval) runWizardEval();
+      } else {
+        step = 1;
+      }
+    } catch { /* indisponible */ }
   }
 
   function resetAnalysis() {
     adapters = []; orchestrator = null; selEval = null;
     recommendation = null; altTarget = null; alternatives = [];
     sourcesAdapter = null; sourceEntries = [];
-    clearSession(); // suppression manuelle uniquement
+    clearSession();
     step = 1;
   }
 
@@ -539,6 +618,31 @@
 
   // ── Handoff depuis l'Advisor + restauration session ───────────────────────
   onMount(() => {
+    // Migration v1 → v2 : si une ancienne clé unique existe, on l'importe
+    try {
+      const legacy = localStorage.getItem('wizard_analysis_v1');
+      if (legacy) {
+        const s = JSON.parse(legacy);
+        const legacyName = s.projName?.trim() || 'sans-nom';
+        const legacyKey = STORAGE_PREFIX + legacyName;
+        if (!localStorage.getItem(legacyKey)) {
+          localStorage.setItem(legacyKey, legacy);
+          const entry: AnalysisEntry = {
+            key: legacyKey,
+            projName: legacyName,
+            needExcerpt: (s.need ?? '').slice(0, 80),
+            adaptersCount: (s.adapters?.length ?? 0) + (s.orchestrator ? 1 : 0),
+            savedAt: s.savedAt ?? new Date().toISOString(),
+          };
+          _saveIndex([entry, ..._loadIndex().filter(e => e.key !== legacyKey)]);
+        }
+        localStorage.removeItem('wizard_analysis_v1');
+      }
+    } catch { /* indisponible */ }
+
+    // Charger l'index des analyses sauvegardées
+    savedAnalyses = _loadIndex();
+
     if (wizardHandoff.adapters.length > 0) {
       need         = wizardHandoff.need;
       adapters     = [...wizardHandoff.adapters];
@@ -549,30 +653,6 @@
       runWizardEval();
       return;
     }
-
-    // Restaurer l'analyse persistée (localStorage — survit aux fermetures)
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const s = JSON.parse(saved);
-        need         = s.need         ?? '';
-        aiModel      = s.aiModel      ?? aiModel;
-        adapters     = s.adapters     ?? [];
-        orchestrator = s.orchestrator ?? null;
-        selEval      = s.selEval      ?? null;
-        recommendation = s.recommendation ?? null;
-        projName     = s.projName     ?? '';
-        projDomain   = s.projDomain   ?? projDomain;
-        projClass    = s.projClass    ?? projClass;
-        baseModel    = s.baseModel    ?? baseModel;
-        analysisSavedAt = s.savedAt ?? null;
-        if (adapters.length > 0) {
-          step = 2;
-          // selEval restauré directement — pas de nouvel appel Bedrock
-          if (!selEval) runWizardEval();
-        }
-      }
-    } catch { /* localStorage indisponible */ }
   });
 
   // Sauvegarde automatique à chaque modification des adapters, de l'orchestrateur ou du score
@@ -607,8 +687,40 @@
           {#if s.num < STEPS.length}<div class="ws-arrow">→</div>{/if}
         {/each}
       </div>
+
+      {#if savedAnalyses.length > 0}
+        <div class="saved-analyses">
+          <div class="sa-header">
+            <span class="sa-title">Analyses sauvegardées</span>
+            <span class="hint">{savedAnalyses.length} analyse{savedAnalyses.length > 1 ? 's' : ''}</span>
+          </div>
+          <div class="sa-list">
+            {#each savedAnalyses as entry}
+              <div class="sa-item">
+                <div class="sa-meta">
+                  <span class="sa-name mono">{entry.projName}</span>
+                  <span class="sa-count">{entry.adaptersCount} adapter{entry.adaptersCount > 1 ? 's' : ''}</span>
+                  <span class="sa-date">{new Date(entry.savedAt).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })}</span>
+                </div>
+                {#if entry.needExcerpt}
+                  <p class="sa-excerpt">{entry.needExcerpt}{entry.needExcerpt.length >= 80 ? '…' : ''}</p>
+                {/if}
+                <div class="sa-actions">
+                  <button class="btn btn-primary btn-sm" onclick={() => loadAnalysis(entry.key)}>
+                    Reprendre →
+                  </button>
+                  <button class="btn btn-ghost btn-sm sa-delete" onclick={() => deleteAnalysis(entry.key)} title="Supprimer cette analyse">
+                    Supprimer
+                  </button>
+                </div>
+              </div>
+            {/each}
+          </div>
+        </div>
+      {/if}
+
       <button class="btn btn-primary btn-lg" onclick={() => step = 1}>
-        Commencer →
+        Nouvelle analyse →
       </button>
     </div>
 
@@ -1867,6 +1979,41 @@
     vertical-align: middle;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Étape 0 — liste des analyses sauvegardées */
+  .saved-analyses {
+    width: 100%; max-width: 640px;
+    margin: 24px auto 0;
+  }
+  .sa-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .sa-title {
+    font-size: var(--text-sm); font-weight: 600;
+    text-transform: uppercase; letter-spacing: .07em; color: var(--text-dim);
+  }
+  .sa-list { display: flex; flex-direction: column; gap: 8px; }
+  .sa-item {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 12px 14px;
+    display: flex; flex-direction: column; gap: 6px;
+    text-align: left;
+  }
+  .sa-meta {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  }
+  .sa-name { font-size: 13px; font-weight: 600; color: var(--accent); }
+  .sa-count { font-size: 11px; color: var(--text-dim); background: var(--surface-2); padding: 1px 6px; border-radius: 999px; }
+  .sa-date  { font-size: 11px; color: var(--text-dim); margin-left: auto; }
+  .sa-excerpt {
+    font-size: 12px; color: var(--text-muted);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    margin: 0;
+  }
+  .sa-actions { display: flex; align-items: center; gap: 8px; }
+  .sa-delete { color: var(--red); }
+  .sa-delete:hover { background: rgba(247,84,84,.1); }
 
   /* Documents techniques — step 1 */
   .doc-drop-zone {
