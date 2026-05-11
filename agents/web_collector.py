@@ -68,13 +68,25 @@ def _check_crawl4ai() -> bool:
         return False
 
 
+_CRAWL_TIMEOUT_S = 30  # hard cap per URL — prevents subprocess hang
+
+
 async def _crawl_url(url: str) -> str | None:
     """Crawl a single URL and return markdown content."""
     try:
         from crawl4ai import AsyncWebCrawler  # noqa: PLC0415
+        from crawl4ai.async_configs import CrawlerRunConfig  # noqa: PLC0415
+
+        config = CrawlerRunConfig(page_timeout=_CRAWL_TIMEOUT_S * 1000)
         async with AsyncWebCrawler(verbose=False) as crawler:
-            result = await crawler.arun(url=url)
+            result = await asyncio.wait_for(
+                crawler.arun(url=url, config=config),
+                timeout=_CRAWL_TIMEOUT_S,
+            )
             return result.markdown if result.success else None
+    except asyncio.TimeoutError:
+        logger.warning("Crawl timed out after %ds for %s", _CRAWL_TIMEOUT_S, url)
+        return None
     except Exception as exc:  # noqa: BLE001
         logger.debug("Crawl failed for %s: %s", url, exc)
         return None

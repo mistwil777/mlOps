@@ -106,6 +106,9 @@ async def start_collect(req: CollectRequest) -> dict[str, str]:
     return {"job_id": job_id}
 
 
+_COLLECT_TIMEOUT_S = 300  # 5 min hard cap on entire collect subprocess
+
+
 async def _run_collect(
     job_id: str,
     project_id: str,
@@ -134,13 +137,21 @@ async def _run_collect(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
         )
-        async for raw in proc.stdout:
-            line = raw.decode(errors="replace").rstrip()
-            _JOBS[job_id]["lines"].append(line)
 
-        await proc.wait()
+        async def _read_stdout() -> None:
+            async for raw in proc.stdout:
+                line = raw.decode(errors="replace").rstrip()
+                _JOBS[job_id]["lines"].append(line)
+            await proc.wait()
+
+        await asyncio.wait_for(_read_stdout(), timeout=_COLLECT_TIMEOUT_S)
         _JOBS[job_id]["status"] = "completed" if proc.returncode == 0 else "failed"
         _JOBS[job_id]["returncode"] = proc.returncode
+    except asyncio.TimeoutError:
+        _JOBS[job_id]["status"] = "failed"
+        _JOBS[job_id]["lines"].append(f"ERROR: collect timed out after {_COLLECT_TIMEOUT_S}s")
+        proc.kill()
+        await proc.wait()
     except Exception as exc:
         _JOBS[job_id]["status"] = "failed"
         _JOBS[job_id]["lines"].append(f"ERROR: {exc}")
@@ -195,7 +206,11 @@ async def list_pairs_for_review(
     page_size: int = 20,
     status: str | None = None,
 ) -> dict[str, Any]:
-    _load_project_config(project_id)
+    try:
+        _load_project_config(project_id)
+    except HTTPException:
+        # Allow data access before project config is created (wizard flow)
+        pass
     raw_path = _pair_path(project_id, stage)
     records  = _list_jsonl(raw_path)
 
