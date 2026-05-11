@@ -1,16 +1,18 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
-  import { createProject, advisorRecommend, advisorEvaluateSelection, getDataHealth, launchEvaluation } from '$lib/api';
-  import type { AdvisorRecommendation, AdvisorAdapter, SelectionEval } from '$lib/types';
+  import { createProject, advisorRecommend, advisorAlternatives, advisorEvaluateSelection, advisorFillGap, advisorResolveOverlap, advisorExtractDoc, getDataHealth, launchEvaluation, startCollect, startPipeline } from '$lib/api';
+  import type { AdvisorRecommendation, AdvisorAdapter, SelectionEval, ReviewItem, OverlapResolution } from '$lib/types';
   import Topbar from '$lib/components/Topbar.svelte';
   import SovereigntyBadge from '$lib/components/SovereigntyBadge.svelte';
   import AdapterCard from '$lib/components/AdapterCard.svelte';
   import { wizardHandoff, clearWizardHandoff } from '$lib/stores/wizard.svelte';
 
   // ── Étapes du wizard ──────────────────────────────────────────────────────
-  // 0 Accueil  1 Besoin  2 Architecture  3 Projet  4 Données  5 Training  6 Évaluation  7 Livraison
+  // 0 Accueil  1 Besoin  2 Architecture  2.5 Sources+Collecte  3 Projet  4 Données  5 Training  6 Évaluation  7 Livraison
   let step = $state(0);
+  let step2Tab = $state<'architecture' | 'sources'>('architecture');
+  let analysisSavedAt = $state<string | null>(null);
 
   // Étape 1 — besoin
   let need       = $state('');
@@ -19,14 +21,146 @@
   let analyzeErr = $state('');
   let recommendation: AdvisorRecommendation | null = $state(null);
 
-  // Étape 2 — adapters éditables + éval équipe
+  // Documents techniques (CdC fonctionnel / technique)
+  interface UploadedDoc { filename: string; char_count: number; was_summarized: boolean; text: string; }
+  let uploadedDocs  = $state<UploadedDoc[]>([]);
+  let uploadingDocs = $state<string[]>([]);
+  let uploadErr     = $state('');
+  let dropActive    = $state(false);
+
+  // Étape 2 — adapters éditables + éval équipe + panel contextuel
   let adapters     = $state<AdvisorAdapter[]>([]);
   let orchestrator = $state<AdvisorAdapter | null>(null);
   let selEval      = $state<SelectionEval | null>(null);
   let evalLoading  = $state(false);
 
+  let altTarget    = $state<AdvisorAdapter | null>(null);
+  let altLoading   = $state(false);
+  let altError     = $state('');
+  let alternatives = $state<AdvisorAdapter[]>([]);
+  let sourcesAdapter = $state<AdvisorAdapter | null>(null);
+
+  // Panneau dynamique : combler une lacune
+  let gapTarget    = $state<string | null>(null);
+  let gapLoading   = $state(false);
+  let gapError     = $state('');
+  let gapResult    = $state<AdvisorAdapter | null>(null);
+
+  // Panneau dynamique : résoudre un chevauchement
+  let overlapTarget  = $state<[string, string] | null>(null);
+  let overlapLoading = $state(false);
+  let overlapError   = $state('');
+  let overlapResolutions = $state<OverlapResolution[]>([]);
+
   const wizardSelection = $derived([...adapters, ...(orchestrator ? [orchestrator] : [])]);
   const wizardTotalPairs = $derived(wizardSelection.reduce((s, a) => s + a.estimated_pairs, 0));
+  const allSources = $derived(
+    wizardSelection
+      .flatMap(a => (a.data_sources ?? []).map(s => ({ source: s, adapter: a.name })))
+      .filter((v, i, arr) => arr.findIndex(x => x.source === v.source) === i)
+  );
+
+  // Étape 2.5 — sources + collecte + pipeline
+  interface SourceEntry { source: string; adapter: string; selected: boolean; }
+  let sourceEntries = $state<SourceEntry[]>([]);
+  let collectMaxPairs = $state(50);
+  let collectTopic    = $state('');
+  let collectJobId    = $state('');
+  let collectRunning  = $state(false);
+  let collectStatus   = $state<'idle'|'running'|'completed'|'failed'>('idle');
+  let collectLogs     = $state<string[]>([]);
+  let collectErr      = $state('');
+  let pipelineJobId   = $state('');
+  let pipelineRunning = $state(false);
+  let pipelineStatus  = $state<'idle'|'running'|'completed'|'failed'>('idle');
+  let pipelineLogs    = $state<string[]>([]);
+  let collectedPairs  = $state<ReviewItem[]>([]);
+  let collectedTotal  = $state(0);
+  let showPairsPreview = $state(false);
+  let collectEs: EventSource | null = null;
+  let pipelineEs: EventSource | null = null;
+
+  function initSourceEntries() {
+    if (sourceEntries.length > 0) return; // ne pas écraser si déjà initialisé
+    const seen = new Set<string>();
+    const entries: SourceEntry[] = [];
+    for (const a of wizardSelection) {
+      for (const s of (a.data_sources ?? [])) {
+        if (!seen.has(s)) {
+          seen.add(s);
+          entries.push({ source: s, adapter: a.name, selected: true });
+        }
+      }
+    }
+    sourceEntries = entries;
+    if (!collectTopic) collectTopic = need.trim().slice(0, 80);
+  }
+
+  function switchToSources() {
+    initSourceEntries();
+    step2Tab = 'sources';
+  }
+
+  async function launchCollect(tempProjectId: string) {
+    const selectedSources = sourceEntries.filter(e => e.selected).map(e => e.source);
+    if (selectedSources.length === 0) { collectErr = 'Sélectionnez au moins une source.'; return; }
+    collectErr = ''; collectLogs = []; collectRunning = true; collectStatus = 'running';
+    collectedPairs = []; collectedTotal = 0;
+    try {
+      const res = await startCollect({ project_id: tempProjectId, topic: collectTopic || need.trim(), max_pairs: collectMaxPairs, domain: projDomain, task_type: 'generation' });
+      collectJobId = res.job_id;
+      collectEs = new EventSource(`/api/data/collect/${collectJobId}/stream`);
+      collectEs.addEventListener('log', (e) => {
+        const d = JSON.parse(e.data);
+        collectLogs = [...collectLogs, d.line];
+        scrollBox('collect-log');
+      });
+      collectEs.addEventListener('done', async (e) => {
+        const d = JSON.parse(e.data);
+        collectStatus = d.status;
+        collectRunning = false;
+        collectEs?.close();
+        if (d.status === 'completed') await loadCollectedPairs(tempProjectId);
+      });
+      collectEs.onerror = () => { collectStatus = 'failed'; collectRunning = false; collectEs?.close(); };
+    } catch (e) { collectErr = (e as Error).message; collectRunning = false; collectStatus = 'failed'; }
+  }
+
+  async function loadCollectedPairs(pid: string) {
+    try {
+      const res = await fetch(`/api/data/review/${pid}?page=0&page_size=20`);
+      const page = await res.json();
+      collectedPairs = page.items ?? [];
+      collectedTotal = page.total ?? 0;
+    } catch { /* non-blocking */ }
+  }
+
+  async function launchPipeline(tempProjectId: string) {
+    pipelineLogs = []; pipelineRunning = true; pipelineStatus = 'running';
+    try {
+      const res = await startPipeline({ project_id: tempProjectId });
+      pipelineJobId = res.job_id;
+      pipelineEs = new EventSource(`/api/data/pipeline/${pipelineJobId}/stream`);
+      pipelineEs.addEventListener('log', (e) => {
+        const d = JSON.parse(e.data);
+        pipelineLogs = [...pipelineLogs, d.line];
+        scrollBox('pipeline-log');
+      });
+      pipelineEs.addEventListener('done', (e) => {
+        const d = JSON.parse(e.data);
+        pipelineStatus = d.status;
+        pipelineRunning = false;
+        pipelineEs?.close();
+      });
+      pipelineEs.onerror = () => { pipelineStatus = 'failed'; pipelineRunning = false; pipelineEs?.close(); };
+    } catch (e) { pipelineRunning = false; pipelineStatus = 'failed'; }
+  }
+
+  function scrollBox(id: string) {
+    setTimeout(() => { const el = document.getElementById(id); if (el) el.scrollTop = el.scrollHeight; }, 0);
+  }
+
+  const collectSelectedCount = $derived(sourceEntries.filter(e => e.selected).length);
 
   // Étape 3 — création projet
   let projName   = $state('');
@@ -57,8 +191,8 @@
   const STEPS = [
     { num: 1, label: 'Besoin client' },
     { num: 2, label: 'Architecture' },
-    { num: 3, label: 'Créer le projet' },
-    { num: 4, label: 'Données' },
+    { num: 3, label: 'Sources & données' },
+    { num: 4, label: 'Créer le projet' },
     { num: 5, label: 'Training' },
     { num: 6, label: 'Évaluation' },
     { num: 7, label: 'Livraison' },
@@ -69,7 +203,7 @@
     if (!need.trim()) return;
     analyzing = true; analyzeErr = ''; recommendation = null; selEval = null;
     try {
-      recommendation = await advisorRecommend(need.trim(), aiModel);
+      recommendation = await advisorRecommend(need.trim(), aiModel, uploadedDocs.map(d => d.text));
       adapters     = [...recommendation.recommendation.adapters];
       orchestrator = { ...recommendation.recommendation.orchestrator };
       const firstAdapter = adapters[0];
@@ -99,6 +233,211 @@
 
   function scoreBar(s: number): string {
     return `width:${(s / 20) * 100}%`;
+  }
+
+  function removeAdapter(name: string) {
+    if (altTarget?.name === name) { altTarget = null; alternatives = []; }
+    if (sourcesAdapter?.name === name) sourcesAdapter = null;
+    adapters = adapters.filter(a => a.name !== name);
+    triggerEval();
+  }
+
+  function removeOrchestrator() {
+    if (altTarget?.name === orchestrator?.name) { altTarget = null; alternatives = []; }
+    if (sourcesAdapter?.name === orchestrator?.name) sourcesAdapter = null;
+    orchestrator = null;
+    triggerEval();
+  }
+
+  async function openAlternatives(adapter: AdvisorAdapter) {
+    altTarget    = adapter;
+    altLoading   = true;
+    altError     = '';
+    alternatives = [];
+    try {
+      alternatives = await advisorAlternatives(need, adapter.name, adapter.description, wizardSelection, aiModel);
+    } catch (e) { altError = (e as Error).message; }
+    finally { altLoading = false; }
+  }
+
+  function replaceWithAlternative(alt: AdvisorAdapter) {
+    if (!altTarget) return;
+    const clean: AdvisorAdapter = {
+      name: alt.name, role: altTarget.role, description: alt.description,
+      data_types: alt.data_types ?? [], data_sources: alt.data_sources ?? [],
+      rag_recommended: alt.rag_recommended, estimated_pairs: alt.estimated_pairs,
+    };
+    if (altTarget.role === 'orchestrator') {
+      orchestrator = clean;
+    } else {
+      adapters = adapters.map(a => a.name === altTarget!.name ? clean : a);
+    }
+    altTarget = null; alternatives = [];
+    triggerEval();
+  }
+
+  function openSources(adapter: AdvisorAdapter) {
+    sourcesAdapter = adapter;
+  }
+
+  async function openFillGap(gap: string) {
+    if (gapTarget === gap) { gapTarget = null; gapResult = null; return; }
+    altTarget = null; overlapTarget = null; sourcesAdapter = null;
+    gapTarget = gap; gapLoading = true; gapError = ''; gapResult = null;
+    try {
+      gapResult = await advisorFillGap(need, gap, wizardSelection, aiModel);
+    } catch (e) { gapError = (e as Error).message; }
+    finally { gapLoading = false; }
+  }
+
+  function applyGapAdapter() {
+    if (!gapResult) return;
+    adapters = [...adapters, { ...gapResult, role: 'specialist' }];
+    gapTarget = null; gapResult = null;
+    triggerEval();
+  }
+
+  let fillAllLoading = $state(false);
+  let fillAllResults = $state<AdvisorAdapter[]>([]);
+
+  // "Tout résoudre" — prend la première résolution (clarify en priorité) pour chaque paire
+  let resolveAllLoading = $state(false);
+  interface ResolveAllEntry { pair: [string, string]; resolution: OverlapResolution; }
+  let resolveAllResults = $state<ResolveAllEntry[]>([]);
+
+  async function fillAllGaps() {
+    if (!selEval?.gaps.length) return;
+    altTarget = null; overlapTarget = null; sourcesAdapter = null;
+    gapTarget = null; gapResult = null;
+    fillAllLoading = true; fillAllResults = [];
+    const snapshot = [...wizardSelection]; // sélection figée au moment du lancement
+    try {
+      const results = await Promise.all(
+        selEval.gaps.map(g => advisorFillGap(need, g, snapshot, aiModel).catch(() => null))
+      );
+      fillAllResults = results.filter((r): r is AdvisorAdapter => r !== null);
+    } finally { fillAllLoading = false; }
+  }
+
+  function applyAllGapAdapters() {
+    adapters = [...adapters, ...fillAllResults.map(r => ({ ...r, role: 'specialist' as const }))];
+    fillAllResults = [];
+    triggerEval();
+  }
+
+  async function openResolveOverlap(pair: [string, string]) {
+    if (overlapTarget?.[0] === pair[0] && overlapTarget?.[1] === pair[1]) {
+      overlapTarget = null; overlapResolutions = []; return;
+    }
+    altTarget = null; gapTarget = null; sourcesAdapter = null;
+    overlapTarget = pair; overlapLoading = true; overlapError = ''; overlapResolutions = [];
+    const a = wizardSelection.find(x => x.name === pair[0]);
+    const b = wizardSelection.find(x => x.name === pair[1]);
+    if (!a || !b) { overlapLoading = false; return; }
+    try {
+      overlapResolutions = await advisorResolveOverlap(need, a, b, wizardSelection, aiModel);
+    } catch (e) { overlapError = (e as Error).message; }
+    finally { overlapLoading = false; }
+  }
+
+  function applyOverlapResolution(res: OverlapResolution) {
+    if (!overlapTarget) return;
+    const [nameA, nameB] = overlapTarget;
+    if (res.type === 'remove') {
+      // l'adapter survivant est dans res.adapters[0]
+      adapters = adapters.filter(a => a.name !== nameA && a.name !== nameB);
+      if (orchestrator?.name === nameA || orchestrator?.name === nameB) orchestrator = null;
+      if (res.adapters[0]) adapters = [...adapters, res.adapters[0]];
+    } else if (res.type === 'merge') {
+      adapters = adapters.filter(a => a.name !== nameA && a.name !== nameB);
+      if (orchestrator?.name === nameA || orchestrator?.name === nameB) orchestrator = null;
+      if (res.adapters[0]) adapters = [...adapters, res.adapters[0]];
+    } else {
+      // clarify: on remplace les deux avec les descriptions mises à jour
+      adapters = adapters.map(a => {
+        const updated = res.adapters.find(r => r.name === a.name);
+        return updated ?? a;
+      });
+      if (orchestrator) {
+        const updated = res.adapters.find(r => r.name === orchestrator!.name);
+        if (updated) orchestrator = updated;
+      }
+    }
+    overlapTarget = null; overlapResolutions = [];
+    triggerEval();
+  }
+
+  async function resolveAllOverlaps() {
+    if (!selEval?.overlaps?.length) return;
+    altTarget = null; gapTarget = null; overlapTarget = null; sourcesAdapter = null;
+    resolveAllLoading = true; resolveAllResults = [];
+    const snapshot = [...wizardSelection];
+    try {
+      const pairs = selEval.overlaps as [string, string][];
+      const results = await Promise.all(
+        pairs.map(async pair => {
+          const a = snapshot.find(x => x.name === pair[0]);
+          const b = snapshot.find(x => x.name === pair[1]);
+          if (!a || !b) return null;
+          const resolutions = await advisorResolveOverlap(need, a, b, snapshot, aiModel).catch(() => null);
+          if (!resolutions?.length) return null;
+          // priorité : clarify > merge > remove
+          const best = resolutions.find(r => r.type === 'clarify')
+            ?? resolutions.find(r => r.type === 'merge')
+            ?? resolutions[0];
+          return { pair, resolution: best } as ResolveAllEntry;
+        })
+      );
+      resolveAllResults = results.filter((r): r is ResolveAllEntry => r !== null);
+    } finally { resolveAllLoading = false; }
+  }
+
+  function applyAllOverlapResolutions() {
+    // applique séquentiellement — chaque résolution travaille sur l'état courant
+    for (const { pair, resolution } of resolveAllResults) {
+      const [nameA, nameB] = pair;
+      if (resolution.type === 'remove' || resolution.type === 'merge') {
+        adapters = adapters.filter(a => a.name !== nameA && a.name !== nameB);
+        if (orchestrator?.name === nameA || orchestrator?.name === nameB) orchestrator = null;
+        if (resolution.adapters[0]) adapters = [...adapters, resolution.adapters[0]];
+      } else {
+        adapters = adapters.map(a => {
+          const updated = resolution.adapters.find(r => r.name === a.name);
+          return updated ?? a;
+        });
+        if (orchestrator) {
+          const updated = resolution.adapters.find(r => r.name === orchestrator!.name);
+          if (updated) orchestrator = updated;
+        }
+      }
+    }
+    resolveAllResults = [];
+    triggerEval();
+  }
+
+  let evalTimer: ReturnType<typeof setTimeout> | null = null;
+  function triggerEval() {
+    selEval = null;
+    if (evalTimer) clearTimeout(evalTimer);
+    if (wizardSelection.length === 0) return;
+    evalTimer = setTimeout(runWizardEval, 800);
+  }
+
+  function copyYaml() {
+    const lines = [
+      `multi_adapter: true`, `adapters:`,
+      ...adapters.map(a =>
+        `  - name: ${a.name}\n    role: ${a.role}\n    status: pending\n    rag: ${a.rag_recommended ?? false}\n    estimated_pairs: ${a.estimated_pairs}`
+      ),
+      ...(orchestrator ? [
+        `  - name: ${orchestrator.name}\n    role: orchestrator\n    status: pending\n    rag: false\n    estimated_pairs: ${orchestrator.estimated_pairs}`
+      ] : []),
+    ];
+    navigator.clipboard.writeText(lines.join('\n'));
+  }
+
+  function sourceUrl(src: string): string {
+    return `https://www.google.com/search?q=${encodeURIComponent(src)}`;
   }
 
   async function createProj() {
@@ -136,19 +475,110 @@
     } catch { /* non-blocking */ }
   }
 
-  // ── Handoff depuis l'Advisor (après déclarations des fonctions) ───────────
+  const STORAGE_KEY = 'wizard_analysis_v1';
+
+  function saveAnalysis() {
+    try {
+      const savedAt = new Date().toISOString();
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        need, aiModel, adapters, orchestrator,
+        selEval, recommendation,
+        projName, projDomain, projClass, baseModel,
+        savedAt,
+      }));
+      analysisSavedAt = savedAt;
+    } catch { /* localStorage indisponible */ }
+  }
+
+  function clearSession() {
+    localStorage.removeItem(STORAGE_KEY);
+  }
+
+  function resetAnalysis() {
+    adapters = []; orchestrator = null; selEval = null;
+    recommendation = null; altTarget = null; alternatives = [];
+    sourcesAdapter = null; sourceEntries = [];
+    clearSession(); // suppression manuelle uniquement
+    step = 1;
+  }
+
+  async function handleDocFiles(files: FileList | File[]) {
+    uploadErr = '';
+    const list = Array.from(files).filter(f => {
+      const ext = f.name.split('.').pop()?.toLowerCase() ?? '';
+      return ['pdf','docx','doc','txt','md','rst','csv'].includes(ext);
+    });
+    if (list.length === 0) { uploadErr = 'Formats acceptés : PDF, DOCX, TXT, MD'; return; }
+    for (const file of list) {
+      if (uploadedDocs.find(d => d.filename === file.name)) continue; // déjà présent
+      uploadingDocs = [...uploadingDocs, file.name];
+      try {
+        const doc = await advisorExtractDoc(file);
+        uploadedDocs = [...uploadedDocs, doc];
+      } catch (e) {
+        uploadErr = `${file.name} : ${(e as Error).message}`;
+      } finally {
+        uploadingDocs = uploadingDocs.filter(n => n !== file.name);
+      }
+    }
+  }
+
+  function removeDoc(filename: string) {
+    uploadedDocs = uploadedDocs.filter(d => d.filename !== filename);
+  }
+
+  function onDocDrop(e: DragEvent) {
+    e.preventDefault(); dropActive = false;
+    if (e.dataTransfer?.files) void handleDocFiles(e.dataTransfer.files);
+  }
+
+  onDestroy(() => {
+    collectEs?.close();
+    pipelineEs?.close();
+  });
+
+  // ── Handoff depuis l'Advisor + restauration session ───────────────────────
   onMount(() => {
     if (wizardHandoff.adapters.length > 0) {
       need         = wizardHandoff.need;
       adapters     = [...wizardHandoff.adapters];
       orchestrator = wizardHandoff.orchestrator ? { ...wizardHandoff.orchestrator } : null;
-      if (adapters[0] && !projName) {
-        projName = adapters[0].name.split('-').slice(0, 2).join('-');
-      }
+      if (adapters[0] && !projName) projName = adapters[0].name.split('-').slice(0, 2).join('-');
       clearWizardHandoff();
       step = 2;
       runWizardEval();
+      return;
     }
+
+    // Restaurer l'analyse persistée (localStorage — survit aux fermetures)
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const s = JSON.parse(saved);
+        need         = s.need         ?? '';
+        aiModel      = s.aiModel      ?? aiModel;
+        adapters     = s.adapters     ?? [];
+        orchestrator = s.orchestrator ?? null;
+        selEval      = s.selEval      ?? null;
+        recommendation = s.recommendation ?? null;
+        projName     = s.projName     ?? '';
+        projDomain   = s.projDomain   ?? projDomain;
+        projClass    = s.projClass    ?? projClass;
+        baseModel    = s.baseModel    ?? baseModel;
+        analysisSavedAt = s.savedAt ?? null;
+        if (adapters.length > 0) {
+          step = 2;
+          // selEval restauré directement — pas de nouvel appel Bedrock
+          if (!selEval) runWizardEval();
+        }
+      }
+    } catch { /* localStorage indisponible */ }
+  });
+
+  // Sauvegarde automatique à chaque modification des adapters, de l'orchestrateur ou du score
+  $effect(() => {
+    void adapters; void orchestrator; void selEval;
+    if (adapters.length > 0 || orchestrator) saveAnalysis();
   });
 </script>
 
@@ -156,7 +586,7 @@
   <SovereigntyBadge mode="local" />
 </Topbar>
 
-<div class="content wizard-content">
+<div class="content" class:wizard-content={step !== 2}>
 
   <!-- Étape 0 : accueil -->
   {#if step === 0}
@@ -202,6 +632,69 @@
           disabled={analyzing}
         ></textarea>
 
+        <!-- Zone documents techniques (CdCF / CdCT) -->
+        <div class="form-group mt-16">
+          <label class="form-label">Documents techniques (optionnel)</label>
+          <p class="form-hint mb-8">Glissez un CdCF, CdCT, spec ou readme pour enrichir l'analyse. Les documents sont envoyés via AWS Bedrock.</p>
+
+          <!-- Drop zone -->
+          <div
+            class="doc-drop-zone"
+            class:drag-over={dropActive}
+            ondragover={(e) => { e.preventDefault(); dropActive = true; }}
+            ondragleave={() => dropActive = false}
+            ondrop={onDocDrop}
+            role="button"
+            tabindex="0"
+            aria-label="Zone de dépôt de documents"
+          >
+            <span class="ddz-icon">📄</span>
+            <span class="ddz-text">Déposez vos fichiers ici</span>
+            <span class="ddz-hint">PDF · DOCX · TXT · MD</span>
+            <button
+              class="btn btn-ghost btn-sm ddz-browse"
+              onclick={(e) => { e.stopPropagation(); (e.currentTarget.nextElementSibling as HTMLInputElement)?.click(); }}
+            >Parcourir</button>
+            <input
+              type="file"
+              multiple
+              accept=".pdf,.docx,.doc,.txt,.md,.rst,.csv"
+              style="display:none"
+              onchange={(e) => { const t = e.currentTarget as HTMLInputElement; if (t.files) void handleDocFiles(t.files); }}
+            />
+          </div>
+
+          <!-- Uploads en cours -->
+          {#if uploadingDocs.length > 0}
+            <div class="doc-uploading mt-8">
+              {#each uploadingDocs as fname}
+                <div class="doc-uploading-item">
+                  <span class="spinner spinner-xs"></span>
+                  <span class="mono" style="font-size:11px">{fname}</span>
+                </div>
+              {/each}
+            </div>
+          {/if}
+
+          <!-- Documents uploadés -->
+          {#if uploadedDocs.length > 0}
+            <div class="doc-list mt-8">
+              {#each uploadedDocs as doc}
+                <div class="doc-item">
+                  <span class="doc-icon">📄</span>
+                  <div class="doc-meta">
+                    <span class="doc-name">{doc.filename}</span>
+                    <span class="doc-info">{(doc.char_count / 1000).toFixed(1)} k car.{doc.was_summarized ? ' · résumé auto' : ''}</span>
+                  </div>
+                  <button class="icon-btn doc-remove" onclick={() => removeDoc(doc.filename)} title="Retirer">✕</button>
+                </div>
+              {/each}
+            </div>
+          {/if}
+
+          {#if uploadErr}<div class="api-error mt-6">{uploadErr}</div>{/if}
+        </div>
+
         <div class="form-group mt-12">
           <label class="form-label">Modèle d'analyse</label>
           <select class="form-select" bind:value={aiModel} disabled={analyzing}>
@@ -212,16 +705,34 @@
         </div>
 
         {#if analyzeErr}<div class="api-error mt-8">{analyzeErr}</div>{/if}
+
+        {#if adapters.length > 0}
+          <div class="session-banner mt-12">
+            <span class="sb-icon">◉</span>
+            <div class="sb-text">
+              Analyse sauvegardée — <strong>{adapters.length} adapter{adapters.length > 1 ? 's' : ''}</strong> recommandés.
+              {#if analysisSavedAt}
+                <span class="sb-date">{new Date(analysisSavedAt).toLocaleString('fr-FR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })}</span>
+              {/if}
+            </div>
+            <button class="btn btn-ghost btn-sm" onclick={() => step = 2}>Revoir →</button>
+          </div>
+        {/if}
       </div>
 
       <div class="wc-footer">
         <button class="btn btn-ghost" onclick={() => step = 0}>← Retour</button>
+        {#if adapters.length > 0}
+          <button class="btn btn-ghost btn-sm reanalyze-btn" onclick={resetAnalysis} title="Efface l'analyse et relance un appel Bedrock">
+            ↺ Nouvelle analyse
+          </button>
+        {/if}
         <button
           class="btn btn-primary"
           disabled={analyzing || !need.trim()}
           onclick={analyzeNeed}
         >
-          {#if analyzing}<span class="spinner"></span> Analyse en cours…{:else}Analyser →{/if}
+          {#if analyzing}<span class="spinner"></span> Analyse en cours…{:else if adapters.length > 0}↺ Relancer l'analyse{:else}Analyser →{/if}
         </button>
         <button class="btn btn-ghost skip-btn" onclick={() => step = 3}>
           Passer (projet sans analyse)
@@ -229,93 +740,464 @@
       </div>
     </div>
 
-  <!-- Étape 2 : résultat architecture -->
+  <!-- Étape 2 : architecture + sources & collecte (vue à onglets) -->
   {:else if step === 2 && adapters.length > 0}
-    <div class="wizard-card">
-      <div class="wc-header">
-        <div class="wc-step-badge">2 / {STEPS.length}</div>
-        <h2 class="wc-title">Architecture recommandée</h2>
-        <p class="wc-sub">Voici les adapters LoRA proposés. Cliquez sur un adapter pour voir les scores, pros/cons et sources.</p>
-      </div>
 
-      <div class="wc-body">
-        <!-- Résumé chiffres -->
-        <div class="arch-summary">
-          <div class="arch-stat">
-            <span class="arch-num">{adapters.length}</span>
-            <span class="arch-lbl">Spécialistes</span>
+    <!-- Barre d'onglets fixe -->
+    <div class="step2-header mb-16">
+      <div class="step2-tabs">
+        <button class="step2-tab" class:active={step2Tab === 'architecture'} onclick={() => step2Tab = 'architecture'}>
+          Architecture
+          <span class="tab-badge">{wizardSelection.length}</span>
+        </button>
+        <button class="step2-tab" class:active={step2Tab === 'sources'} onclick={switchToSources}>
+          Sources & Collecte
+          <span class="tab-badge">{allSources.length}</span>
+        </button>
+      </div>
+      <div class="step2-actions">
+        <button class="btn btn-ghost btn-sm" onclick={() => { step = 1; altTarget = null; sourcesAdapter = null; }}>← Besoin</button>
+        <button class="btn btn-ghost btn-sm" onclick={copyYaml}>Copier YAML</button>
+        <button class="btn btn-primary btn-sm" onclick={() => step = 3}>✓ Créer le projet</button>
+      </div>
+    </div>
+
+    <!-- Onglet Architecture -->
+    {#if step2Tab === 'architecture'}
+    <div class="phase0-layout" class:has-panel={altTarget || sourcesAdapter || gapTarget || overlapTarget}>
+
+      <!-- Col 1 : résumé + score -->
+      <div class="col-input">
+        <div class="card mb-16">
+          <div class="card-title mb-8">Sélection actuelle</div>
+          <div class="summary-grid">
+            <div class="summary-item">
+              <span class="summary-value">{adapters.length}</span>
+              <span class="summary-label">Spécialistes</span>
+            </div>
+            <div class="summary-item">
+              <span class="summary-value">{orchestrator ? 1 : 0}</span>
+              <span class="summary-label">Orchestrateur</span>
+            </div>
+            <div class="summary-item">
+              <span class="summary-value">~{wizardTotalPairs.toLocaleString()}</span>
+              <span class="summary-label">Paires estimées</span>
+            </div>
           </div>
-          <div class="arch-stat">
-            <span class="arch-num">1</span>
-            <span class="arch-lbl">Orchestrateur</span>
-          </div>
-          <div class="arch-stat">
-            <span class="arch-num">~{wizardTotalPairs.toLocaleString()}</span>
-            <span class="arch-lbl">Paires estimées</span>
-          </div>
+          {#if recommendation?.recommendation.notes}
+            <div class="notes mt-12">{recommendation.recommendation.notes}</div>
+          {/if}
         </div>
 
-        <!-- Score équipe -->
-        <div class="team-eval mt-16">
-          <div class="team-eval-header">
-            <span class="te-label">Score équipe</span>
+        <div class="card mb-16">
+          <div class="card-header mb-12">
+            <div class="card-title">Score équipe</div>
             {#if evalLoading}<span class="spinner spinner-sm"></span>{/if}
           </div>
           {#if selEval}
-            <div class="te-body">
-              <div class="te-hero">
-                <span class="te-value" style="color:{scoreColor(selEval.overall)}">{selEval.overall.toFixed(1)}</span>
-                <span class="te-unit">/20</span>
-              </div>
-              <div class="score-bars">
-                {#each [['Couverture', selEval.coverage], ['Cohésion', selEval.cohesion], ['Équilibre', selEval.balance], ['Orchestrabilité', selEval.orchestrability]] as [label, val]}
-                  <div class="score-bar-row">
-                    <span class="score-bar-label">{label}</span>
-                    <div class="score-bar-track">
-                      <div class="score-bar-fill" style="{scoreBar(val as number)};background:{scoreColor(val as number)}"></div>
-                    </div>
-                    <span class="score-bar-val" style="color:{scoreColor(val as number)}">{val}</span>
+            <div class="team-score-hero">
+              <span class="team-score-value" style="color:{scoreColor(selEval.overall)}">{selEval.overall.toFixed(1)}</span>
+              <span class="team-score-label">/20</span>
+            </div>
+            <div class="score-bars mt-12">
+              {#each [['Couverture', selEval.coverage], ['Cohésion', selEval.cohesion], ['Équilibre', selEval.balance], ['Orchestrabilité', selEval.orchestrability]] as [label, val]}
+                <div class="score-bar-row">
+                  <span class="score-bar-label">{label}</span>
+                  <div class="score-bar-track">
+                    <div class="score-bar-fill" style="{scoreBar(val as number)};background:{scoreColor(val as number)}"></div>
                   </div>
-                {/each}
-              </div>
-              {#if selEval.gaps.length}
-                <div class="te-section mt-10">
-                  <span class="te-meta-label">Lacunes détectées</span>
-                  <div class="tags mt-4">
-                    {#each selEval.gaps as g}<span class="tag tag-warn">{g}</span>{/each}
-                  </div>
+                  <span class="score-bar-val" style="color:{scoreColor(val as number)}">{val}</span>
                 </div>
-              {/if}
-              {#if selEval.recommendation}
-                <p class="te-reco mt-8">{selEval.recommendation}</p>
+              {/each}
+            </div>
+            {#if selEval.gaps.length}
+              <div class="eval-section mt-12">
+                <div class="eval-section-header">
+                  <span class="meta-label">Lacunes ({selEval.gaps.length})</span>
+                  <button
+                    class="tag-fill-all"
+                    disabled={fillAllLoading}
+                    onclick={fillAllGaps}
+                    title="Générer un adapter pour chaque lacune en parallèle"
+                  >
+                    {#if fillAllLoading}<span class="spinner spinner-xs"></span>{/if}
+                    Tout couvrir
+                  </button>
+                </div>
+                <div class="action-tags mt-6">
+                  {#each selEval.gaps as g}
+                    <button
+                      class="tag tag-warn tag-action"
+                      class:tag-active={gapTarget === g}
+                      disabled={fillAllLoading}
+                      onclick={() => openFillGap(g)}
+                      title="Générer un adapter pour cette lacune"
+                    >
+                      {#if gapLoading && gapTarget === g}<span class="spinner spinner-xs"></span>{:else}+{/if}
+                      {g}
+                    </button>
+                  {/each}
+                </div>
+                {#if fillAllResults.length > 0}
+                  <div class="fill-all-results mt-10">
+                    <div class="fill-all-header">
+                      <span class="meta-label" style="color:var(--green)">{fillAllResults.length} adapter{fillAllResults.length > 1 ? 's' : ''} générés</span>
+                      <button class="btn-use" onclick={applyAllGapAdapters}>+ Tous ajouter</button>
+                    </div>
+                    <div class="fill-all-list mt-6">
+                      {#each fillAllResults as r}
+                        <div class="fill-all-item">
+                          <span class="mono" style="font-size:11px;color:var(--accent)">{r.name}</span>
+                          <span style="font-size:11px;color:var(--text-dim)">{r.description}</span>
+                        </div>
+                      {/each}
+                    </div>
+                  </div>
+                {/if}
+              </div>
+            {/if}
+            {#if selEval.overlaps?.length}
+              <div class="eval-section mt-10">
+                <div class="eval-section-header">
+                  <span class="meta-label">Chevauchements ({selEval.overlaps.length})</span>
+                  <button
+                    class="tag-fill-all tag-fill-all-danger"
+                    disabled={resolveAllLoading}
+                    onclick={resolveAllOverlaps}
+                    title="Résoudre tous les chevauchements en parallèle (meilleure résolution automatique)"
+                  >
+                    {#if resolveAllLoading}<span class="spinner spinner-xs"></span>{/if}
+                    Tout résoudre
+                  </button>
+                </div>
+                <div class="action-tags mt-6">
+                  {#each selEval.overlaps as pair}
+                    {@const pairKey = pair as [string, string]}
+                    <button
+                      class="tag tag-danger tag-action"
+                      class:tag-active={overlapTarget?.[0] === pairKey[0] && overlapTarget?.[1] === pairKey[1]}
+                      disabled={resolveAllLoading}
+                      onclick={() => openResolveOverlap(pairKey)}
+                      title="Choisir manuellement la résolution"
+                    >
+                      {#if overlapLoading && overlapTarget?.[0] === pairKey[0]}<span class="spinner spinner-xs"></span>{:else}⚡{/if}
+                      {pairKey.join(' ↔ ')}
+                    </button>
+                  {/each}
+                </div>
+                {#if resolveAllResults.length > 0}
+                  <div class="fill-all-results mt-10" style="border-color:rgba(247,84,84,.2);background:rgba(247,84,84,.04)">
+                    <div class="fill-all-header">
+                      <span class="meta-label" style="color:var(--red)">{resolveAllResults.length} résolution{resolveAllResults.length > 1 ? 's' : ''} prête{resolveAllResults.length > 1 ? 's' : ''}</span>
+                      <button class="btn-use" onclick={applyAllOverlapResolutions}>Tout appliquer</button>
+                    </div>
+                    <div class="fill-all-list mt-6">
+                      {#each resolveAllResults as { pair, resolution }}
+                        <div class="fill-all-item">
+                          <div style="display:flex;align-items:center;gap:6px">
+                            <span class="res-type res-type-{resolution.type}">{resolution.label}</span>
+                            <span class="mono" style="font-size:10px;color:var(--text-dim)">{pair.join(' ↔ ')}</span>
+                          </div>
+                          <span style="font-size:11px;color:var(--text-dim)">{resolution.explanation}</span>
+                        </div>
+                      {/each}
+                    </div>
+                  </div>
+                {/if}
+              </div>
+            {/if}
+            {#if selEval.recommendation}
+              <div class="eval-reco mt-12">{selEval.recommendation}</div>
+            {/if}
+          {:else if !evalLoading}
+            <p class="hint">Sera calculé après l'analyse.</p>
+          {/if}
+        </div>
+
+      </div>
+
+      <!-- Col 2 : adapter cards -->
+      <div class="col-adapters">
+        <div class="card">
+          <div class="card-header mb-12">
+            <div class="card-title">Architecture recommandée</div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <button class="btn btn-ghost btn-sm" onclick={copyYaml}>Copier YAML</button>
+              <span class="hint">{wizardSelection.length} adapter{wizardSelection.length > 1 ? 's' : ''}</span>
+            </div>
+          </div>
+
+          <div class="adapters-list">
+            {#each adapters as adapter (adapter.name)}
+              <AdapterCard
+                {adapter}
+                active={altTarget?.name === adapter.name || sourcesAdapter?.name === adapter.name}
+                onSources={openSources}
+                onAlternatives={openAlternatives}
+                onRemove={removeAdapter}
+              />
+            {/each}
+            {#if orchestrator}
+              <AdapterCard
+                adapter={orchestrator}
+                active={altTarget?.name === orchestrator.name || sourcesAdapter?.name === orchestrator.name}
+                onSources={openSources}
+                onAlternatives={openAlternatives}
+                onRemove={() => removeOrchestrator()}
+              />
+            {/if}
+            {#if wizardSelection.length === 0}
+              <div class="empty-state">Tous les adapters supprimés. ↺ Recommencez.</div>
+            {/if}
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Col 3 : panel contextuel (alternatives / sources / gap / overlap) -->
+      {#if altTarget || sourcesAdapter || gapTarget || overlapTarget}
+        <div class="col-panel">
+          {#if gapTarget}
+            <div class="card">
+              <div class="card-header mb-12">
+                <div class="card-title">Couvrir la lacune</div>
+                <button class="icon-btn" onclick={() => { gapTarget = null; gapResult = null; }}>✕</button>
+              </div>
+              <div class="gap-label mb-12">"{gapTarget}"</div>
+              {#if gapLoading}
+                <div class="panel-loading"><span class="spinner"></span> Génération en cours…</div>
+              {:else if gapError}
+                <div class="api-error">{gapError}</div>
+              {:else if gapResult}
+                <AdapterCard adapter={gapResult} />
+                <button class="btn-use mt-8" onclick={applyGapAdapter}>+ Ajouter à la sélection</button>
               {/if}
             </div>
-          {:else if !evalLoading}
-            <p class="te-hint">Évaluation en cours après analyse…</p>
+          {/if}
+          {#if overlapTarget}
+            <div class="card">
+              <div class="card-header mb-12">
+                <div class="card-title">Résoudre le chevauchement</div>
+                <button class="icon-btn" onclick={() => { overlapTarget = null; overlapResolutions = []; }}>✕</button>
+              </div>
+              <div class="overlap-label mb-12">
+                <span class="mono tag-danger-text">{overlapTarget[0]}</span>
+                <span style="color:var(--text-dim)"> ↔ </span>
+                <span class="mono tag-danger-text">{overlapTarget[1]}</span>
+              </div>
+              {#if overlapLoading}
+                <div class="panel-loading"><span class="spinner"></span> Analyse des solutions…</div>
+              {:else if overlapError}
+                <div class="api-error">{overlapError}</div>
+              {:else if overlapResolutions.length}
+                <div class="resolution-list">
+                  {#each overlapResolutions as res}
+                    <div class="resolution-card">
+                      <div class="res-header">
+                        <span class="res-type res-type-{res.type}">{res.label}</span>
+                        <button class="btn-use" onclick={() => applyOverlapResolution(res)}>Appliquer</button>
+                      </div>
+                      <p class="res-explanation">{res.explanation}</p>
+                      {#if res.adapters.length}
+                        <div class="res-adapters">
+                          {#each res.adapters as a}
+                            <div class="res-adapter-name mono">{a.name}</div>
+                            <div class="res-adapter-desc">{a.description}</div>
+                          {/each}
+                        </div>
+                      {/if}
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          {/if}
+          {#if altTarget}
+            <div class="card">
+              <div class="card-header mb-12">
+                <div class="card-title">Alternatives — <span class="mono">{altTarget.name}</span></div>
+                <button class="icon-btn" onclick={() => { altTarget = null; alternatives = []; }}>✕</button>
+              </div>
+              {#if altLoading}
+                <div class="panel-loading"><span class="spinner"></span> Génération + scoring…</div>
+              {:else if altError}
+                <div class="api-error">{altError}</div>
+              {:else if alternatives.length}
+                <div class="adapters-list">
+                  {#each alternatives as alt}
+                    <div class="alt-wrapper">
+                      <AdapterCard adapter={alt} />
+                      <button class="btn-use" onclick={() => replaceWithAlternative(alt)}>↩ Utiliser cet adapter</button>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          {/if}
+          {#if sourcesAdapter}
+            <div class="card">
+              <div class="card-header mb-12">
+                <div class="card-title">Sources — <span class="mono">{sourcesAdapter.name}</span></div>
+                <button class="icon-btn" onclick={() => sourcesAdapter = null}>✕</button>
+              </div>
+              <div class="eval-section mb-16">
+                <span class="meta-label">Types de données</span>
+                <div class="tags mt-4">
+                  {#each (sourcesAdapter.data_types ?? []) as dt}<span class="tag">{dt}</span>{/each}
+                </div>
+              </div>
+              <div class="eval-section">
+                <span class="meta-label">Sources à explorer</span>
+                <div class="sources-grid mt-8">
+                  {#each (sourcesAdapter.data_sources ?? []) as src}
+                    <a href={sourceUrl(src)} target="_blank" rel="noopener noreferrer" class="source-chip">
+                      <span class="source-chip-name">{src}</span>
+                      <span class="source-chip-icon">↗</span>
+                    </a>
+                  {/each}
+                </div>
+              </div>
+            </div>
           {/if}
         </div>
+      {/if}
 
-        <!-- Adapter cards complètes -->
-        <div class="adapter-cards mt-16">
-          {#each adapters as a (a.name)}
-            <AdapterCard adapter={a} />
-          {/each}
-          {#if orchestrator}
-            <AdapterCard adapter={orchestrator} />
-          {/if}
-        </div>
-
-        {#if recommendation?.recommendation.notes}
-          <div class="arch-notes mt-12">{recommendation.recommendation.notes}</div>
-        {/if}
-      </div>
-
-      <div class="wc-footer">
-        <button class="btn btn-ghost" onclick={() => step = 1}>← Modifier le besoin</button>
-        <a href="/advisor" class="btn btn-ghost">Advisor complet</a>
-        <button class="btn btn-primary" onclick={() => step = 3}>Créer le projet →</button>
-      </div>
     </div>
+
+    <!-- Onglet Sources & Collecte -->
+    {:else}
+      {@const tempProjectId = projName.trim() || 'wizard-temp'}
+      <div class="collect-layout">
+
+        <!-- Col gauche : sélection + paramètres -->
+        <div class="collect-left">
+          <div class="card mb-16">
+            <div class="card-header mb-12">
+              <div class="card-title">Sources proposées</div>
+              <span class="hint">{collectSelectedCount} / {sourceEntries.length} sélectionnées</span>
+            </div>
+            {#if sourceEntries.length === 0}
+              <div class="empty-state">Aucune source détectée dans les adapters.</div>
+            {:else}
+              {@const byAdapter = sourceEntries.reduce<Record<string, typeof sourceEntries>>((acc, e) => {
+                (acc[e.adapter] ??= []).push(e); return acc;
+              }, {})}
+              {#each Object.entries(byAdapter) as [adapterName, entries]}
+                <div class="source-group mb-12">
+                  <div class="source-group-label">{adapterName}</div>
+                  {#each entries as entry}
+                    <label class="source-row">
+                      <input type="checkbox" bind:checked={entry.selected} class="source-checkbox" />
+                      <span class="source-name">{entry.source}</span>
+                      <a href={sourceUrl(entry.source)} target="_blank" rel="noopener noreferrer" class="source-ext" title="Ouvrir">↗</a>
+                    </label>
+                  {/each}
+                </div>
+              {/each}
+            {/if}
+          </div>
+
+          <div class="card">
+            <div class="card-title mb-12">Paramètres de collecte</div>
+            <div class="form-group">
+              <label class="form-label" for="collect-topic">Sujet / mots-clés</label>
+              <input id="collect-topic" class="form-input" bind:value={collectTopic} placeholder="ex: contrats droit des affaires" />
+            </div>
+            <div class="form-group mt-8">
+              <label class="form-label" for="collect-max">Paires max par source</label>
+              <input id="collect-max" type="number" min="10" max="500" class="form-input" bind:value={collectMaxPairs} />
+            </div>
+            {#if collectErr}<div class="api-error mt-8">{collectErr}</div>{/if}
+            <button
+              class="btn btn-primary mt-12"
+              style="width:100%"
+              disabled={collectRunning || collectSelectedCount === 0 || collectStatus === 'completed'}
+              onclick={() => launchCollect(tempProjectId)}
+            >
+              {#if collectRunning}<span class="spinner"></span> Collecte en cours…
+              {:else if collectStatus === 'completed'}✓ Collecte terminée
+              {:else}⬇ Lancer le scraping{/if}
+            </button>
+          </div>
+        </div>
+
+        <!-- Col droite : logs + résultats -->
+        <div class="collect-right">
+          {#if collectLogs.length === 0 && collectStatus === 'idle'}
+            <div class="collect-placeholder">
+              <div class="cp-icon">⬇</div>
+              <div class="cp-title">Collecte web automatique</div>
+              <div class="cp-sub">Sélectionnez les sources à gauche, ajustez les paramètres, puis lancez le scraping pour collecter des paires d'entraînement.</div>
+            </div>
+          {/if}
+
+          {#if collectLogs.length > 0 || collectRunning}
+            <div class="card mb-16">
+              <div class="card-header mb-8">
+                <div class="card-title">Journal de collecte</div>
+                <div style="display:flex;align-items:center;gap:8px">
+                  {#if collectRunning}<span class="spinner spinner-sm"></span>{/if}
+                  {#if collectStatus === 'completed'}<span class="status-ok">✓ Terminé</span>{/if}
+                  {#if collectStatus === 'failed'}<span class="status-err">✕ Erreur</span>{/if}
+                </div>
+              </div>
+              <pre id="collect-log" class="log-box">{collectLogs.join('\n')}</pre>
+            </div>
+          {/if}
+
+          {#if collectStatus === 'completed'}
+            <div class="card">
+              <div class="card-header mb-12">
+                <div>
+                  <div class="card-title">Données collectées</div>
+                  <div class="hint mt-4">{collectedTotal} paires brutes disponibles</div>
+                </div>
+                <button
+                  class="btn btn-primary btn-sm"
+                  disabled={pipelineRunning || pipelineStatus === 'completed'}
+                  onclick={() => launchPipeline(tempProjectId)}
+                >
+                  {#if pipelineRunning}<span class="spinner"></span> Pipeline…
+                  {:else if pipelineStatus === 'completed'}✓ Traité
+                  {:else}⟳ Lancer le pipeline{/if}
+                </button>
+              </div>
+
+              {#if pipelineLogs.length > 0 || pipelineRunning}
+                <pre id="pipeline-log" class="log-box mb-12">{pipelineLogs.join('\n')}</pre>
+              {/if}
+
+              {#if collectedPairs.length > 0}
+                <div class="pairs-header mb-8">
+                  <span class="meta-label">Aperçu — 20 premières paires</span>
+                  <button class="sources-toggle" onclick={() => showPairsPreview = !showPairsPreview}>
+                    {showPairsPreview ? '▾ Masquer' : "▸ Afficher l'aperçu"}
+                  </button>
+                </div>
+                {#if showPairsPreview}
+                  <div class="pairs-list">
+                    {#each collectedPairs as pair, i}
+                      <div class="pair-item">
+                        <div class="pair-idx">#{i + 1}</div>
+                        <div class="pair-body">
+                          <div class="pair-prompt">{pair.prompt}</div>
+                          <div class="pair-completion">{pair.completion}</div>
+                        </div>
+                        {#if pair.quality_score != null}
+                          <div class="pair-score" style="color:{pair.quality_score >= 0.7 ? 'var(--green)' : pair.quality_score >= 0.4 ? 'var(--yellow)' : 'var(--red)'}">
+                            {(pair.quality_score * 20).toFixed(0)}/20
+                          </div>
+                        {/if}
+                      </div>
+                    {/each}
+                  </div>
+                {/if}
+              {/if}
+            </div>
+          {/if}
+        </div>
+      </div>
+    {/if}
 
   <!-- Étape 3 : créer le projet -->
   {:else if step === 3}
@@ -557,8 +1439,9 @@
 
   <!-- Barre de progression -->
   {#if step > 0}
+    {@const progressStep = (step === 2 && step2Tab === 'sources') ? 2.5 : step}
     <div class="progress-bar-wrap">
-      <div class="progress-bar" style="width:{(step / STEPS.length) * 100}%"></div>
+      <div class="progress-bar" style="width:{(progressStep / STEPS.length) * 100}%"></div>
     </div>
   {/if}
 
@@ -570,6 +1453,162 @@
     margin: 0 auto;
     width: 100%;
   }
+
+  /* Step 2 — layout identique à /advisor */
+  .phase0-layout {
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    gap: 20px;
+    align-items: start;
+  }
+  .phase0-layout.has-panel { grid-template-columns: 340px 1fr 360px; }
+
+  .need-input { resize: vertical; min-height: 140px; }
+  .hint { font-size: 12px; color: var(--text-muted); line-height: 1.5; margin: 0; }
+  .mt-4  { margin-top: 4px; }  .mt-8  { margin-top: 8px; }
+  .mt-12 { margin-top: 12px; } .mt-16 { margin-top: 16px; }
+  .mb-12 { margin-bottom: 12px; } .mb-16 { margin-bottom: 16px; }
+
+  .summary-grid { display: grid; grid-template-columns: repeat(3,1fr); gap:10px; }
+  .summary-item {
+    display:flex; flex-direction:column; align-items:center;
+    padding:10px 8px; background:var(--surface-2); border-radius:var(--radius); gap:3px;
+  }
+  .summary-value { font-size:20px; font-weight:700; color:var(--accent); }
+  .summary-label { font-size:11px; color:var(--text-muted); text-align:center; }
+  .notes { font-size:12px; color:var(--text-muted); background:var(--surface-2); border-radius:var(--radius); padding:10px 14px; font-style:italic; line-height:1.5; }
+
+  .team-score-hero { display:flex; align-items:baseline; gap:4px; }
+  .team-score-value { font-size:38px; font-weight:800; line-height:1; }
+  .team-score-label { font-size:18px; color:var(--text-muted); }
+  .score-bars { display:flex; flex-direction:column; gap:6px; }
+  .score-bar-row { display:flex; align-items:center; gap:8px; }
+  .score-bar-label { font-size:11px; color:var(--text-muted); width:90px; flex-shrink:0; }
+  .score-bar-track { flex:1; height:6px; background:var(--surface-2); border-radius:3px; overflow:hidden; }
+  .score-bar-fill  { height:100%; border-radius:3px; transition:width 400ms ease; }
+  .score-bar-val   { font-size:11px; font-weight:600; width:24px; text-align:right; }
+  .eval-section { display:flex; flex-direction:column; }
+  .eval-reco { font-size:12px; color:var(--text-muted); background:var(--surface-2); border-radius:var(--radius); padding:8px 12px; font-style:italic; line-height:1.5; }
+
+  .sources-toggle {
+    background: none; border: none; padding: 0;
+    font-size: 11px; color: var(--text-muted); cursor: pointer;
+    text-decoration: underline; text-underline-offset: 2px;
+    transition: color 150ms; display: block;
+  }
+  .sources-toggle:hover { color: var(--accent); }
+  .sources-grid { display:flex; flex-wrap:wrap; gap:6px; }
+  .source-chip {
+    display:inline-flex; align-items:center; gap:4px;
+    padding:4px 10px; border-radius:999px;
+    background:var(--surface-2); border:1px solid var(--border);
+    text-decoration:none; font-size:11px; color:var(--accent);
+    transition:border-color 150ms, background 150ms; max-width:180px;
+  }
+  .source-chip:hover { border-color:var(--accent); background:var(--accent-dim); }
+  .source-chip-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .source-chip-icon { font-size:10px; color:var(--text-muted); flex-shrink:0; }
+
+  .adapters-list { display:flex; flex-direction:column; gap:10px; }
+  .alt-wrapper { display:flex; flex-direction:column; gap:6px; }
+  .btn-use {
+    align-self:flex-end; background:none; border:1px solid var(--border);
+    border-radius:var(--radius); padding:4px 12px; font-size:12px; cursor:pointer;
+    color:var(--accent); transition:border-color 150ms, background 150ms;
+  }
+  .btn-use:hover { border-color:var(--accent); background:var(--accent-dim); }
+
+  .tags { display:flex; flex-wrap:wrap; gap:4px; }
+  .tag { font-size:11px; padding:2px 8px; border-radius:999px; background:var(--surface-2); color:var(--text-muted); border:1px solid var(--border); }
+  .tag-warn   { color:#f59e0b; border-color:rgba(245,158,11,.3); }
+  .tag-danger { color:var(--red); border-color:rgba(255,80,80,.3); }
+
+  /* Tags interactifs gap/overlap */
+  .action-tags { display:flex; flex-wrap:wrap; gap:5px; }
+  .tag-action {
+    cursor: pointer; transition: filter 150ms;
+    background: none;
+  }
+  .tag-action:hover { filter: brightness(1.3); }
+  .tag-action.tag-active { box-shadow: 0 0 0 2px currentColor; }
+  .tag-action:disabled { opacity:.5; cursor:default; }
+  .eval-section-header { display:flex; align-items:center; justify-content:space-between; gap:6px; }
+  .meta-hint { font-size:10px; color:var(--text-dim); font-style:italic; }
+  .spinner-xs { width:9px; height:9px; border-width:1.5px; }
+  .mt-6 { margin-top:6px; }
+  .mt-10 { margin-top:10px; }
+
+  .tag-fill-all {
+    font-size:10px; font-weight:600; padding:2px 8px;
+    background: rgba(245,158,11,.12); border:1px solid rgba(245,158,11,.3);
+    border-radius:999px; color:#f59e0b; cursor:pointer;
+    display:inline-flex; align-items:center; gap:4px;
+    transition: background 150ms;
+  }
+  .tag-fill-all:hover:not(:disabled) { background: rgba(245,158,11,.22); }
+  .tag-fill-all:disabled { opacity:.5; cursor:default; }
+  .tag-fill-all-danger {
+    background: rgba(247,84,84,.12); border-color: rgba(247,84,84,.3); color: var(--red);
+  }
+  .tag-fill-all-danger:hover:not(:disabled) { background: rgba(247,84,84,.22); }
+
+  .fill-all-results {
+    background: rgba(62,207,142,.06); border:1px solid rgba(62,207,142,.2);
+    border-radius:var(--radius); padding:8px 10px;
+  }
+  .fill-all-header { display:flex; align-items:center; justify-content:space-between; }
+  .fill-all-list { display:flex; flex-direction:column; gap:5px; }
+  .fill-all-item { display:flex; flex-direction:column; gap:1px; padding:3px 0; border-bottom:1px solid var(--border); }
+  .fill-all-item:last-child { border-bottom:none; }
+
+  /* Panneau lacune */
+  .gap-label {
+    font-size:12px; color:var(--yellow, #f59e0b);
+    background:rgba(245,158,11,.08); border:1px solid rgba(245,158,11,.2);
+    border-radius:var(--radius); padding:8px 10px; font-style:italic; line-height:1.5;
+  }
+
+  /* Panneau chevauchement */
+  .overlap-label { display:flex; align-items:center; gap:4px; font-size:12px; }
+  .tag-danger-text { color:var(--red); }
+
+  .resolution-list { display:flex; flex-direction:column; gap:10px; }
+  .resolution-card {
+    background:var(--surface-2); border:1px solid var(--border);
+    border-radius:var(--radius-md); padding:10px 12px;
+  }
+  .res-header { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; }
+  .res-type {
+    font-size:10px; font-weight:700; text-transform:uppercase;
+    letter-spacing:.06em; padding:2px 8px; border-radius:999px;
+  }
+  .res-type-clarify { background:rgba(91,152,248,.15); color:var(--accent); }
+  .res-type-merge   { background:rgba(62,207,142,.15); color:var(--green); }
+  .res-type-remove  { background:rgba(247,84,84,.15);  color:var(--red); }
+  .res-explanation { font-size:11px; color:var(--text-muted); line-height:1.5; margin:0 0 6px; }
+  .res-adapters { display:flex; flex-direction:column; gap:3px; }
+  .res-adapter-name { font-size:11px; font-weight:600; color:var(--accent); }
+  .res-adapter-desc { font-size:11px; color:var(--text-dim); line-height:1.4; }
+
+  .meta-label { font-size:11px; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-muted); }
+  .meta-label.green { color:var(--green); }
+  .meta-label.red   { color:var(--red); }
+
+  .icon-btn {
+    background:none; border:1px solid var(--border); border-radius:4px;
+    padding:2px 7px; font-size:12px; cursor:pointer; color:var(--text-muted);
+    transition:border-color 150ms,color 150ms,background 150ms; white-space:nowrap;
+  }
+  .icon-btn:hover        { border-color:var(--accent); color:var(--accent); }
+  .icon-btn.danger:hover { border-color:var(--red); color:var(--red); }
+
+  .empty-state { text-align:center; padding:24px; color:var(--text-muted); font-size:13px; }
+  .validation-bar { border-top:1px solid var(--border); padding-top:16px; display:flex; align-items:center; gap:10px; }
+  .panel-loading { display:flex; align-items:center; gap:10px; color:var(--text-muted); font-size:13px; padding:20px 0; }
+  .mono { font-family:var(--font-mono); font-size:0.9em; }
+  .btn-sm { padding:4px 12px; font-size:12px; }
+
+  @media (max-width:1300px) { .phase0-layout, .phase0-layout.has-panel { grid-template-columns:1fr; } }
 
   /* Welcome */
   .welcome {
@@ -712,6 +1751,113 @@
     font-size: var(--text-sm); color: var(--red);
   }
 
+  /* Bannière session sauvegardée */
+  .session-banner {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px; border-radius: var(--radius);
+    background: var(--accent-dim); border: 1px solid rgba(91,152,248,.25);
+    font-size: var(--text-sm);
+  }
+  .sb-icon { color: var(--accent); font-size: 14px; flex-shrink: 0; }
+  .sb-text { flex: 1; color: var(--text-muted); line-height: 1.5; }
+  .sb-text strong { color: var(--accent); }
+  .sb-date { font-size: 11px; color: var(--text-dim); margin-left: 6px; }
+  .reanalyze-btn { color: var(--text-dim); font-size: 11px; }
+  .reanalyze-btn:hover { color: var(--red); border-color: var(--red); }
+
+  /* Step 2 — barre d'onglets */
+  .step2-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .step2-tabs {
+    display: flex;
+    gap: 4px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 3px;
+  }
+  .step2-tab {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 14px;
+    background: none; border: none; border-radius: calc(var(--radius-md) - 2px);
+    font-size: var(--text-sm); font-weight: 500; color: var(--text-muted);
+    cursor: pointer; transition: background 150ms, color 150ms;
+  }
+  .step2-tab.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+  .step2-tab:not(.active):hover { color: var(--text); background: var(--surface); }
+  .tab-badge {
+    font-size: 10px; font-weight: 700; padding: 1px 6px;
+    border-radius: 999px; background: var(--surface-3, var(--border));
+    color: var(--text-dim);
+  }
+  .step2-tab.active .tab-badge { background: var(--accent-dim); color: var(--accent); }
+  .step2-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+  /* Step 2 — onglet Sources & Collecte */
+  .collect-layout {
+    display: grid;
+    grid-template-columns: 360px 1fr;
+    gap: 20px;
+    align-items: start;
+  }
+  @media (max-width: 1100px) { .collect-layout { grid-template-columns: 1fr; } }
+
+  .source-group { display: flex; flex-direction: column; gap: 4px; }
+  .source-group-label {
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .07em; color: var(--text-dim);
+    padding: 4px 0 2px; font-family: var(--font-mono);
+  }
+  .source-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px; border-radius: var(--radius);
+    cursor: pointer; transition: background 150ms;
+  }
+  .source-row:hover { background: var(--surface-2); }
+  .source-checkbox { flex-shrink: 0; accent-color: var(--accent); cursor: pointer; }
+  .source-name { flex: 1; font-size: 12px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .source-ext {
+    font-size: 11px; color: var(--text-dim); text-decoration: none;
+    flex-shrink: 0; transition: color 150ms;
+  }
+  .source-ext:hover { color: var(--accent); }
+
+  .log-box {
+    background: var(--bg, #0d1117); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 10px 12px;
+    font-family: var(--font-mono); font-size: 11px; color: #a8b0c8;
+    max-height: 200px; overflow-y: auto; white-space: pre-wrap;
+    word-break: break-all; line-height: 1.6; margin: 0;
+  }
+
+  .status-ok  { font-size: 11px; font-weight: 600; color: var(--green); }
+  .status-err { font-size: 11px; font-weight: 600; color: var(--red); }
+
+  .pairs-header { display: flex; align-items: center; justify-content: space-between; }
+  .pairs-list { display: flex; flex-direction: column; gap: 8px; max-height: 400px; overflow-y: auto; }
+  .pair-item {
+    display: flex; gap: 10px; align-items: flex-start;
+    padding: 8px 10px; border-radius: var(--radius);
+    background: var(--surface-2); border: 1px solid var(--border);
+  }
+  .pair-idx { font-size: 10px; font-weight: 700; color: var(--text-dim); width: 24px; flex-shrink: 0; padding-top: 2px; font-family: var(--font-mono); }
+  .pair-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  .pair-prompt     { font-size: 11px; color: var(--accent); white-space: pre-wrap; word-break: break-word; }
+  .pair-completion { font-size: 11px; color: var(--text-muted); white-space: pre-wrap; word-break: break-word; border-top: 1px solid var(--border); padding-top: 4px; margin-top: 2px; }
+  .pair-score { font-size: 11px; font-weight: 700; flex-shrink: 0; }
+
+  .collect-nav {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 12px 0;
+  }
+
+  .collect-right { display: flex; flex-direction: column; }
+
   .btn-sm { padding: 4px 10px; font-size: var(--text-sm); font-weight: 500; }
 
   .spinner {
@@ -721,4 +1867,41 @@
     vertical-align: middle;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Documents techniques — step 1 */
+  .doc-drop-zone {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 4px; padding: 20px 16px;
+    border: 2px dashed var(--border); border-radius: var(--radius);
+    background: var(--surface); cursor: pointer;
+    transition: border-color 150ms, background 150ms;
+    text-align: center;
+  }
+  .doc-drop-zone:hover, .doc-drop-zone.drag-over {
+    border-color: var(--accent); background: var(--accent-dim);
+  }
+  .ddz-icon { font-size: 20px; line-height: 1; }
+  .ddz-text { font-size: 13px; color: var(--text); font-weight: 500; }
+  .ddz-hint { font-size: 11px; color: var(--text-dim); }
+  .ddz-browse { cursor: pointer; }
+
+  .doc-uploading { display: flex; flex-direction: column; gap: 4px; }
+  .doc-uploading-item {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11px; color: var(--text-dim); padding: 4px 8px;
+    background: var(--surface-2); border-radius: var(--radius);
+  }
+
+  .doc-list { display: flex; flex-direction: column; gap: 4px; }
+  .doc-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 10px; border-radius: var(--radius);
+    background: var(--surface-2); border: 1px solid var(--border);
+  }
+  .doc-icon { font-size: 14px; flex-shrink: 0; }
+  .doc-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .doc-name { font-size: 12px; font-weight: 500; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .doc-info { font-size: 10px; color: var(--text-dim); }
+  .doc-remove { opacity: 0.5; }
+  .doc-remove:hover { opacity: 1; color: var(--red); }
 </style>

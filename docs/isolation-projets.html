@@ -1,0 +1,1295 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MLOps — Isolation des projets &amp; souveraineté des données</title>
+<style>
+  :root {
+    --bg:        #0d1117;
+    --bg2:       #161b22;
+    --bg3:       #21262d;
+    --border:    #30363d;
+    --text:      #c9d1d9;
+    --text-dim:  #8b949e;
+    --accent:    #388bfd;
+    --green:     #3fb950;
+    --orange:    #d29922;
+    --red:       #f85149;
+    --purple:    #bc8cff;
+    --yellow:    #e3b341;
+    --teal:      #39d353;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.65;
+    font-size: 15px;
+  }
+
+  header {
+    background: linear-gradient(135deg, #0d1117 0%, #1a2332 50%, #0d1117 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 48px 40px 36px;
+    position: relative;
+    overflow: hidden;
+  }
+  header::before {
+    content: '';
+    position: absolute;
+    top: -80px; right: -80px;
+    width: 300px; height: 300px;
+    background: radial-gradient(circle, rgba(56,139,253,0.08) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .header-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(248,81,73,0.15);
+    border: 1px solid rgba(248,81,73,0.4);
+    border-radius: 6px;
+    padding: 5px 12px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    color: var(--red);
+    text-transform: uppercase;
+    margin-bottom: 18px;
+  }
+  .header-badge::before { content: '🔒'; }
+  h1 {
+    font-size: 28px;
+    font-weight: 700;
+    color: #fff;
+    line-height: 1.3;
+    margin-bottom: 10px;
+  }
+  .header-meta { font-size: 13px; color: var(--text-dim); }
+  .header-meta span { color: var(--text); }
+
+  nav {
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    padding: 0 40px;
+    display: flex;
+    gap: 0;
+    overflow-x: auto;
+  }
+  nav a {
+    color: var(--text-dim);
+    text-decoration: none;
+    font-size: 13px;
+    padding: 14px 16px;
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+    transition: color 0.2s, border-color 0.2s;
+  }
+  nav a:hover { color: var(--text); border-color: var(--border); }
+
+  main { max-width: 1100px; margin: 0 auto; padding: 48px 40px; }
+
+  section { margin-bottom: 64px; }
+  .section-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+  h2 {
+    font-size: 22px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 6px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  h3 {
+    font-size: 16px;
+    font-weight: 600;
+    color: #e6edf3;
+    margin: 28px 0 12px;
+  }
+  p { margin-bottom: 12px; color: var(--text); }
+  .lead {
+    font-size: 16px;
+    color: #e6edf3;
+    margin-bottom: 24px;
+    line-height: 1.7;
+  }
+
+  .callout {
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin: 20px 0;
+    border-left: 3px solid;
+    font-size: 14px;
+  }
+  .callout-danger  { background: rgba(248,81,73,0.08);  border-color: var(--red);    }
+  .callout-warning { background: rgba(210,153,34,0.08); border-color: var(--orange); }
+  .callout-success { background: rgba(63,185,80,0.08);  border-color: var(--green);  }
+  .callout-info    { background: rgba(56,139,253,0.08); border-color: var(--accent); }
+  .callout-title {
+    font-weight: 700;
+    margin-bottom: 6px;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+  }
+  .callout-danger  .callout-title { color: var(--red);    }
+  .callout-warning .callout-title { color: var(--orange); }
+  .callout-success .callout-title { color: var(--green);  }
+  .callout-info    .callout-title { color: var(--accent); }
+
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin: 20px 0; }
+  .card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+  }
+  .card-icon { font-size: 24px; margin-bottom: 10px; }
+  .card-title { font-size: 13px; font-weight: 700; color: #e6edf3; margin-bottom: 6px; }
+  .card-body  { font-size: 13px; color: var(--text-dim); line-height: 1.5; }
+
+  .table-wrap { overflow-x: auto; margin: 20px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th {
+    background: var(--bg3);
+    color: var(--text-dim);
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.8px;
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .badge-green  { background: rgba(63,185,80,0.15);  color: var(--green);  border: 1px solid rgba(63,185,80,0.3);  }
+  .badge-red    { background: rgba(248,81,73,0.15);  color: var(--red);    border: 1px solid rgba(248,81,73,0.3);  }
+  .badge-orange { background: rgba(210,153,34,0.15); color: var(--orange); border: 1px solid rgba(210,153,34,0.3); }
+  .badge-blue   { background: rgba(56,139,253,0.15); color: var(--accent); border: 1px solid rgba(56,139,253,0.3); }
+  .badge-purple { background: rgba(188,140,255,0.15); color: var(--purple); border: 1px solid rgba(188,140,255,0.3); }
+
+  code {
+    font-family: "SFMono-Regular", Consolas, monospace;
+    font-size: 12px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 6px;
+    color: #e6edf3;
+  }
+  pre {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    overflow-x: auto;
+    margin: 16px 0;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+  pre code { background: none; border: none; padding: 0; font-size: inherit; color: #e6edf3; }
+  .comment { color: var(--text-dim); }
+
+  .flow { margin: 28px 0; }
+  .flow-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 20px;
+    padding: 18px 0;
+    border-bottom: 1px dashed rgba(48,54,61,0.6);
+  }
+  .flow-step:last-child { border-bottom: none; }
+  .flow-num {
+    flex-shrink: 0;
+    width: 32px; height: 32px;
+    background: var(--accent);
+    color: #000;
+    font-weight: 800;
+    font-size: 14px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 2px;
+  }
+  .flow-content { flex: 1; }
+  .flow-title { font-weight: 600; color: #e6edf3; margin-bottom: 6px; font-size: 15px; }
+  .flow-details { font-size: 13px; color: var(--text-dim); }
+  .flow-details ul { margin: 6px 0 0 16px; }
+  .flow-details li { margin-bottom: 4px; }
+  .flow-tag {
+    display: inline-block;
+    border-radius: 3px;
+    padding: 1px 7px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    margin-left: 6px;
+    vertical-align: middle;
+  }
+  .tag-api    { background: rgba(56,139,253,0.2); color: var(--accent); }
+  .tag-fs     { background: rgba(57,211,83,0.2);  color: var(--teal);   }
+  .tag-db     { background: rgba(188,140,255,0.2); color: var(--purple); }
+  .tag-mlx    { background: rgba(188,140,255,0.2); color: var(--purple); }
+  .tag-rag    { background: rgba(248,81,73,0.2);  color: var(--red);    }
+  .tag-gate   { background: rgba(210,153,34,0.2); color: var(--orange); }
+
+  .tree {
+    font-family: "SFMono-Regular", Consolas, monospace;
+    font-size: 12px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    line-height: 1.8;
+    color: #e6edf3;
+    margin: 16px 0;
+  }
+  .tree .d  { color: var(--accent); font-weight: 600; }
+  .tree .c  { color: var(--text-dim); }
+  .tree .hl { color: var(--yellow); font-weight: 600; }
+
+  .classif-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin: 20px 0; }
+  @media (max-width: 700px) { .classif-grid { grid-template-columns: 1fr; } }
+  .classif-card { border-radius: 10px; padding: 20px; border: 1px solid; }
+  .classif-interne      { border-color: rgba(63,185,80,0.4);   background: rgba(63,185,80,0.06);   }
+  .classif-confidentiel { border-color: rgba(210,153,34,0.4);  background: rgba(210,153,34,0.06);  }
+  .classif-secret       { border-color: rgba(248,81,73,0.4);   background: rgba(248,81,73,0.06);   }
+  .classif-title { font-weight: 700; font-size: 14px; margin-bottom: 12px; }
+  .classif-interne      .classif-title { color: var(--green);  }
+  .classif-confidentiel .classif-title { color: var(--orange); }
+  .classif-secret       .classif-title { color: var(--red);    }
+  .classif-item { font-size: 12px; color: var(--text-dim); margin: 5px 0; display: flex; gap: 6px; line-height: 1.5; }
+  .classif-item strong { color: var(--text); }
+
+  /* accès données UI */
+  .access-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin: 24px 0; }
+  @media (max-width: 700px) { .access-grid { grid-template-columns: 1fr; } }
+  .access-card { border-radius: 10px; border: 1px solid; overflow: hidden; }
+  .access-interne      { border-color: rgba(63,185,80,0.4);   }
+  .access-confidentiel { border-color: rgba(210,153,34,0.4);  }
+  .access-secret       { border-color: rgba(248,81,73,0.4);   }
+  .access-header {
+    padding: 12px 16px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .access-interne      .access-header { background: rgba(63,185,80,0.1);   color: var(--green);  }
+  .access-confidentiel .access-header { background: rgba(210,153,34,0.1);  color: var(--orange); }
+  .access-secret       .access-header { background: rgba(248,81,73,0.1);   color: var(--red);    }
+  .access-body { padding: 16px; background: var(--bg2); }
+  .access-feature {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .access-feature:last-child { border-bottom: none; }
+  .access-check { flex-shrink: 0; font-size: 14px; margin-top: 1px; }
+  .check-ok  { color: var(--green); }
+  .check-no  { color: var(--red); }
+  .check-rd  { color: var(--orange); }
+  .access-feature-text { color: var(--text); line-height: 1.5; }
+  .access-feature-sub  { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+
+  /* bundle client */
+  .bundle-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin: 20px 0; }
+  @media (max-width: 700px) { .bundle-grid { grid-template-columns: 1fr; } }
+  .bundle-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .bundle-header {
+    padding: 12px 16px;
+    font-size: 13px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .bundle-header-blue   { background: rgba(56,139,253,0.12); border-bottom: 1px solid rgba(56,139,253,0.2); color: var(--accent); }
+  .bundle-header-red    { background: rgba(248,81,73,0.12);  border-bottom: 1px solid rgba(248,81,73,0.2);  color: var(--red);    }
+  .bundle-header-purple { background: rgba(188,140,255,0.12); border-bottom: 1px solid rgba(188,140,255,0.2); color: var(--purple); }
+  .bundle-port {
+    margin-left: auto;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-dim);
+    background: var(--bg3);
+    padding: 2px 7px;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+  }
+  .bundle-body { padding: 14px 16px; }
+  .bundle-item { font-size: 12px; color: var(--text-dim); margin: 5px 0; display: flex; gap: 6px; line-height: 1.5; }
+  .bundle-item strong { color: var(--text); }
+
+  /* deux contextes */
+  .context-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 24px 0; }
+  @media (max-width: 700px) { .context-grid { grid-template-columns: 1fr; } }
+  .context-card { border-radius: 10px; border: 1px solid; overflow: hidden; }
+  .context-capgemini { border-color: rgba(56,139,253,0.4); }
+  .context-client    { border-color: rgba(63,185,80,0.4);  }
+  .context-header {
+    padding: 14px 18px;
+    font-size: 13px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .context-capgemini .context-header { background: rgba(56,139,253,0.1); color: var(--accent); }
+  .context-client    .context-header { background: rgba(63,185,80,0.1);  color: var(--green);  }
+  .context-body { padding: 16px 18px; background: var(--bg2); }
+  .context-item { font-size: 13px; color: var(--text-dim); margin: 6px 0; display: flex; gap: 8px; line-height: 1.5; }
+  .context-item strong { color: var(--text); }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 20px 0; }
+  @media (max-width: 700px) { .two-col { grid-template-columns: 1fr; } }
+  ul, ol { padding-left: 20px; }
+  li { margin-bottom: 4px; color: var(--text); font-size: 14px; }
+  strong { color: #e6edf3; }
+  a { color: var(--accent); text-decoration: none; }
+  hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
+  .dim { color: var(--text-dim); }
+
+  footer {
+    background: var(--bg2);
+    border-top: 1px solid var(--border);
+    padding: 32px 40px;
+    font-size: 12px;
+    color: var(--text-dim);
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-badge">Confidentiel Capgemini — Usage interne</div>
+  <h1>MLOps Platform — Isolation des projets &amp; souveraineté des données</h1>
+  <p class="header-meta">
+    Architecture cible &bull; <span>Capgemini / Secteur Défense</span> &bull; À destination des responsables techniques et de l'équipe Cyber IT
+  </p>
+</header>
+
+<nav>
+  <a href="#contexte">Contexte</a>
+  <a href="#flux-creation">Flux : Création projet</a>
+  <a href="#arborescence">Arborescence</a>
+  <a href="#classification">Classification</a>
+  <a href="#acces-donnees">Accès aux données (UI)</a>
+  <a href="#pipeline">Cycle de vie</a>
+  <a href="#bundle">Bundle client</a>
+  <a href="#garanties">Garanties sécurité</a>
+  <a href="#audit">Auditabilité</a>
+</nav>
+
+<main>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     01 — CONTEXTE
+═══════════════════════════════════════════════════════════════════ -->
+<section id="contexte">
+  <div class="section-label">01 — Contexte</div>
+  <h2>Finalité de la plateforme et deux contextes distincts</h2>
+
+  <p class="lead">
+    La plateforme MLOps Capgemini est une <strong>chaîne de production et de qualification d'adapters LoRA spécialisés</strong>.
+    Elle ingère des données métier, entraîne des adapters locaux sur ces données, les qualifie via un gate de déploiement,
+    et les livre au client sous forme d'un bundle Docker autonome.
+    <strong>Les adapters sont la propriété intellectuelle de Capgemini</strong> — c'est notre valeur différenciante.
+    Le modèle de base (open source) n'est pas notre propriété.
+  </p>
+
+  <div class="context-grid">
+    <div class="context-card context-capgemini">
+      <div class="context-header">
+        Contexte 1 — Plateforme MLOps Capgemini
+      </div>
+      <div class="context-body">
+        <div class="context-item"><strong>Finalité :</strong> Collecter, nettoyer, entraîner, évaluer, qualifier les adapters LoRA</div>
+        <div class="context-item"><strong>Où ça tourne :</strong> Directement sur la machine (pas de Docker pour ces étapes — MLX nécessite l'accès direct au hardware Apple Silicon)</div>
+        <div class="context-item"><strong>Outils :</strong> MLX-LM (fine-tuning), Qdrant (RAG entraînement), MLflow (tracking interne), SQLite (métadonnées)</div>
+        <div class="context-item"><strong>Livrable produit :</strong> Une bibliothèque d'adapters qualifiés, prêts à être embarqués dans le bundle client</div>
+        <div class="context-item"><strong>MLflow :</strong> Outil Capgemini interne uniquement — jamais livré au client</div>
+      </div>
+    </div>
+    <div class="context-card context-client">
+      <div class="context-header">
+        Contexte 2 — Bundle livrable client
+      </div>
+      <div class="context-body">
+        <div class="context-item"><strong>Finalité :</strong> Inférence autonome chez le client — <code>docker compose up</code>, c'est tout</div>
+        <div class="context-item"><strong>Où ça tourne :</strong> Infrastructure Linux du client (on-premise ou serveur dédié)</div>
+        <div class="context-item"><strong>Contient :</strong> Ollama (sert le modèle de base + charge les adapters), Qdrant (index RAG pré-chargé), orchestrateur de routage</div>
+        <div class="context-item"><strong>Ne contient PAS :</strong> MLflow, les outils de fine-tuning, les données d'entraînement brutes</div>
+        <div class="context-item"><strong>Zéro cloud :</strong> Tout fonctionne en local, sans appel réseau externe</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-icon">🧩</div>
+      <div class="card-title">Les adapters : notre IP</div>
+      <div class="card-body">Un adapter LoRA est un delta de poids appliqué dynamiquement au modèle de base. Plusieurs adapters coexistent par projet — appelés sélectivement selon la tâche. C'est notre valeur, pas le modèle de base.</div>
+    </div>
+    <div class="card">
+      <div class="card-icon">🏗️</div>
+      <div class="card-title">Fine-tuning sans Docker</div>
+      <div class="card-body">MLX (Apple Silicon) exige un accès direct au hardware — pas de virtualisation. Les étapes de collecte, nettoyage, entraînement et évaluation tournent directement sur la machine, sans conteneur.</div>
+    </div>
+    <div class="card">
+      <div class="card-icon">🔐</div>
+      <div class="card-title">Isolation par construction</div>
+      <div class="card-body">Chaque projet est une bulle étanche : données, base de données, logs, adapters, index RAG. Aucun flux inter-projet n'est possible par construction — isolation physique (OS), pas seulement logique.</div>
+    </div>
+    <div class="card">
+      <div class="card-icon">📦</div>
+      <div class="card-title">Livrable Docker autonome</div>
+      <div class="card-body">Le bundle client est un Docker Compose contenant Ollama, Qdrant et l'orchestrateur. Les vecteurs RAG sont pré-chargés au moment de l'export. Le client n'a qu'une commande à lancer.</div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     02 — FLUX CRÉATION
+═══════════════════════════════════════════════════════════════════ -->
+<section id="flux-creation">
+  <div class="section-label">02 — Flux détaillé</div>
+  <h2>Ce qui se passe quand on crée un nouveau projet</h2>
+
+  <p class="lead">
+    L'opérateur clique sur <strong>«&nbsp;Nouveau projet&nbsp;»</strong> dans le dashboard et remplit le formulaire.
+    Voici <em>exactement</em> ce qui se produit, couche par couche, jusqu'à ce que le projet soit prêt à recevoir des données.
+  </p>
+
+  <div class="flow">
+
+    <div class="flow-step">
+      <div class="flow-num">1</div>
+      <div class="flow-content">
+        <div class="flow-title">Saisie dans le dashboard (SvelteKit) <span class="flow-tag tag-api">Frontend</span></div>
+        <div class="flow-details">
+          L'opérateur renseigne : nom du projet, description, domaine métier, modèle de base cible, et surtout le
+          <strong>niveau de classification</strong> (<code>interne</code> | <code>confidentiel</code> | <code>secret</code>).
+          Ce choix conditionne tous les comportements de sécurité décrits dans ce document.
+          <br><br>
+          Le dashboard envoie un <code>POST /api/projects</code> au backend FastAPI.
+        </div>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="flow-num">2</div>
+      <div class="flow-content">
+        <div class="flow-title">Validation &amp; génération de l'identifiant <span class="flow-tag tag-api">API FastAPI — projects.py</span></div>
+        <div class="flow-details">
+          Le backend :
+          <ul>
+            <li>Vérifie que le domaine et le type de tâche sont dans les listes autorisées</li>
+            <li>Génère l'identifiant : <code>project_id = nom.lower().replace(" ", "-")</code> — c'est la clé de tous les chemins qui suivent</li>
+            <li>Vérifie qu'aucun projet avec cet ID n'existe déjà pour éviter tout écrasement accidentel</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="flow-num">3</div>
+      <div class="flow-content">
+        <div class="flow-title">Écriture du fichier de configuration YAML <span class="flow-tag tag-fs">Filesystem</span></div>
+        <div class="flow-details">
+          Crée <code>config/projects/&lt;project_id&gt;.yaml</code> — fichier maître du projet. Il contient :
+          <ul>
+            <li>Nom, description, domaine, niveau de classification</li>
+            <li>Modèle de base cible (ex. <code>mistral-7b-instruct-4bit</code>)</li>
+            <li>Liste des adapters du projet et leurs tâches associées</li>
+            <li>Chemin de l'index Qdrant dédié : <code>qdrant/collections/&lt;project_id&gt;</code></li>
+            <li>Chemins datalake : <code>datalake/projects/&lt;project_id&gt;/{raw,processed,fine-tuning-ready}/</code></li>
+            <li>Seuils de qualité que chaque adapter devra dépasser avant déploiement</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="flow-num">4</div>
+      <div class="flow-content">
+        <div class="flow-title">Création de l'arborescence datalake <span class="flow-tag tag-fs">Filesystem</span></div>
+        <div class="flow-details">
+          Crée sur le disque les trois répertoires du cycle de vie de la donnée :
+          <pre><code>datalake/projects/&lt;project_id&gt;/
+├── raw/               <span class="comment"># données brutes — IMMUTABLES après ingestion</span>
+│   └── feedback/      <span class="comment"># retours humains pour réentraînement futur</span>
+├── processed/         <span class="comment"># données après nettoyage et validation</span>
+└── fine-tuning-ready/ <span class="comment"># paires JSONL prêtes pour mlx_lm.lora</span></code></pre>
+          Ces chemins sont <strong>construits à partir du project_id</strong> et ne contiennent aucune référence à d'autres projets.
+          Il n'existe ni lien symbolique ni redirection vers d'autres répertoires.
+        </div>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="flow-num">5</div>
+      <div class="flow-content">
+        <div class="flow-title">Création de la base de données SQLite dédiée <span class="flow-tag tag-db">Base de données</span></div>
+        <div class="flow-details">
+          Le backend crée <code>experiments/projects/&lt;project_id&gt;/mlops.db</code> —
+          un fichier SQLite <strong>exclusif à ce projet</strong>, initialisé avec le schéma complet :
+          <ul>
+            <li><code>runs</code> — historique de tous les entraînements : hyperparamètres, loss, durée, statut, adapter associé</li>
+            <li><code>adapters</code> — bibliothèque d'adapters produits : nom, tâche, version, chemin, statut (staging/production)</li>
+            <li><code>datasets</code> — versionnage du datalake (nombre de paires, qualité moyenne, chemin)</li>
+            <li><code>evaluations</code> — métriques d'évaluation post-entraînement (BLEU, ROUGE-L, taux de réussite, latence)</li>
+            <li><code>rag_feedback</code> — retours des utilisateurs sur les réponses RAG</li>
+            <li><code>archived_runs</code> — corbeille des runs supprimés (soft-delete, récupérable)</li>
+          </ul>
+          <strong>Conséquence directe :</strong> il est physiquement impossible d'accéder aux données d'un autre projet via une requête SQL —
+          les bases sont des fichiers OS distincts, sans tables croisées.
+        </div>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="flow-num">6</div>
+      <div class="flow-content">
+        <div class="flow-title">Enregistrement d'une expérience MLflow dédiée <span class="flow-tag tag-api">MLflow Tracking — Capgemini interne</span></div>
+        <div class="flow-details">
+          Crée une expérience MLflow nommée <code>&lt;project_id&gt;-lora</code>.
+          Pour les projets <code>confidentiel</code> ou <code>secret</code>, cette expérience est créée dans
+          l'instance MLflow <strong>dédiée au projet</strong> (port isolé, pas l'instance partagée).
+          Tous les runs d'entraînement ultérieurs y sont loggés — courbes de loss, hyperparamètres, métriques finales.
+          <br><br>
+          MLflow est un <strong>outil Capgemini interne</strong> — il ne fait pas partie du bundle livré au client.
+        </div>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="flow-num">7</div>
+      <div class="flow-content">
+        <div class="flow-title">Initialisation de l'index Qdrant dédié <span class="flow-tag tag-rag">Qdrant RAG</span></div>
+        <div class="flow-details">
+          Une collection Qdrant nommée <code>&lt;project_id&gt;</code> est créée dans l'instance locale.
+          Cet index vectoriel est utilisé à la fois pendant l'entraînement (augmentation contextuelle des paires)
+          et sera exporté dans le bundle client.
+          Une requête de similarité sur la collection du projet A ne peut structurellement pas atteindre les vecteurs du projet B.
+        </div>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="flow-num">8</div>
+      <div class="flow-content">
+        <div class="flow-title">Création du répertoire d'adapters <span class="flow-tag tag-fs">Filesystem</span></div>
+        <div class="flow-details">
+          Crée <code>adapters/&lt;project_id&gt;/</code> — emplacement de tous les checkpoints LoRA produits pour ce projet.
+          Chaque run d'entraînement crée un sous-répertoire <code>adapters/&lt;project_id&gt;/&lt;run_id&gt;/</code>
+          contenant les poids de l'adapter, la configuration et le rapport d'évaluation.
+        </div>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="flow-num">9</div>
+      <div class="flow-content">
+        <div class="flow-title">Le projet est prêt <span class="flow-tag tag-api">Dashboard</span></div>
+        <div class="flow-details">
+          Le dashboard affiche le projet dans la liste avec son statut, son niveau de classification et ses ressources allouées.
+          L'opérateur peut maintenant déposer des données, lancer un entraînement, consulter les métriques, gérer la bibliothèque d'adapters.
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     03 — ARBORESCENCE
+═══════════════════════════════════════════════════════════════════ -->
+<section id="arborescence">
+  <div class="section-label">03 — Arborescence</div>
+  <h2>Structure physique sur le disque</h2>
+
+  <p>Vue du dépôt <code>mlOps/</code> après création de deux projets fictifs (<code>projet-alpha</code> et <code>projet-beta</code>).
+  <strong>Chaque ressource de chaque projet est dans un chemin qui lui est propre.</strong>
+  Aucune ressource n'est partagée entre projets en dehors des outils de la plateforme elle-même (le code FastAPI, le dashboard).</p>
+
+  <div class="tree">
+<span class="d">mlOps/</span><br>
+│<br>
+├── <span class="d">config/projects/</span>                       <span class="c">← 1 fichier YAML par projet</span><br>
+│   ├── projet-alpha.yaml<br>
+│   └── projet-beta.yaml<br>
+│<br>
+├── <span class="d">datalake/projects/</span>                     <span class="c">← données SOURCE — isolation OS stricte</span><br>
+│   ├── <span class="d">projet-alpha/</span><br>
+│   │   ├── <span class="d">raw/</span>                           <span class="c">IMMUTABLE après ingestion</span><br>
+│   │   │   └── <span class="d">feedback/</span><br>
+│   │   ├── <span class="d">processed/</span><br>
+│   │   └── <span class="d">fine-tuning-ready/</span><br>
+│   └── <span class="d">projet-beta/</span><br>
+│       ├── <span class="d">raw/</span><br>
+│       ├── <span class="d">processed/</span><br>
+│       └── <span class="d">fine-tuning-ready/</span><br>
+│<br>
+├── <span class="d">adapters/</span>                              <span class="c">← checkpoints LoRA — notre IP — 1 dossier par projet</span><br>
+│   ├── <span class="d">projet-alpha/</span><br>
+│   │   ├── <span class="d">adapter-extraction-v1/</span>         <span class="c">poids LoRA + config + eval</span><br>
+│   │   └── <span class="d">adapter-review-v2/</span>             <span class="c">second adapter, tâche différente</span><br>
+│   └── <span class="d">projet-beta/</span><br>
+│       └── <span class="d">adapter-transform-v1/</span><br>
+│<br>
+├── <span class="d">models/</span><br>
+│   └── <span class="d">staging/</span>                           <span class="c">← adapters fusionnés en attente de gate (jamais servis)</span><br>
+│       ├── <span class="d">projet-alpha/</span><br>
+│       └── <span class="d">projet-beta/</span><br>
+│<br>
+├── <span class="d">experiments/projects/</span>                  <span class="c">← 1 SQLite par projet — Capgemini interne</span><br>
+│   ├── <span class="d">projet-alpha/</span><br>
+│   │   └── mlops.db                       <span class="c">runs, adapters, evals de projet-alpha UNIQUEMENT</span><br>
+│   └── <span class="d">projet-beta/</span><br>
+│       └── mlops.db                       <span class="c">runs, adapters, evals de projet-beta UNIQUEMENT</span><br>
+│<br>
+├── <span class="d">qdrant/</span>                                <span class="c">← index vectoriel RAG — 1 collection par projet</span><br>
+│   └── <span class="d">storage/collections/</span><br>
+│       ├── <span class="d">projet-alpha/</span><br>
+│       └── <span class="d">projet-beta/</span><br>
+│<br>
+├── <span class="d">bundles/</span>                               <span class="c">← bundles Docker exportés pour livraison client</span><br>
+│   ├── <span class="d">projet-alpha-20260429/</span><br>
+│   │   ├── docker-compose.yml<br>
+│   │   ├── <span class="d">adapters/</span>                      <span class="c">bibliothèque d'adapters qualifiés</span><br>
+│   │   ├── <span class="d">qdrant-snapshot/</span>               <span class="c">vecteurs pré-chargés</span><br>
+│   │   └── MANIFEST.sha256<br>
+│   └── <span class="d">projet-beta-20260429/</span><br>
+│<br>
+└── <span class="d">logs/</span>                                  <span class="c">← logs namespaced par projet</span><br>
+    ├── <span class="d">projet-alpha/</span>run-abc123.log<br>
+    └── <span class="d">projet-beta/</span>run-def456.log<br>
+  </div>
+
+  <div class="callout callout-success">
+    <div class="callout-title">Propriété fondamentale</div>
+    À aucun moment un chemin de fichier associé à <code>projet-alpha</code> ne contient ou ne référence
+    le chemin de <code>projet-beta</code>. L'isolation est <strong>physique</strong> (chemins OS distincts)
+    et non seulement logique (filtres SQL). Une lecture directe du disque par un tiers ne mélange pas les projets.
+  </div>
+
+  <div class="callout callout-info">
+    <div class="callout-title">Adapters vs modèle fusionné</div>
+    <strong>Adapter</strong> : poids LoRA légers (~quelques Mo), chargés dynamiquement sur le modèle de base. Plusieurs adapters par projet, appelés selon la tâche.
+    Notre IP, livré dans le bundle client.<br>
+    <strong>Modèle fusionné (fused)</strong> : résultat de <code>mlx_lm.fuse</code> qui intègre les poids de l'adapter dans le modèle de base.
+    Utilisé uniquement pour le gate de déploiement — jamais servi directement en production Capgemini, non inclus dans le bundle client.
+    Le client reçoit le modèle de base + les adapters séparément, Ollama gère le chargement dynamique.
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     04 — NIVEAUX DE CLASSIFICATION
+═══════════════════════════════════════════════════════════════════ -->
+<section id="classification">
+  <div class="section-label">04 — Classification</div>
+  <h2>Comportement complet selon le niveau de sensibilité</h2>
+
+  <p>Le niveau de classification est choisi à la création du projet. Il déclenche automatiquement les mesures ci-dessous sans intervention manuelle supplémentaire.</p>
+
+  <div class="classif-grid">
+    <div class="classif-card classif-interne">
+      <div class="classif-title">INTERNE</div>
+      <div class="classif-item"><strong>Usage typique :</strong> R&amp;D Capgemini, projets pilotes, données non sensibles</div>
+      <div class="classif-item"><strong>Fine-tuning :</strong> accès direct hardware Apple Silicon — pas de contrainte réseau</div>
+      <div class="classif-item"><strong>MLflow :</strong> instance partagée ou dédiée selon configuration</div>
+      <div class="classif-item"><strong>Accès données UI :</strong> complet (lecture + export)</div>
+      <div class="classif-item"><strong>SQLite :</strong> fichier isolé par projet</div>
+      <div class="classif-item"><strong>Bundle export :</strong> standard</div>
+    </div>
+    <div class="classif-card classif-confidentiel">
+      <div class="classif-title">CONFIDENTIEL</div>
+      <div class="classif-item"><strong>Usage typique :</strong> données client sensibles, projets Défense non classifiés au sens réglementaire</div>
+      <div class="classif-item"><strong>Fine-tuning :</strong> isolation réseau — aucune connexion sortante autorisée pendant l'entraînement</div>
+      <div class="classif-item"><strong>MLflow :</strong> instance dédiée sur port isolé — pas d'accès externe</div>
+      <div class="classif-item"><strong>Accès données UI :</strong> lecture restreinte, export désactivé</div>
+      <div class="classif-item"><strong>SQLite :</strong> fichier isolé + permissions OS 600</div>
+      <div class="classif-item"><strong>Bundle export :</strong> chiffrement recommandé</div>
+    </div>
+    <div class="classif-card classif-secret">
+      <div class="classif-title">SECRET</div>
+      <div class="classif-item"><strong>Usage typique :</strong> données classifiées Défense — Secret Défense, données souveraines</div>
+      <div class="classif-item"><strong>Fine-tuning :</strong> isolation maximale — tout accès réseau bloqué au niveau OS pendant l'entraînement</div>
+      <div class="classif-item"><strong>MLflow :</strong> instance dédiée, aucune API externe — forcé automatiquement</div>
+      <div class="classif-item"><strong>Accès données UI :</strong> aucun accès aux données source — métriques agrégées uniquement. Capgemini ne voit pas les données.</div>
+      <div class="classif-item"><strong>SQLite :</strong> fichier isolé + chiffrement (SQLCipher)</div>
+      <div class="classif-item"><strong>Bundle export :</strong> désactivé par défaut — validation manuelle Capgemini + client requise</div>
+    </div>
+  </div>
+
+  <div class="callout callout-danger">
+    <div class="callout-title">Principe SECRET — responsabilité client totale sur les données</div>
+    Pour un projet classifié SECRET, <strong>Capgemini n'accède jamais aux données source</strong>.
+    Le client apporte ses données, les dépose dans le répertoire <code>raw/</code> de son projet sur la machine d'entraînement,
+    et supervise le pipeline depuis sa propre interface. Les données ne transitent pas par les systèmes Capgemini.
+    La plateforme MLOps est un outil d'exécution — elle produit les adapters sans consulter le contenu qu'elle traite.
+    <strong>Ce principe doit être contractualisé avant le début du projet.</strong>
+  </div>
+
+  <div class="callout callout-warning">
+    <div class="callout-title">Note pour l'équipe Cyber</div>
+    Le forçage de l'isolation réseau en cas de classification <code>confidentiel</code> ou <code>secret</code>
+    est implémenté dans les scripts de lancement et ne peut pas être contourné depuis l'UI.
+    Un warning est émis et tracé à chaque forçage automatique.
+    La résistance à ce forçage nécessiterait une modification directe des scripts — action traçable via git.
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     05 — ACCÈS AUX DONNÉES VIA L'UI
+═══════════════════════════════════════════════════════════════════ -->
+<section id="acces-donnees">
+  <div class="section-label">05 — Accès aux données</div>
+  <h2>Qui peut voir les données d'un projet, et depuis où</h2>
+
+  <p class="lead">
+    La plateforme offre un accès en lecture aux données d'un projet depuis le dashboard —
+    pour permettre à l'équipe Capgemini de vérifier la qualité des données ingérées,
+    valider les paires d'entraînement, et superviser le pipeline.
+    Cet accès est différencié selon le niveau de classification.
+  </p>
+
+  <div class="access-grid">
+
+    <div class="access-card access-interne">
+      <div class="access-header">
+        <span>INTERNE</span>
+      </div>
+      <div class="access-body">
+        <div class="access-feature">
+          <div class="access-check check-ok">✓</div>
+          <div>
+            <div class="access-feature-text">Visualisation des données brutes</div>
+            <div class="access-feature-sub">Navigation dans <code>raw/</code>, aperçu des fichiers, comptage de paires</div>
+          </div>
+        </div>
+        <div class="access-feature">
+          <div class="access-check check-ok">✓</div>
+          <div>
+            <div class="access-feature-text">Exploration des paires traitées</div>
+            <div class="access-feature-sub">Lecture des fichiers <code>processed/</code> et <code>fine-tuning-ready/</code></div>
+          </div>
+        </div>
+        <div class="access-feature">
+          <div class="access-check check-ok">✓</div>
+          <div>
+            <div class="access-feature-text">Métriques de qualité par fichier</div>
+            <div class="access-feature-sub">Score qualité, longueur, distribution des tokens</div>
+          </div>
+        </div>
+        <div class="access-feature">
+          <div class="access-check check-ok">✓</div>
+          <div>
+            <div class="access-feature-text">Export de données via l'UI</div>
+            <div class="access-feature-sub">Téléchargement possible pour vérification locale</div>
+          </div>
+        </div>
+        <div class="access-feature">
+          <div class="access-check check-ok">✓</div>
+          <div>
+            <div class="access-feature-text">Accès aux logs d'entraînement</div>
+            <div class="access-feature-sub">Visualisation complète depuis le dashboard</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="access-card access-confidentiel">
+      <div class="access-header">
+        <span>CONFIDENTIEL</span>
+      </div>
+      <div class="access-body">
+        <div class="access-feature">
+          <div class="access-check check-rd">◐</div>
+          <div>
+            <div class="access-feature-text">Visualisation des données brutes</div>
+            <div class="access-feature-sub">Aperçu limité (N premières lignes), sans contenu sensible affiché en clair</div>
+          </div>
+        </div>
+        <div class="access-feature">
+          <div class="access-check check-rd">◐</div>
+          <div>
+            <div class="access-feature-text">Exploration des paires traitées</div>
+            <div class="access-feature-sub">Lecture possible pour vérification qualité, pas de téléchargement en masse</div>
+          </div>
+        </div>
+        <div class="access-feature">
+          <div class="access-check check-ok">✓</div>
+          <div>
+            <div class="access-feature-text">Métriques de qualité par fichier</div>
+            <div class="access-feature-sub">Scores, statistiques — sans exposer le contenu</div>
+          </div>
+        </div>
+        <div class="access-feature">
+          <div class="access-check check-no">✗</div>
+          <div>
+            <div class="access-feature-text">Export de données via l'UI</div>
+            <div class="access-feature-sub">Désactivé — l'export se fait uniquement via le script dédié avec traçabilité complète</div>
+          </div>
+        </div>
+        <div class="access-feature">
+          <div class="access-check check-ok">✓</div>
+          <div>
+            <div class="access-feature-text">Accès aux logs d'entraînement</div>
+            <div class="access-feature-sub">Métriques et statuts visibles, sans données métier dans les logs</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="access-card access-secret">
+      <div class="access-header">
+        <span>SECRET</span>
+      </div>
+      <div class="access-body">
+        <div class="access-feature">
+          <div class="access-check check-no">✗</div>
+          <div>
+            <div class="access-feature-text">Visualisation des données brutes</div>
+            <div class="access-feature-sub">Aucun accès depuis le dashboard — Capgemini ne voit pas les données source</div>
+          </div>
+        </div>
+        <div class="access-feature">
+          <div class="access-check check-no">✗</div>
+          <div>
+            <div class="access-feature-text">Exploration des paires traitées</div>
+            <div class="access-feature-sub">Idem — données 100 % sous contrôle et responsabilité du client</div>
+          </div>
+        </div>
+        <div class="access-feature">
+          <div class="access-check check-rd">◐</div>
+          <div>
+            <div class="access-feature-text">Métriques de qualité agrégées</div>
+            <div class="access-feature-sub">Comptages et scores uniquement, sans aucune donnée source</div>
+          </div>
+        </div>
+        <div class="access-feature">
+          <div class="access-check check-no">✗</div>
+          <div>
+            <div class="access-feature-text">Export de données via l'UI</div>
+            <div class="access-feature-sub">Désactivé. Le client gère ses données de bout en bout</div>
+          </div>
+        </div>
+        <div class="access-feature">
+          <div class="access-check check-rd">◐</div>
+          <div>
+            <div class="access-feature-text">Accès aux logs d'entraînement</div>
+            <div class="access-feature-sub">Métriques techniques uniquement (loss, durée). Aucun extrait de données dans les logs.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     06 — CYCLE DE VIE PIPELINE
+═══════════════════════════════════════════════════════════════════ -->
+<section id="pipeline">
+  <div class="section-label">06 — Cycle de vie</div>
+  <h2>Pipeline complet d'un projet, de l'ingestion à la livraison</h2>
+
+  <p>Toutes les étapes 1 à 8 se déroulent sur la plateforme Capgemini, directement sur la machine (sans Docker).
+  L'étape 9 est le gate de qualification des adapters. L'étape 10 produit le bundle livrable client.</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Étape</th>
+          <th>Déclencheur</th>
+          <th>Ce qui est créé ou modifié</th>
+          <th>Isolation</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>1. Création projet</strong></td>
+          <td>Dashboard → <em>Nouveau projet</em></td>
+          <td>YAML config, datalake dirs, SQLite dédiée, collection Qdrant, répertoire adapters</td>
+          <td><span class="badge badge-green">Complète</span></td>
+        </tr>
+        <tr>
+          <td><strong>2. Ingestion données</strong></td>
+          <td><code>/extract-pairs project=&lt;id&gt;</code></td>
+          <td><code>datalake/projects/&lt;id&gt;/raw/</code> — IMMUTABLE après ingestion</td>
+          <td><span class="badge badge-green">Complète</span></td>
+        </tr>
+        <tr>
+          <td><strong>3. Nettoyage &amp; validation</strong></td>
+          <td><code>/clean-dataset project=&lt;id&gt;</code></td>
+          <td><code>datalake/projects/&lt;id&gt;/processed/</code></td>
+          <td><span class="badge badge-green">Complète</span></td>
+        </tr>
+        <tr>
+          <td><strong>4. Augmentation synthétique</strong></td>
+          <td><code>/augment-dataset project=&lt;id&gt;</code></td>
+          <td>Paires générées ajoutées à <code>processed/</code></td>
+          <td><span class="badge badge-green">Complète</span></td>
+        </tr>
+        <tr>
+          <td><strong>5. Ingestion RAG</strong></td>
+          <td><code>POST /api/rag/&lt;id&gt;/ingest</code></td>
+          <td>Vecteurs indexés dans la collection Qdrant <code>&lt;id&gt;</code></td>
+          <td><span class="badge badge-green">Complète</span></td>
+        </tr>
+        <tr>
+          <td><strong>6. Fine-tuning LoRA</strong></td>
+          <td><code>/train-lora project=&lt;id&gt; adapter=&lt;nom&gt;</code></td>
+          <td>Adapter dans <code>adapters/&lt;id&gt;/&lt;adapter-nom&gt;/</code> + run loggé dans SQLite &amp; MLflow dédiés</td>
+          <td><span class="badge badge-green">Complète</span></td>
+        </tr>
+        <tr>
+          <td><strong>7. Évaluation adapter</strong></td>
+          <td><code>/eval-model project=&lt;id&gt; adapter=&lt;nom&gt;</code></td>
+          <td>Métriques dans SQLite dédiée, comparaison vs baseline configurée</td>
+          <td><span class="badge badge-green">Complète</span></td>
+        </tr>
+        <tr>
+          <td><strong>8. Gate de déploiement</strong></td>
+          <td><code>scripts/deploy_gate.py --project &lt;id&gt; --adapter &lt;nom&gt;</code></td>
+          <td>Vérifie métriques MLflow vs seuils du YAML projet — bloque si insuffisant. Adapter promu en <code>production</code> dans la DB.</td>
+          <td><span class="badge badge-green">Complète</span></td>
+        </tr>
+        <tr>
+          <td><strong>9. Composition bibliothèque</strong></td>
+          <td>Dashboard → <em>Gérer les adapters</em></td>
+          <td>Sélection des adapters qualifiés à inclure dans le bundle, affectation des tâches, test de routage</td>
+          <td><span class="badge badge-green">Complète</span></td>
+        </tr>
+        <tr>
+          <td><strong>10. Export bundle client</strong></td>
+          <td><code>scripts/export_bundle.sh &lt;id&gt;</code></td>
+          <td>Bundle Docker autonome : Ollama + adapters + Qdrant snapshot + orchestrateur + MANIFEST.sha256</td>
+          <td><span class="badge badge-green">Complète</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Le gate de déploiement — barrière qualité par adapter</h3>
+  <p>Aucun adapter ne peut être promu et inclus dans le bundle sans passer le gate. Le script <code>scripts/deploy_gate.py</code>
+  lit les <strong>seuils qualité définis dans le YAML du projet</strong> et les compare aux métriques enregistrées
+  dans l'instance MLflow dédiée :</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Métrique</th><th>Signification</th><th>Sens</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>pass_rate</code></td><td>Taux de réussite des cas de test fonctionnels de l'adapter</td><td>Valeur minimale — configurable par projet et par adapter</td></tr>
+        <tr><td><code>rouge_l</code></td><td>Similarité séquentielle avec les références attendues</td><td>Valeur minimale — configurable par projet</td></tr>
+        <tr><td><code>latency_ratio</code></td><td>Latence de l'adapter rapportée à la baseline</td><td>Valeur maximale — l'adapter ne doit pas dégrader significativement la vitesse</td></tr>
+        <tr><td><code>compilation_rate</code></td><td>Taux de code généré syntaxiquement valide</td><td>Optionnel — activé selon le domaine de l'adapter</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>Si un seuil n'est pas atteint, le gate <strong>bloque la promotion</strong>, retourne la liste des critères en échec,
+  et l'adapter reste en staging — il n'est pas inclus dans le bundle.</p>
+</section>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     07 — BUNDLE CLIENT
+═══════════════════════════════════════════════════════════════════ -->
+<section id="bundle">
+  <div class="section-label">07 — Bundle livrable client</div>
+  <h2>Ce que contient le bundle Docker autonome</h2>
+
+  <p class="lead">
+    Le bundle est un Docker Compose que le client dépose sur son infrastructure Linux et démarre avec <code>docker compose up</code>.
+    Il est entièrement autonome — aucune connexion réseau externe n'est requise, aucun outil Capgemini n'est embarqué.
+    Les vecteurs RAG sont pré-chargés au moment de l'export.
+  </p>
+
+  <div class="bundle-grid">
+    <div class="bundle-card">
+      <div class="bundle-header bundle-header-blue">
+        <span>Ollama</span>
+        <span class="bundle-port">port 11434</span>
+      </div>
+      <div class="bundle-body">
+        <div class="bundle-item"><strong>Rôle :</strong> Serveur d'inférence local</div>
+        <div class="bundle-item"><strong>Ce qu'il fait :</strong> Sert le modèle de base et charge dynamiquement les adapters LoRA selon la requête entrante. API compatible OpenAI.</div>
+        <div class="bundle-item"><strong>Modèle de base :</strong> Open source (ex. Mistral 7B) — pas la propriété Capgemini. Téléchargé une fois dans l'image.</div>
+        <div class="bundle-item"><strong>Adapters :</strong> Chargés depuis le volume <code>/adapters/</code> — notre IP. Plusieurs adapters coexistent, l'orchestrateur choisit lequel activer.</div>
+        <div class="bundle-item"><strong>Pourquoi Ollama :</strong> Gestion native des adapters LoRA, format GGUF/MLX, tourne sur Linux, zéro configuration supplémentaire.</div>
+      </div>
+    </div>
+
+    <div class="bundle-card">
+      <div class="bundle-header bundle-header-red">
+        <span>Qdrant</span>
+        <span class="bundle-port">port 6333</span>
+      </div>
+      <div class="bundle-body">
+        <div class="bundle-item"><strong>Rôle :</strong> Index vectoriel RAG de production</div>
+        <div class="bundle-item"><strong>Ce qu'il fait :</strong> Sert les recherches sémantiques en temps réel pour enrichir le contexte des requêtes (RAG).</div>
+        <div class="bundle-item"><strong>Données :</strong> Snapshot Qdrant exporté depuis la plateforme Capgemini au moment de la livraison — vecteurs pré-chargés.</div>
+        <div class="bundle-item"><strong>Seul outil vectoriel :</strong> Qdrant est utilisé à la fois en développement (plateforme Capgemini) et en production (bundle client). Pas de LanceDB.</div>
+        <div class="bundle-item"><strong>Volume monté :</strong> <code>/qdrant-data/</code> — persistant entre redémarrages.</div>
+      </div>
+    </div>
+
+    <div class="bundle-card">
+      <div class="bundle-header bundle-header-purple">
+        <span>Orchestrateur de routage</span>
+        <span class="bundle-port">port 8080</span>
+      </div>
+      <div class="bundle-body">
+        <div class="bundle-item"><strong>Rôle :</strong> Point d'entrée unique des requêtes client</div>
+        <div class="bundle-item"><strong>Ce qu'il fait :</strong> Reçoit la requête, analyse l'intention, sélectionne le ou les adapters à activer, interroge Qdrant si nécessaire, synthétise la réponse.</div>
+        <div class="bundle-item"><strong>Routage multi-adapter :</strong> Plusieurs adapters peuvent être appelés en séquence ou en parallèle selon la complexité de la tâche.</div>
+        <div class="bundle-item"><strong>Configuration :</strong> Définie dans le YAML du projet, embarquée dans le bundle — le client ne la modifie pas.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout callout-info">
+    <div class="callout-title">Ce que le bundle ne contient PAS</div>
+    <strong>MLflow</strong> — outil Capgemini interne uniquement. Le client n'a pas accès au tracking d'expériences.
+    <strong>Les données d'entraînement brutes</strong> — restent sur l'infrastructure Capgemini.
+    <strong>Les scripts de fine-tuning</strong> — idem, infrastructure Capgemini.
+    <strong>Les modèles fusionnés (fused)</strong> — le bundle contient le modèle de base + les adapters séparés, pas un modèle monolithique fusionné.
+  </div>
+
+  <h3>Déploiement côté client</h3>
+  <pre><code><span class="comment"># Infrastructure cible client : Linux (Ubuntu 22.04+, Debian 12+, RHEL 9+)</span>
+<span class="comment"># Prérequis : Docker Engine + Docker Compose v2</span>
+
+<span class="comment"># Livraison du bundle</span>
+scp bundle-projet-alpha-20260429.tar.gz client@serveur:/opt/capgemini/
+
+<span class="comment"># Démarrage — c'est tout ce que le client fait</span>
+tar xzf bundle-projet-alpha-20260429.tar.gz
+cd bundle-projet-alpha-20260429/
+docker compose up -d
+
+<span class="comment"># Vérification d'intégrité avant démarrage (optionnel)</span>
+shasum -a 256 -c MANIFEST.sha256</code></pre>
+
+  <div class="callout callout-success">
+    <div class="callout-title">Souveraineté complète chez le client</div>
+    Une fois livré, le bundle fonctionne sans aucune connexion à Capgemini ni à Internet.
+    Le client est propriétaire de son instance, peut l'auditer, la sauvegarder, la répliquer.
+    Aucune télémétrie, aucun callback. La souveraineté des données est totale.
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     08 — GARANTIES DE SÉCURITÉ
+═══════════════════════════════════════════════════════════════════ -->
+<section id="garanties">
+  <div class="section-label">08 — Garanties de sécurité</div>
+  <h2>Ce que la plateforme garantit</h2>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-icon">🗂️</div>
+      <div class="card-title">Isolation physique des données</div>
+      <div class="card-body">
+        Chaque projet a son propre répertoire dans le datalake, construit à partir de son identifiant.
+        Une validation <em>path traversal</em> sur chaque requête API interdit les accès <code>../autre-projet</code>.
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-icon">🗄️</div>
+      <div class="card-title">Base de données par projet</div>
+      <div class="card-body">
+        Chaque projet a son propre fichier SQLite. Il est physiquement impossible d'accéder aux métadonnées
+        d'un autre projet via une requête SQL — les bases n'ont aucune table en commun.
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-icon">🧩</div>
+      <div class="card-title">Adapters isolés par projet</div>
+      <div class="card-body">
+        Les adapters LoRA sont stockés sous <code>adapters/&lt;project_id&gt;/</code>.
+        Un adapter d'un projet ne peut pas être chargé par l'orchestrateur d'un autre projet — le chemin est hardcodé par projet.
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-icon">📋</div>
+      <div class="card-title">Index RAG dédié (Qdrant)</div>
+      <div class="card-body">
+        Chaque projet a sa propre collection Qdrant. Deux collections Qdrant distinctes sont
+        physiquement incapables de se croiser lors d'une recherche de similarité.
+        Qdrant est l'unique moteur vectoriel — en développement comme en production.
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-icon">🔬</div>
+      <div class="card-title">MLflow interne uniquement</div>
+      <div class="card-body">
+        MLflow est un outil Capgemini de tracking d'expériences. Il n'est jamais livré au client, n'expose aucune API externe,
+        et tourne sur port isolé pour les projets confidentiels et secrets.
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-icon">🔒</div>
+      <div class="card-title">Gate obligatoire avant bundle</div>
+      <div class="card-body">
+        Un adapter ne peut jamais être inclus dans le bundle client sans avoir passé le gate de qualité.
+        La promotion est bloquée si les métriques ne sont pas atteintes.
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-icon">🚫</div>
+      <div class="card-title">Zéro appel cloud en production</div>
+      <div class="card-body">
+        L'inférence en production est 100 % locale via Ollama.
+        Le bundle client fonctionne en réseau totalement fermé.
+        Aucune donnée client ne transite par un service tiers.
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-icon">📦</div>
+      <div class="card-title">Bundle vérifiable</div>
+      <div class="card-body">
+        Le script <code>export_bundle.sh</code> génère un <code>MANIFEST.sha256</code> listant le hash de chaque fichier.
+        Le client peut vérifier à tout moment qu'aucun fichier n'a été modifié depuis la livraison.
+      </div>
+    </div>
+  </div>
+
+  <div class="callout callout-info">
+    <div class="callout-title">Pour l'armée française — Secret Défense</div>
+    Un projet classifié <code>secret</code> active automatiquement l'isolation maximale :
+    aucun accès réseau pendant le fine-tuning, MLflow dédié sans API externe, aucun accès aux données
+    source depuis le dashboard Capgemini, SQLite chiffré.
+    La plateforme MLOps n'a aucune télémétrie, aucun callback vers Capgemini ou un tiers.
+    Les données classifiées ne quittent jamais le périmètre physique de la machine d'entraînement.
+    Capgemini produit les adapters sans jamais avoir accès au contenu des données d'entraînement.
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     09 — AUDITABILITÉ
+═══════════════════════════════════════════════════════════════════ -->
+<section id="audit">
+  <div class="section-label">09 — Auditabilité</div>
+  <h2>Traçabilité et audit</h2>
+
+  <p>La plateforme maintient une traçabilité complète de toutes les actions, accessible par projet.</p>
+
+  <div class="two-col">
+    <div>
+      <h3>Ce qui est tracé automatiquement</h3>
+      <ul>
+        <li>Chaque run d'entraînement : hyperparamètres, durée, loss, adapter cible, statut final</li>
+        <li>Chaque évaluation : métriques obtenues, comparaison vs baseline</li>
+        <li>Chaque passage au gate : critères passés, critères bloquants, horodatage, adapter concerné</li>
+        <li>Chaque promotion d'adapter en production : version, date, opérateur</li>
+        <li>Chaque ingestion de données : volume, hash SHA-256, source</li>
+        <li>Chaque export de bundle client : contenu, date, hash MANIFEST</li>
+        <li>Actions de l'assistant IA (Claude Code) : outil utilisé, commande, session ID</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Comment auditer un projet</h3>
+      <ul>
+        <li><strong>SQLite projet</strong> : <code>experiments/projects/&lt;id&gt;/mlops.db</code></li>
+        <li><strong>MLflow dédié</strong> : instance locale Capgemini — non accessible au client</li>
+        <li><strong>Logs entraînement</strong> : <code>logs/&lt;project_id&gt;/</code></li>
+        <li><strong>Audit IA</strong> : <code>.claude/audit.log</code></li>
+        <li><strong>Historique git</strong> : chaque modification de config est versionnée</li>
+        <li><strong>MANIFEST bundle</strong> : <code>bundles/&lt;id&gt;-&lt;date&gt;/MANIFEST.sha256</code></li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>Vérification d'intégrité du bundle livré</h3>
+  <p>Le script d'export génère un fichier <code>MANIFEST.sha256</code> listant le hash SHA-256 de chaque fichier du bundle.
+  Le client peut vérifier à tout moment qu'aucun fichier n'a été modifié depuis la livraison :</p>
+
+  <pre><code><span class="comment"># Vérifier l'intégrité du bundle livré</span>
+shasum -a 256 -c bundle-projet-alpha-20260429/MANIFEST.sha256</code></pre>
+
+  <h3>Ce que la plateforme ne fait pas</h3>
+  <ul>
+    <li>Aucune télémétrie vers Anthropic, Capgemini central, ou tout tiers</li>
+    <li>Aucune copie de données clients dans le cloud</li>
+    <li>Aucun adapter d'un projet n'est réutilisé ou partagé avec un autre projet</li>
+    <li>Aucun entraînement sur les données d'un projet ne bénéficie à un autre</li>
+    <li>MLflow n'est jamais exposé au client ni embarqué dans le bundle</li>
+    <li>Aucun modèle fusionné (fused) n'est servi ou livré — uniquement le modèle de base + adapters séparés</li>
+  </ul>
+
+  <div class="callout callout-success">
+    <div class="callout-title">Conformité</div>
+    L'architecture décrite est conforme aux principes de <strong>cloisonnement des données (data segregation)</strong>
+    requis pour les systèmes traitant des informations sensibles ou classifiées
+    (RGS, PGSSI-S, normes OTAN pour les niveaux CONFIDENTIEL et SECRET).
+    La séparation physique des bases de données, des systèmes de fichiers et des index vectoriels par projet constitue
+    une implémentation de la défense en profondeur.
+    L'absence de tout composant cloud ou de télémétrie garantit la souveraineté numérique totale.
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <p><strong>MLOps Platform — Documentation architecture — Isolation et souveraineté des données</strong></p>
+  <p class="dim" style="margin-top:8px">
+    Capgemini — Usage interne confidentiel &bull; Version 2.0 &bull; 29 avril 2026
+  </p>
+</footer>
+
+</body>
+</html>

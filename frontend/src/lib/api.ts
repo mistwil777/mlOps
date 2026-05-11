@@ -1,4 +1,4 @@
-import type { AdvisorAdapter, AdvisorRecommendation, BaseModel, CollectJob, DataHealth, Dataset, DeployedModel, DownloadStatus, Evaluation, Health, JobStatus, Metric, PackageInfo, Project, ReviewItem, ReviewPage, ReviewStats, Run, SelectionEval } from './types';
+import type { AdvisorAdapter, AdvisorRecommendation, BaseModel, CollectJob, DataHealth, Dataset, DeployedModel, DownloadStatus, Evaluation, Health, JobStatus, Metric, OverlapResolution, PackageInfo, Project, ReviewItem, ReviewPage, ReviewStats, Run, SelectionEval } from './types';
 
 const BASE = '/api';
 
@@ -66,11 +66,22 @@ export const deleteModel    = (id: string) => req<unknown>(`/models/${id}`, { me
 export const getPackageInfo = (id: string) => req<PackageInfo>(`/models/${id}/package`);
 
 // Advisor
-export const advisorRecommend = (need: string, model?: string) =>
+export const advisorRecommend = (need: string, model?: string, docContexts?: string[]) =>
   req<AdvisorRecommendation>('/advisor/recommend', {
     method: 'POST',
-    body: JSON.stringify({ need, model: model ?? 'us.anthropic.claude-sonnet-4-6' }),
+    body: JSON.stringify({ need, model: model ?? 'us.anthropic.claude-sonnet-4-6', doc_contexts: docContexts ?? [] }),
   });
+
+export const advisorExtractDoc = async (file: File): Promise<{ filename: string; char_count: number; was_summarized: boolean; text: string }> => {
+  const fd = new FormData();
+  fd.append('file', file);
+  const r = await fetch(`${BASE}/advisor/extract-doc`, { method: 'POST', body: fd });
+  if (!r.ok) {
+    const err = await r.text().catch(() => r.statusText);
+    throw new Error(`${r.status} ${err}`);
+  }
+  return r.json();
+};
 
 export const advisorAlternatives = (need: string, adapter_name: string, adapter_desc: string, current_selection: AdvisorAdapter[], model?: string) =>
   req<AdvisorAdapter[]>('/advisor/alternatives', {
@@ -84,8 +95,20 @@ export const advisorEvaluateSelection = (need: string, adapters: AdvisorAdapter[
     body: JSON.stringify({ need, adapters, model: model ?? 'us.anthropic.claude-sonnet-4-6' }),
   });
 
+export const advisorFillGap = (need: string, gap: string, current_selection: AdvisorAdapter[], model?: string) =>
+  req<AdvisorAdapter>('/advisor/fill-gap', {
+    method: 'POST',
+    body: JSON.stringify({ need, gap, current_selection, model: model ?? 'us.anthropic.claude-sonnet-4-6' }),
+  });
+
+export const advisorResolveOverlap = (need: string, adapter_a: AdvisorAdapter, adapter_b: AdvisorAdapter, current_selection: AdvisorAdapter[], model?: string) =>
+  req<OverlapResolution[]>('/advisor/resolve-overlap', {
+    method: 'POST',
+    body: JSON.stringify({ need, adapter_a, adapter_b, current_selection, model: model ?? 'us.anthropic.claude-sonnet-4-6' }),
+  });
+
 // Data
-export const startCollect      = (body: { project_id: string; topic: string; max_pairs?: number }) =>
+export const startCollect      = (body: { project_id: string; topic: string; max_pairs?: number; domain?: string; task_type?: string }) =>
   req<CollectJob>('/data/collect', { method: 'POST', body: JSON.stringify(body) });
 export const getCollectStatus  = (jobId: string) => req<JobStatus>(`/data/collect/${jobId}/status`);
 export const getReview         = (projectId: string, page = 0, pageSize = 20, status?: string) =>

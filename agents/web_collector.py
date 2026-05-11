@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -113,7 +113,7 @@ def _build_pairs(blocks: list[str], url: str, domain: str, task_type: str) -> li
         "source_url":    url,
         "domain":        domain,
         "task_type":     task_type,
-        "collected_at":  datetime.utcnow().isoformat(),
+        "collected_at":  datetime.now(timezone.utc).isoformat(),
     }
 
     if task_type in ("migration", "refactoring", "translation"):
@@ -169,25 +169,25 @@ class WebCollector:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Collect training pairs from domain sources")
-    parser.add_argument("--project",   required=True, help="Project ID (matches config/projects/<id>.yaml)")
-    parser.add_argument("--topic",     required=True, help="Topic within the domain (e.g. 'python', 'french_law')")
-    parser.add_argument("--max-pages", type=int, default=20)
+    parser.add_argument("--project",   required=True)
+    parser.add_argument("--topic",     required=True)
     parser.add_argument("--output",    required=True)
+    parser.add_argument("--domain",    default=None, help="Override domain from project config")
+    parser.add_argument("--task-type", default=None, dest="task_type", help="Override task_type from project config")
+    parser.add_argument("--max-pages", "--max-pairs", type=int, default=20, dest="max_pages")
     args = parser.parse_args()
 
-    with open(Path("config/projects") / f"{args.project}.yaml") as fh:
-        config = yaml.safe_load(fh)
+    cfg_path = Path("config/projects") / f"{args.project}.yaml"
+    config: dict[str, Any] = {}
+    if cfg_path.exists():
+        with cfg_path.open() as fh:
+            config = yaml.safe_load(fh) or {}
 
-    collector = WebCollector(
-        project=args.project,
-        domain=config.get("domain", "code"),
-        task_type=config.get("task_type", "generation"),
-    )
-    n = collector.run(
-        topic=args.topic,
-        max_pages=args.max_pages,
-        output=Path(args.output),
-    )
+    domain    = args.domain    or config.get("domain",    "code")
+    task_type = args.task_type or config.get("task_type", "generation")
+
+    collector = WebCollector(project=args.project, domain=domain, task_type=task_type)
+    n = collector.run(topic=args.topic, max_pages=args.max_pages, output=Path(args.output))
     print(f"Collected {n} pairs → {args.output}")
 
 

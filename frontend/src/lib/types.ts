@@ -186,6 +186,13 @@ export interface SelectionEval {
   recommendation: string;
 }
 
+export interface OverlapResolution {
+  type: 'clarify' | 'merge' | 'remove';
+  label: string;
+  explanation: string;
+  adapters: AdvisorAdapter[];
+}
+
 export interface AdvisorRecommendation {
   project: string;
   n_specialists: number;

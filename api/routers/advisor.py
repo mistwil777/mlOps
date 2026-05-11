@@ -2,19 +2,93 @@
 
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
 from typing import Any, Optional
 
 import anthropic
 import yaml
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/advisor", tags=["advisor"])
 
 _client = anthropic.AnthropicBedrock()
 _DEFAULT_MODEL = "us.anthropic.claude-sonnet-4-6"
+_HAIKU_MODEL   = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+_MAX_DOC_CHARS = 40_000   # au-delà on résume via Haiku avant envoi
+
+
+# ── Extraction de texte depuis documents ──────────────────────────────────────
+
+def _extract_text_pdf(data: bytes) -> str:
+    try:
+        import pdfplumber
+        with pdfplumber.open(io.BytesIO(data)) as pdf:
+            return "\n".join(
+                page.extract_text() or "" for page in pdf.pages
+            ).strip()
+    except ImportError:
+        raise HTTPException(422, "pdfplumber non installé — pip install pdfplumber")
+
+
+def _extract_text_docx(data: bytes) -> str:
+    try:
+        from docx import Document
+        doc = Document(io.BytesIO(data))
+        return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+    except ImportError:
+        raise HTTPException(422, "python-docx non installé — pip install python-docx")
+
+
+def _extract_text(filename: str, data: bytes) -> str:
+    ext = Path(filename).suffix.lower()
+    if ext == ".pdf":
+        return _extract_text_pdf(data)
+    if ext in (".docx", ".doc"):
+        return _extract_text_docx(data)
+    if ext in (".txt", ".md", ".rst", ".csv"):
+        return data.decode("utf-8", errors="replace").strip()
+    raise HTTPException(415, f"Format non supporté : {ext}. Acceptés : PDF, DOCX, TXT, MD")
+
+
+def _maybe_summarize(text: str, filename: str) -> str:
+    """Si le texte dépasse _MAX_DOC_CHARS, le résume via Haiku (peu cher)."""
+    if len(text) <= _MAX_DOC_CHARS:
+        return text
+    safe_name = Path(filename).name[:80]  # basename seulement, tronqué
+    prompt = (
+        f"Summarize the following technical document '{safe_name}' in French, preserving "
+        "all functional requirements, integration points, technical constraints, existing "
+        "modules, data models, and API contracts. Be exhaustive on technical details. "
+        "Output plain text, no markdown headers.\n\n"
+        + text[:120_000]  # limite de sécurité
+    )
+    response = _client.messages.create(
+        model=_HAIKU_MODEL,
+        max_tokens=4096,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return f"[RÉSUMÉ AUTOMATIQUE — {filename}]\n{response.content[0].text}"
+
+
+@router.post("/extract-doc")
+async def extract_doc(file: UploadFile = File(...)) -> dict[str, Any]:
+    data = await file.read()
+    if len(data) > 20 * 1024 * 1024:  # 20 MB max
+        raise HTTPException(413, "Fichier trop volumineux (max 20 MB)")
+    text = _extract_text(file.filename or "document", data)
+    if not text:
+        raise HTTPException(422, "Impossible d'extraire du texte de ce fichier")
+    was_summarized = len(text) > _MAX_DOC_CHARS
+    summary = _maybe_summarize(text, file.filename or "document")
+    return {
+        "filename": file.filename or "document",
+        "char_count": len(text),
+        "was_summarized": was_summarized,
+        "text": summary,
+    }
 
 _SYSTEM_PROMPT = """\
 You are an expert MLOps architect specialising in fine-tuned LLM systems for regulated \
@@ -37,45 +111,45 @@ Rules:
 _USER_TEMPLATE = """\
 Client need: {need}
 
-For each adapter, also score it:
-- score (0-20): intrinsic quality as a standalone specialist for this need
-- team_score (0-20): fit within the full proposed team — penalise overlaps, reward gap-filling
-- pros: 2-3 advantages as a list of short strings
-- cons: 1-2 drawbacks as a list of short strings
-- team_note: one sentence explaining the team_score
+For each adapter score it:
+- score (0-20): standalone quality
+- team_score (0-20): fit within the team — penalise overlaps, reward gap-filling
+- pros: 2-3 short strings
+- cons: 1-2 short strings
+- team_note: one sentence
 
-Respond with a JSON object matching exactly this schema:
+Return ONLY a raw JSON object (no markdown, no prose, start immediately with {{):
 {{
   "adapters": [
     {{
       "name": "kebab-case-name",
       "role": "specialist",
       "description": "one sentence",
-      "data_types": ["list of data types"],
-      "data_sources": ["list of sources"],
+      "data_types": ["type1", "type2"],
+      "data_sources": ["source1", "source2"],
       "rag_recommended": true,
       "estimated_pairs": 800,
       "score": 16,
       "team_score": 14,
-      "pros": ["advantage 1", "advantage 2"],
-      "cons": ["drawback 1"],
-      "team_note": "one sentence"
+      "pros": ["avantage 1", "avantage 2"],
+      "cons": ["inconvénient 1"],
+      "team_note": "une phrase"
     }}
   ],
   "orchestrator": {{
     "name": "kebab-case-name",
     "role": "orchestrator",
     "description": "one sentence",
-    "data_types": ["routing examples", "question → adapters → synthesized answer"],
+    "data_types": ["routing examples"],
     "estimated_pairs": 200,
     "score": 15,
     "team_score": 18,
-    "pros": ["advantage 1"],
-    "cons": ["drawback 1"],
-    "team_note": "one sentence"
+    "pros": ["avantage 1"],
+    "cons": ["inconvénient 1"],
+    "team_note": "une phrase"
   }},
   "rag_global": false,
-  "notes": "any deployment notes"
+  "notes": "deployment notes"
 }}
 """
 
@@ -84,12 +158,25 @@ class AdvisorRequest(BaseModel):
     project: Optional[str] = None
     need: str
     model: str = _DEFAULT_MODEL
+    doc_contexts: list[str] = []
 
 
-def _call_claude(model: str, need: str) -> str:
+def _call_claude(model: str, need: str, doc_contexts: list[str] | None = None) -> str:
+    user_content = _USER_TEMPLATE.format(need=need)
+    if doc_contexts:
+        ctx_block = "\n\n".join(
+            f"[CONTEXTE TECHNIQUE — Document {i+1}]\n{ctx}"
+            for i, ctx in enumerate(doc_contexts)
+            if ctx.strip()
+        )
+        if ctx_block:
+            user_content = (
+                f"[CONTEXTE TECHNIQUE — Documents fournis par le client]\n{ctx_block}"
+                f"\n\n[FIN DU CONTEXTE]\n\n{user_content}"
+            )
     response = _client.messages.create(
         model=model,
-        max_tokens=4096,
+        max_tokens=8192,
         system=[
             {
                 "type": "text",
@@ -98,7 +185,7 @@ def _call_claude(model: str, need: str) -> str:
             }
         ],
         messages=[
-            {"role": "user", "content": _USER_TEMPLATE.format(need=need)},
+            {"role": "user", "content": user_content},
         ],
     )
     return response.content[0].text
@@ -254,7 +341,7 @@ def alternatives(body: AlternativeRequest) -> list[dict[str, Any]]:
     try:
         response = _client.messages.create(
             model=body.model,
-            max_tokens=1500,
+            max_tokens=3000,
             system=[{"type": "text", "text": _SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
             messages=[{"role": "user", "content": prompt}],
         )
@@ -265,6 +352,168 @@ def alternatives(body: AlternativeRequest) -> list[dict[str, Any]]:
     try:
         result = _parse_recommendation(raw)
         return result if isinstance(result, list) else result.get("adapters", [])
+    except (json.JSONDecodeError, KeyError) as exc:
+        raise HTTPException(422, f"Model returned invalid JSON: {exc}\nRaw: {raw[:500]}")
+
+
+_FILL_GAP_TEMPLATE = """\
+The user is building a multi-adapter MLOps system for the following client need:
+{need}
+
+Current adapter selection:
+{selection}
+
+The evaluation identified this uncovered gap:
+"{gap}"
+
+Design exactly ONE new specialist adapter that fills this gap without overlapping the existing ones.
+The adapter must:
+- Cover ONLY the identified gap, nothing else
+- Have a clearly scoped role that does not duplicate any existing adapter
+- Be realistic in terms of LoRA fine-tuning (200-2000 pairs)
+
+Also evaluate:
+- score (0-20): standalone quality as a specialist
+- team_score (0-20): fit within the CURRENT selection — does it fill the gap without overlap?
+
+Respond with a single JSON object (no markdown, no prose):
+{{
+  "name": "kebab-case-name",
+  "role": "specialist",
+  "description": "one sentence",
+  "data_types": ["type1"],
+  "data_sources": ["source1"],
+  "rag_recommended": false,
+  "estimated_pairs": 600,
+  "score": 16,
+  "team_score": 18,
+  "pros": ["avantage 1", "avantage 2"],
+  "cons": ["inconvénient 1"],
+  "team_note": "une phrase"
+}}
+All text fields MUST be in French. Output ONLY valid JSON.
+"""
+
+_RESOLVE_OVERLAP_TEMPLATE = """\
+The user is building a multi-adapter MLOps system for the following client need:
+{need}
+
+Current adapter selection:
+{selection}
+
+The evaluation detected a risk of overlap between these two adapters:
+- Adapter A — {adapter_a_name}: {adapter_a_desc}
+- Adapter B — {adapter_b_name}: {adapter_b_desc}
+
+Propose exactly 3 concrete resolutions. Each resolution is one of:
+- "clarify": rewrite the description/boundaries of BOTH adapters to eliminate overlap
+- "merge": merge them into a single more powerful adapter
+- "remove": remove the less useful one (specify which) and explain why
+
+For each resolution, provide updated adapter definitions (for "remove", only one).
+
+Respond ONLY with a JSON array (no markdown):
+[
+  {{
+    "type": "clarify" | "merge" | "remove",
+    "label": "short action label (French)",
+    "explanation": "one sentence in French explaining why this resolves the overlap",
+    "adapters": [
+      {{
+        "name": "kebab-case-name",
+        "role": "specialist",
+        "description": "updated description",
+        "data_types": ["type1"],
+        "data_sources": ["source1"],
+        "rag_recommended": false,
+        "estimated_pairs": 600,
+        "score": 15,
+        "team_score": 17,
+        "pros": ["avantage 1"],
+        "cons": ["inconvénient 1"],
+        "team_note": "une phrase"
+      }}
+    ]
+  }}
+]
+All text fields MUST be in French. Output ONLY valid JSON.
+"""
+
+
+class FillGapRequest(BaseModel):
+    need: str
+    gap: str
+    current_selection: list[dict[str, Any]] = []
+    model: str = _DEFAULT_MODEL
+
+
+class ResolveOverlapRequest(BaseModel):
+    need: str
+    adapter_a: dict[str, Any]
+    adapter_b: dict[str, Any]
+    current_selection: list[dict[str, Any]] = []
+    model: str = _DEFAULT_MODEL
+
+
+@router.post("/fill-gap")
+def fill_gap(body: FillGapRequest) -> dict[str, Any]:
+    selection_str = "\n".join(
+        f"- {a['name']} ({a.get('role','specialist')}): {a.get('description','')}"
+        for a in body.current_selection
+    ) or "none yet"
+
+    prompt = _FILL_GAP_TEMPLATE.format(
+        need=body.need,
+        gap=body.gap,
+        selection=selection_str,
+    )
+    try:
+        response = _client.messages.create(
+            model=body.model,
+            max_tokens=1200,
+            system=[{"type": "text", "text": _SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = response.content[0].text
+    except anthropic.APIError as exc:
+        raise HTTPException(502, f"Anthropic API error: {exc}")
+
+    try:
+        return _parse_recommendation(raw)
+    except (json.JSONDecodeError, KeyError) as exc:
+        raise HTTPException(422, f"Model returned invalid JSON: {exc}\nRaw: {raw[:500]}")
+
+
+@router.post("/resolve-overlap")
+def resolve_overlap(body: ResolveOverlapRequest) -> list[dict[str, Any]]:
+    selection_str = "\n".join(
+        f"- {a['name']} ({a.get('role','specialist')}): {a.get('description','')}"
+        for a in body.current_selection
+        if a["name"] not in (body.adapter_a.get("name"), body.adapter_b.get("name"))
+    ) or "none"
+
+    prompt = _RESOLVE_OVERLAP_TEMPLATE.format(
+        need=body.need,
+        adapter_a_name=body.adapter_a.get("name", ""),
+        adapter_a_desc=body.adapter_a.get("description", ""),
+        adapter_b_name=body.adapter_b.get("name", ""),
+        adapter_b_desc=body.adapter_b.get("description", ""),
+        selection=selection_str,
+    )
+    try:
+        response = _client.messages.create(
+            model=body.model,
+            max_tokens=2500,
+            system=[{"type": "text", "text": _SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = response.content[0].text
+    except anthropic.APIError as exc:
+        raise HTTPException(502, f"Anthropic API error: {exc}")
+
+    try:
+        result = _parse_recommendation(raw)
+        return result if isinstance(result, list) else []
     except (json.JSONDecodeError, KeyError) as exc:
         raise HTTPException(422, f"Model returned invalid JSON: {exc}\nRaw: {raw[:500]}")
 
@@ -296,7 +545,7 @@ def evaluate_selection(body: EvaluateSelectionRequest) -> dict[str, Any]:
 @router.post("/recommend")
 def recommend(body: AdvisorRequest) -> dict[str, Any]:
     try:
-        raw = _call_claude(body.model, body.need)
+        raw = _call_claude(body.model, body.need, body.doc_contexts or [])
     except anthropic.AuthenticationError:
         raise HTTPException(401, "Invalid Anthropic API key — set ANTHROPIC_API_KEY")
     except anthropic.APIError as exc:

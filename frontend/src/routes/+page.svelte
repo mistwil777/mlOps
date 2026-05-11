@@ -3,6 +3,7 @@
   import { goto } from '$app/navigation';
   import { getHealth, getProjects, getRuns, getModels } from '$lib/api';
   import type { Run, Project, DeployedModel, Health } from '$lib/types';
+  import { clearCurrentProject } from '$lib/stores/currentProject.svelte';
   import MetricCard from '$lib/components/MetricCard.svelte';
   import StatusBadge from '$lib/components/StatusBadge.svelte';
   import LossChart from '$lib/components/LossChart.svelte';
@@ -21,6 +22,7 @@
   let loading = $state(true);
 
   onMount(async () => {
+    clearCurrentProject();
     [health, projects, recentRuns, models] = await Promise.all([
       getHealth().catch(() => null),
       getProjects().catch(() => []),

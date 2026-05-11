@@ -9,6 +9,7 @@
   import PipelineStepper from '$lib/components/PipelineStepper.svelte';
   import ActionBar from '$lib/components/ActionBar.svelte';
   import Topbar from '$lib/components/Topbar.svelte';
+  import { setCurrentProject } from '$lib/stores/currentProject.svelte';
 
   const id = $derived($page.params.id as string);
   let project: Project | null      = $state(null);
@@ -26,6 +27,7 @@
       getModels(id),
       getNextActions(id).catch(() => null),
     ]);
+    if (project) setCurrentProject(project);
   });
 
   const totalPairs  = $derived(datasets.reduce((s, d) => s + (d.n_pairs || 0), 0));

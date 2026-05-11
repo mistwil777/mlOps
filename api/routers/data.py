@@ -8,9 +8,9 @@ import json
 import sys
 import uuid
 import zipfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import yaml
 from fastapi import APIRouter, HTTPException, UploadFile, File
@@ -22,6 +22,15 @@ from api.db import execute, fetchall
 router = APIRouter(prefix="/api/data", tags=["data"])
 
 _JOBS: dict[str, dict[str, Any]] = {}  # in-memory job tracker
+_JOB_TTL_S = 3600  # purge completed jobs after 1 hour
+
+
+def _purge_old_jobs() -> None:
+    now = datetime.now(timezone.utc).timestamp()
+    to_del = [jid for jid, j in _JOBS.items()
+              if j["status"] != "running" and now - j.get("finished_at", now) > _JOB_TTL_S]
+    for jid in to_del:
+        del _JOBS[jid]
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -56,7 +65,17 @@ def _write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
             fh.write(json.dumps(r, ensure_ascii=False) + "\n")
 
 
+import re as _re
+_PROJECT_ID_RE = _re.compile(r'^[a-z0-9][a-z0-9_-]{0,63}$')
+
+
+def _validate_project_id(project_id: str) -> None:
+    if not _PROJECT_ID_RE.match(project_id):
+        raise HTTPException(400, f"Invalid project_id '{project_id}' — only [a-z0-9_-] allowed")
+
+
 def _pair_path(project_id: str, stage: str) -> Path:
+    _validate_project_id(project_id)
     return Path(f"datalake/projects/{project_id}/{stage}/pairs_raw.jsonl")
 
 
@@ -66,11 +85,20 @@ class CollectRequest(BaseModel):
     project_id: str
     topic: str
     max_pairs: int = 50
+    domain: Optional[str] = None
+    task_type: Optional[str] = None
 
 
 @router.post("/collect")
 async def start_collect(req: CollectRequest) -> dict[str, str]:
-    config = _load_project_config(req.project_id)
+    try:
+        config = _load_project_config(req.project_id)
+    except HTTPException:
+        config = {}
+    if req.domain:
+        config.setdefault("domain", req.domain)
+    if req.task_type:
+        config.setdefault("task_type", req.task_type)
     job_id = str(uuid.uuid4())[:8]
     _JOBS[job_id] = {"status": "running", "lines": [], "project_id": req.project_id}
 
@@ -87,14 +115,17 @@ async def _run_collect(
 ) -> None:
     domain    = config.get("domain", "code")
     task_type = config.get("task_type", "generation")
+    output    = Path(f"datalake/projects/{project_id}/raw/pairs_raw.jsonl")
+    output.parent.mkdir(parents=True, exist_ok=True)
 
     cmd = [
         sys.executable, "-m", "agents.web_collector",
-        "--project", project_id,
-        "--domain", domain,
+        "--project",   project_id,
+        "--topic",     topic,
+        "--domain",    domain,
         "--task-type", task_type,
-        "--topic", topic,
-        "--max-pairs", str(max_pairs),
+        "--max-pages", str(max_pairs),
+        "--output",    str(output),
     ]
 
     try:
@@ -113,6 +144,9 @@ async def _run_collect(
     except Exception as exc:
         _JOBS[job_id]["status"] = "failed"
         _JOBS[job_id]["lines"].append(f"ERROR: {exc}")
+    finally:
+        _JOBS[job_id]["finished_at"] = datetime.now(timezone.utc).timestamp()
+        _purge_old_jobs()
 
 
 @router.get("/collect/{job_id}/stream")
@@ -166,8 +200,8 @@ async def list_pairs_for_review(
     records  = _list_jsonl(raw_path)
 
     if status == "pending":
-        records = [r for r in records if r.get("review_status") not in ("validated", "rejected")]
-    elif status in ("validated", "rejected"):
+        records = [r for r in records if r.get("review_status") not in ("validate", "reject", "correct")]
+    elif status in ("validate", "reject", "correct"):
         records = [r for r in records if r.get("review_status") == status]
 
     total  = len(records)
@@ -268,6 +302,9 @@ async def _run_pipeline(job_id: str, req: PipelineRequest) -> None:
     except Exception as exc:
         _JOBS[job_id]["status"] = "failed"
         _JOBS[job_id]["lines"].append(f"ERROR: {exc}")
+    finally:
+        _JOBS[job_id]["finished_at"] = datetime.now(timezone.utc).timestamp()
+        _purge_old_jobs()
 
 
 @router.get("/pipeline/{job_id}/stream")
@@ -381,12 +418,17 @@ async def ingest_file(
     raw_path = raw_dir / "pairs_raw.jsonl"
 
     content = await file.read()
+    if len(content) > 100 * 1024 * 1024:  # 100 MB max
+        raise HTTPException(413, "File too large (max 100 MB)")
     filename = file.filename or "upload.jsonl"
 
     records_new: list[dict[str, Any]] = []
 
     if filename.endswith(".zip"):
         with zipfile.ZipFile(io.BytesIO(content)) as zf:
+            total_uncompressed = sum(i.file_size for i in zf.infolist())
+            if total_uncompressed > 500 * 1024 * 1024:  # 500 MB décompressé max
+                raise HTTPException(413, "Zip content too large when decompressed (max 500 MB)")
             for name in zf.namelist():
                 if name.endswith(".jsonl"):
                     data = zf.read(name).decode("utf-8", errors="replace")
@@ -418,7 +460,7 @@ async def ingest_file(
 
     # Append to raw file
     existing = _list_jsonl(raw_path)
-    ts = datetime.utcnow().isoformat()
+    ts = datetime.now(timezone.utc).isoformat()
     tagged = [{**r, "meta": {**r.get("meta", {}), "source": source_description, "ingested_at": ts}} for r in records_new]
     _write_jsonl(raw_path, existing + tagged)
 
@@ -467,7 +509,7 @@ def _track_lineage(project_id: str, record: dict[str, Any], source_type: str) ->
                 project_id,
                 source_type,
                 meta.get("source_url", ""),
-                meta.get("ingested_at") or datetime.utcnow().isoformat(),
+                meta.get("ingested_at") or datetime.now(timezone.utc).isoformat(),
                 record.get("quality_score"),
                 record.get("review_status"),
                 prompt_tokens,
