@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IA Souveraine sur Mesure — Fine-tuning LoRA / QLoRA</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #181c27;
+    --surface2: #1e2333;
+    --border: #2a3050;
+    --accent: #5b98f8;
+    --accent2: #3ecf8e;
+    --orange: #f7aa50;
+    --red: #f75454;
+    --text: #e8eaf0;
+    --muted: #8892a4;
+    --dim: #4e5770;
+    --radius: 10px;
+    --radius-lg: 16px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    font-size: 15px;
+  }
+
+  /* ── Cover ─────────────────────────────────────────────────────────────── */
+  .cover {
+    min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center;
+    padding: 60px 40px;
+    background: radial-gradient(ellipse at 50% 0%, rgba(91,152,248,.15) 0%, transparent 60%);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .cover-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: rgba(91,152,248,.1); border: 1px solid rgba(91,152,248,.25);
+    border-radius: 999px; padding: 6px 16px;
+    font-size: 12px; font-weight: 600; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--accent);
+    margin-bottom: 32px;
+  }
+
+  .cover-dot {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--accent2);
+    box-shadow: 0 0 8px var(--accent2); animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+  .cover h1 {
+    font-size: clamp(28px, 5vw, 56px);
+    font-weight: 800;
+    line-height: 1.15;
+    letter-spacing: -.02em;
+    max-width: 820px;
+    margin-bottom: 20px;
+  }
+
+  .cover h1 span { color: var(--accent); }
+
+  .cover-sub {
+    font-size: 17px; color: var(--muted); max-width: 600px; line-height: 1.7;
+    margin-bottom: 40px;
+  }
+
+  .cover-meta {
+    display: flex; gap: 32px; flex-wrap: wrap; justify-content: center;
+    font-size: 13px; color: var(--dim);
+  }
+  .cover-meta span { display: flex; align-items: center; gap: 6px; }
+
+  /* ── Layout ─────────────────────────────────────────────────────────────── */
+  .container { max-width: 900px; margin: 0 auto; padding: 0 32px; }
+
+  section {
+    padding: 80px 0 60px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .section-num {
+    font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--accent); margin-bottom: 10px;
+  }
+
+  h2 {
+    font-size: clamp(22px, 3vw, 32px);
+    font-weight: 700; line-height: 1.2;
+    margin-bottom: 16px;
+  }
+
+  .lead {
+    font-size: 16px; color: var(--muted); line-height: 1.8;
+    max-width: 680px; margin-bottom: 40px;
+  }
+
+  p { color: var(--muted); line-height: 1.8; margin-bottom: 14px; }
+  p:last-child { margin-bottom: 0; }
+
+  strong { color: var(--text); font-weight: 600; }
+
+  /* ── Cards ──────────────────────────────────────────────────────────────── */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 32px; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+  }
+
+  .card-icon { font-size: 28px; margin-bottom: 14px; }
+  .card h3 { font-size: 16px; font-weight: 700; margin-bottom: 8px; color: var(--text); }
+  .card p { font-size: 14px; }
+
+  .card.accent-border { border-color: rgba(91,152,248,.4); }
+  .card.green-border  { border-color: rgba(62,207,142,.4); }
+  .card.orange-border { border-color: rgba(247,170,80,.4); }
+  .card.red-border    { border-color: rgba(247,84,84,.4); }
+
+  /* ── Comparatif ─────────────────────────────────────────────────────────── */
+  .compare {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 2px; border-radius: var(--radius-lg); overflow: hidden;
+    border: 1px solid var(--border); margin-top: 32px;
+  }
+
+  @media(max-width: 600px) { .compare { grid-template-columns: 1fr; } }
+
+  .compare-col { background: var(--surface); }
+  .compare-col.right { background: var(--surface2); }
+
+  .compare-head {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    font-weight: 700; font-size: 14px;
+    display: flex; align-items: center; gap: 10px;
+  }
+
+  .compare-row {
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    font-size: 14px; color: var(--muted);
+    display: flex; flex-direction: column; gap: 3px;
+  }
+
+  .compare-row:last-child { border-bottom: none; }
+
+  .compare-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); }
+
+  .tag-good { color: var(--accent2); font-weight: 600; }
+  .tag-warn { color: var(--orange); font-weight: 600; }
+  .tag-bad  { color: var(--red); font-weight: 600; }
+
+  /* ── Timeline pipeline ──────────────────────────────────────────────────── */
+  .pipeline { margin-top: 40px; display: flex; flex-direction: column; gap: 0; }
+
+  .pipe-step {
+    display: flex; gap: 20px; align-items: stretch;
+  }
+
+  .pipe-left {
+    display: flex; flex-direction: column; align-items: center; width: 48px; flex-shrink: 0;
+  }
+
+  .pipe-dot {
+    width: 36px; height: 36px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px; font-weight: 800; flex-shrink: 0;
+    border: 2px solid var(--border);
+    background: var(--surface);
+    color: var(--accent);
+    z-index: 1;
+  }
+
+  .pipe-line {
+    width: 2px; flex: 1; background: var(--border); margin: 4px 0;
+  }
+
+  .pipe-body {
+    flex: 1; padding: 0 0 36px 0;
+  }
+
+  .pipe-step:last-child .pipe-body { padding-bottom: 0; }
+  .pipe-step:last-child .pipe-line { display: none; }
+
+  .pipe-title { font-weight: 700; font-size: 16px; color: var(--text); margin-bottom: 6px; }
+  .pipe-sub   { font-size: 14px; color: var(--muted); line-height: 1.7; }
+
+  .pipe-tag {
+    display: inline-block; margin-top: 10px;
+    font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 999px;
+    background: rgba(91,152,248,.12); border: 1px solid rgba(91,152,248,.2);
+    color: var(--accent);
+  }
+
+  .pipe-tag.orange {
+    background: rgba(247,170,80,.12); border-color: rgba(247,170,80,.2); color: var(--orange);
+  }
+
+  .pipe-tag.green {
+    background: rgba(62,207,142,.12); border-color: rgba(62,207,142,.2); color: var(--accent2);
+  }
+
+  /* ── Adapters ───────────────────────────────────────────────────────────── */
+  .adapters-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px; margin-top: 32px;
+  }
+
+  .adapter-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    position: relative; overflow: hidden;
+  }
+
+  .adapter-card::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0;
+    height: 3px; background: var(--accent);
+  }
+
+  .adapter-card.orch::before { background: var(--accent2); }
+
+  .adapter-name { font-weight: 700; font-size: 14px; margin-bottom: 6px; }
+  .adapter-desc { font-size: 13px; color: var(--muted); line-height: 1.5; }
+  .adapter-badge {
+    display: inline-block; margin-top: 10px;
+    font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+    background: rgba(91,152,248,.1); color: var(--accent);
+    text-transform: uppercase; letter-spacing: .06em;
+  }
+  .adapter-card.orch .adapter-badge {
+    background: rgba(62,207,142,.1); color: var(--accent2);
+  }
+
+  /* ── Data sources ───────────────────────────────────────────────────────── */
+  .sources { display: flex; flex-direction: column; gap: 12px; margin-top: 32px; }
+
+  .source-row {
+    display: flex; align-items: flex-start; gap: 16px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px 20px;
+  }
+
+  .source-icon { font-size: 22px; flex-shrink: 0; margin-top: 2px; }
+  .source-content { flex: 1; }
+  .source-title  { font-weight: 600; font-size: 15px; margin-bottom: 4px; }
+  .source-sub    { font-size: 13px; color: var(--muted); line-height: 1.6; }
+
+  .source-badge {
+    flex-shrink: 0; align-self: center;
+    font-size: 11px; font-weight: 700; padding: 4px 12px; border-radius: 999px;
+  }
+
+  .badge-client  { background: rgba(247,84,84,.12); color: var(--red); border: 1px solid rgba(247,84,84,.25); }
+  .badge-web     { background: rgba(91,152,248,.12); color: var(--accent); border: 1px solid rgba(91,152,248,.25); }
+  .badge-synth   { background: rgba(247,170,80,.12); color: var(--orange); border: 1px solid rgba(247,170,80,.25); }
+
+  /* ── GIGO callout ───────────────────────────────────────────────────────── */
+  .callout {
+    background: rgba(247,84,84,.06);
+    border: 1px solid rgba(247,84,84,.25);
+    border-left: 4px solid var(--red);
+    border-radius: var(--radius);
+    padding: 20px 24px;
+    margin-top: 32px;
+  }
+  .callout-title { font-weight: 700; color: var(--red); margin-bottom: 8px; font-size: 15px; }
+  .callout p { font-size: 14px; margin-bottom: 0; }
+
+  .callout.green {
+    background: rgba(62,207,142,.06);
+    border-color: rgba(62,207,142,.25);
+    border-left-color: var(--accent2);
+  }
+  .callout.green .callout-title { color: var(--accent2); }
+
+  /* ── Sovereignty ────────────────────────────────────────────────────────── */
+  .sov-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px; margin-top: 32px;
+  }
+
+  .sov-item {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    text-align: center;
+  }
+
+  .sov-icon { font-size: 28px; margin-bottom: 12px; }
+  .sov-label { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+  .sov-sub   { font-size: 12px; color: var(--muted); line-height: 1.5; }
+
+  /* ── Footer ─────────────────────────────────────────────────────────────── */
+  footer {
+    padding: 40px 32px;
+    text-align: center;
+    color: var(--dim); font-size: 13px;
+    border-top: 1px solid var(--border);
+  }
+
+  footer strong { color: var(--muted); }
+
+  /* ── Print / export ─────────────────────────────────────────────────────── */
+  @media print {
+    body { background: white; color: #111; }
+    .cover { background: white; border: none; }
+    .cover h1 span { color: #2563eb; }
+    section { border-bottom: 1px solid #e5e7eb; }
+    .card, .source-row, .adapter-card, .sov-item, .compare-col { background: #f9fafb; border-color: #e5e7eb; }
+    .compare-col.right { background: #f3f4f6; }
+    p, .pipe-sub, .adapter-desc, .source-sub, .sov-sub, .lead { color: #374151; }
+    h2, .card h3, .adapter-name, .source-title, .sov-label { color: #111827; }
+    .section-num, .cover-badge, .pipe-dot { color: #2563eb; }
+    .callout { background: #fff1f2; border-color: #fca5a5; }
+    .callout-title { color: #dc2626; }
+    .callout.green { background: #f0fdf4; border-color: #86efac; }
+    .callout.green .callout-title { color: #16a34a; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════════ COVER -->
+<div class="cover">
+  <div class="cover-badge">
+    <div class="cover-dot"></div>
+    Capgemini · AI Sovereignty
+  </div>
+  <h1>IA Souveraine sur Mesure<br><span>Comment fine-tuner un modèle</span><br>pour un domaine métier</h1>
+  <p class="cover-sub">
+    De la compréhension du besoin client à la livraison d'un modèle 100 % local —
+    concepts, cycle de vie et importance des données expliqués pour tous niveaux.
+  </p>
+  <div class="cover-meta">
+    <span>📋 Présentation Direction</span>
+    <span>🎯 Technique &amp; Non-technique</span>
+    <span>🔒 Usage interne Capgemini</span>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════ 1. C'est quoi -->
+<section>
+<div class="container">
+  <div class="section-num">01 — Fondamentaux</div>
+  <h2>Qu'est-ce qu'un modèle de langage,<br>et pourquoi le personnaliser ?</h2>
+  <p class="lead">
+    Un grand modèle de langage (LLM) comme Mistral ou Qwen est entraîné sur des milliards de documents
+    publics. Il sait raisonner, rédiger, résumer. Mais il ignore tout des procédures internes de votre client,
+    de son vocabulaire métier, de ses formats de réponse attendus.
+  </p>
+
+  <div class="cards">
+    <div class="card accent-border">
+      <div class="card-icon">🧠</div>
+      <h3>Modèle généraliste</h3>
+      <p>Sait tout faire, mais fait tout de façon générique. Répond "à sa façon", pas à celle du client.</p>
+    </div>
+    <div class="card green-border">
+      <div class="card-icon">🎯</div>
+      <h3>Modèle fine-tuné</h3>
+      <p>Même socle, mais recalibré sur les données et le vocabulaire du client. Répond exactement comme un expert du domaine.</p>
+    </div>
+    <div class="card orange-border">
+      <div class="card-icon">🏗️</div>
+      <h3>Notre approche</h3>
+      <p>On ne réentraîne pas le modèle de zéro (coût prohibitif). On l'adapte avec des <strong>adapters LoRA</strong> — petits modules spécialisés.</p>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ 2. LoRA / QLoRA -->
+<section>
+<div class="container">
+  <div class="section-num">02 — Technologie</div>
+  <h2>LoRA et QLoRA :<br>l'adaptation légère et souveraine</h2>
+  <p class="lead">
+    Plutôt que de modifier les centaines de milliards de paramètres d'un grand modèle,
+    LoRA insère de <strong>petits modules d'adaptation</strong> (quelques millions de paramètres)
+    qui apprennent le comportement cible. Le modèle de base, lui, reste intact.
+  </p>
+
+  <div class="compare">
+    <div class="compare-col">
+      <div class="compare-head">⚡ Entraînement complet (Full Fine-tuning)</div>
+      <div class="compare-row">
+        <span class="compare-label">Paramètres modifiés</span>
+        <span class="tag-bad">7 milliards (modèle entier)</span>
+      </div>
+      <div class="compare-row">
+        <span class="compare-label">Mémoire GPU requise</span>
+        <span class="tag-bad">80–160 GB (data center)</span>
+      </div>
+      <div class="compare-row">
+        <span class="compare-label">Durée d'entraînement</span>
+        <span class="tag-bad">Plusieurs jours</span>
+      </div>
+      <div class="compare-row">
+        <span class="compare-label">Coût infrastructure</span>
+        <span class="tag-bad">Milliers d'euros</span>
+      </div>
+      <div class="compare-row">
+        <span class="compare-label">Souveraineté</span>
+        <span class="tag-bad">Cloud obligatoire</span>
+      </div>
+    </div>
+    <div class="compare-col right">
+      <div class="compare-head">🎯 LoRA / QLoRA (notre approche)</div>
+      <div class="compare-row">
+        <span class="compare-label">Paramètres modifiés</span>
+        <span class="tag-good">~4 millions (adapters uniquement)</span>
+      </div>
+      <div class="compare-row">
+        <span class="compare-label">Mémoire GPU requise</span>
+        <span class="tag-good">8–48 GB (MacBook Pro M4)</span>
+      </div>
+      <div class="compare-row">
+        <span class="compare-label">Durée d'entraînement</span>
+        <span class="tag-good">30 min à quelques heures</span>
+      </div>
+      <div class="compare-row">
+        <span class="compare-label">Coût infrastructure</span>
+        <span class="tag-good">Matériel existant</span>
+      </div>
+      <div class="compare-row">
+        <span class="compare-label">Souveraineté</span>
+        <span class="tag-good">100 % local, aucun cloud</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout green" style="margin-top:32px">
+    <div class="callout-title">QLoRA = LoRA + compression mémoire</div>
+    <p>
+      QLoRA (Quantized LoRA) réduit la précision numérique du modèle de base (de 32 bits à 4 bits)
+      pendant l'entraînement. Résultat : <strong>on divise par 4 la mémoire nécessaire</strong>, sans perte
+      significative de qualité. C'est ce qui rend possible le fine-tuning sur une station de travail locale
+      ou un serveur edge — sans envoyer une seule donnée dans le cloud.
+    </p>
+  </div>
+</div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ 3. Adapters = Scoping -->
+<section>
+<div class="container">
+  <div class="section-num">03 — Architecture multi-adapters</div>
+  <h2>Le scoping client se traduit<br>directement en architecture d'adapters</h2>
+  <p class="lead">
+    Chaque besoin métier identifié lors du scoping devient un adapter spécialisé.
+    Un même modèle de base peut porter plusieurs adapters activés dynamiquement selon la tâche —
+    sans avoir à déployer plusieurs modèles.
+  </p>
+
+  <p>
+    Exemple pour une mission <strong>maintenance aéronautique militaire</strong> :
+    le client a besoin de consulter des manuels, rédiger des comptes-rendus,
+    diagnostiquer des pannes, et vérifier la conformité réglementaire.
+    Ce sont quatre expertises distinctes → quatre adapters.
+  </p>
+
+  <div class="adapters-grid">
+    <div class="adapter-card">
+      <div class="adapter-name">📖 Consultation manuels</div>
+      <div class="adapter-desc">Extrait les procédures pertinentes depuis les TM (Technical Manuals) propriétaires</div>
+      <div class="adapter-badge">Spécialiste</div>
+    </div>
+    <div class="adapter-card">
+      <div class="adapter-name">📝 Rédaction CR</div>
+      <div class="adapter-desc">Génère des comptes-rendus d'intervention au format normalisé OTAN/armée</div>
+      <div class="adapter-badge">Spécialiste</div>
+    </div>
+    <div class="adapter-card">
+      <div class="adapter-name">🔧 Diagnostic pannes</div>
+      <div class="adapter-desc">Interprète les codes d'erreur et propose des arbres de diagnostic</div>
+      <div class="adapter-badge">Spécialiste</div>
+    </div>
+    <div class="adapter-card">
+      <div class="adapter-name">✅ Conformité EASA</div>
+      <div class="adapter-desc">Vérifie que les opérations respectent les réglementations en vigueur</div>
+      <div class="adapter-badge">Spécialiste</div>
+    </div>
+    <div class="adapter-card orch">
+      <div class="adapter-name">🧭 Orchestrateur</div>
+      <div class="adapter-desc">Reçoit la question du technicien, identifie le bon adapter, synthétise la réponse</div>
+      <div class="adapter-badge">Orchestrateur</div>
+    </div>
+  </div>
+
+  <div class="callout green">
+    <div class="callout-title">Pourquoi c'est puissant</div>
+    <p>
+      Un seul modèle de base (7B paramètres, ~4 Go) est déployé sur la tablette.
+      Les adapters (quelques dizaines de Mo chacun) sont chargés à la demande.
+      <strong>Capgemini livre les adapters — qui sont notre propriété intellectuelle.</strong>
+      Le modèle de base est open-source, fourni tel quel.
+    </p>
+  </div>
+</div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ 4. Cycle de vie -->
+<section>
+<div class="container">
+  <div class="section-num">04 — Cycle de vie du projet</div>
+  <h2>Les 7 étapes du cycle<br>de production d'un adapter</h2>
+  <p class="lead">
+    De la première réunion client à la livraison opérationnelle, voici les étapes
+    que notre plateforme MLOps Factory orchestre et trace automatiquement.
+  </p>
+
+  <div class="pipeline">
+    <div class="pipe-step">
+      <div class="pipe-left">
+        <div class="pipe-dot">1</div>
+        <div class="pipe-line"></div>
+      </div>
+      <div class="pipe-body">
+        <div class="pipe-title">Scoping — Analyse du besoin client</div>
+        <div class="pipe-sub">
+          L'IA analyse la description métier en langage naturel et propose une architecture d'adapters
+          avec estimations de données et scores de faisabilité. Cette étape prend <strong>quelques minutes</strong>
+          et remplace plusieurs jours d'ateliers techniques.
+        </div>
+        <span class="pipe-tag">IA + validation humaine</span>
+      </div>
+    </div>
+
+    <div class="pipe-step">
+      <div class="pipe-left">
+        <div class="pipe-dot">2</div>
+        <div class="pipe-line"></div>
+      </div>
+      <div class="pipe-body">
+        <div class="pipe-title">Collecte et préparation des données</div>
+        <div class="pipe-sub">
+          La donnée d'entraînement est collectée (client, sources ouvertes, génération synthétique),
+          nettoyée, scorée et formatée en paires instruction/réponse. C'est <strong>l'étape la plus critique</strong>
+          — la qualité du modèle final dépend entièrement de la qualité des données ici.
+        </div>
+        <span class="pipe-tag orange">Critique — voir section 05</span>
+      </div>
+    </div>
+
+    <div class="pipe-step">
+      <div class="pipe-left">
+        <div class="pipe-dot">3</div>
+        <div class="pipe-line"></div>
+      </div>
+      <div class="pipe-body">
+        <div class="pipe-title">Fine-tuning QLoRA</div>
+        <div class="pipe-sub">
+          L'entraînement s'exécute <strong>localement</strong> sur notre matériel (MacBook Pro M4 Pro, 48 Go).
+          Durée typique : 30 min à 3 heures selon la taille du dataset. Chaque run est tracé automatiquement
+          dans MLflow : perte d'entraînement, perte de validation, hyperparamètres.
+        </div>
+        <span class="pipe-tag">100 % local · Aucun cloud</span>
+      </div>
+    </div>
+
+    <div class="pipe-step">
+      <div class="pipe-left">
+        <div class="pipe-dot">4</div>
+        <div class="pipe-line"></div>
+      </div>
+      <div class="pipe-body">
+        <div class="pipe-title">Évaluation et comparaison au baseline</div>
+        <div class="pipe-sub">
+          Le modèle fine-tuné est évalué sur un jeu de test indépendant.
+          Les métriques (BLEU, ROUGE-L, pass rate, latence) sont comparées à un baseline cloud (AWS Bedrock Nova Pro).
+          <strong>Aucun modèle n'est livré sans avoir passé cette gate de qualité.</strong>
+        </div>
+        <span class="pipe-tag">Gate qualité obligatoire</span>
+      </div>
+    </div>
+
+    <div class="pipe-step">
+      <div class="pipe-left">
+        <div class="pipe-dot">5</div>
+        <div class="pipe-line"></div>
+      </div>
+      <div class="pipe-body">
+        <div class="pipe-title">Fusion et staging</div>
+        <div class="pipe-sub">
+          L'adapter est fusionné avec le modèle de base pour créer un modèle autonome.
+          Il passe en zone de staging (jamais servi directement). Une seconde validation humaine
+          peut intervenir avant la promotion en production.
+        </div>
+        <span class="pipe-tag">Double validation</span>
+      </div>
+    </div>
+
+    <div class="pipe-step">
+      <div class="pipe-left">
+        <div class="pipe-dot">6</div>
+        <div class="pipe-line"></div>
+      </div>
+      <div class="pipe-body">
+        <div class="pipe-title">Packaging — Bundle client souverain</div>
+        <div class="pipe-sub">
+          Le livrable est un <strong>bundle Docker clé en main</strong> : serveur d'inférence (Ollama),
+          base vectorielle pré-chargée (Qdrant) et routeur HTTP. Le client exécute une seule commande.
+          Aucune connexion internet requise après livraison.
+        </div>
+        <span class="pipe-tag green">Livrable souverain</span>
+      </div>
+    </div>
+
+    <div class="pipe-step">
+      <div class="pipe-left">
+        <div class="pipe-dot">7</div>
+      </div>
+      <div class="pipe-body">
+        <div class="pipe-title">Déploiement &amp; amélioration continue</div>
+        <div class="pipe-sub">
+          Le bundle est déployé sur site (serveur edge, tablette durcie, réseau classifié).
+          Les retours terrain (feedback validé par les experts du client) alimentent de nouveaux cycles
+          d'entraînement — sans jamais quitter le périmètre classifié.
+        </div>
+        <span class="pipe-tag green">Boucle fermée</span>
+      </div>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ 5. La donnée -->
+<section>
+<div class="container">
+  <div class="section-num">05 — La donnée : cœur du fine-tuning</div>
+  <h2>Pas de bonne donnée,<br>pas de bon modèle.</h2>
+  <p class="lead">
+    Le fine-tuning apprend au modèle à répondre comme un expert. Pour cela, il lui faut des exemples
+    de ce à quoi ressemble une bonne réponse d'expert. Sans cette matière première de qualité,
+    aucune technologie ne peut compenser.
+  </p>
+
+  <div class="callout">
+    <div class="callout-title">⚠️ GIGO — Garbage In, Garbage Out</div>
+    <p>
+      Un modèle entraîné sur des données imprécises, incomplètes ou non représentatives produira
+      des réponses imprécises, incomplètes ou non représentatives — avec une confiance apparente
+      qui les rend d'autant plus dangereuses. <strong>En contexte de défense, c'est inacceptable.</strong>
+      C'est pourquoi notre pipeline impose un score de qualité minimum avant toute intégration.
+    </p>
+  </div>
+
+  <p style="margin-top: 32px; font-size:16px; font-weight:600; color: var(--text);">
+    Les trois sources de données selon le contexte client :
+  </p>
+
+  <div class="sources">
+    <div class="source-row">
+      <div class="source-icon">🔐</div>
+      <div class="source-content">
+        <div class="source-title">Données client (fournies par le client)</div>
+        <div class="source-sub">
+          Manuels techniques, procédures opérationnelles, comptes-rendus d'intervention,
+          bases de connaissances internes, historiques de tickets, réglementations internes.
+          <br><strong>En contexte classifié : c'est la seule source possible.</strong>
+          Le web ne contient pas de TM propriétaires ni de procédures de niveau confidentiel.
+          Le client doit fournir ses données — traitées exclusivement dans son périmètre sécurisé.
+        </div>
+      </div>
+      <span class="source-badge badge-client">CLIENT SEUL</span>
+    </div>
+
+    <div class="source-row">
+      <div class="source-icon">🌐</div>
+      <div class="source-content">
+        <div class="source-title">Sources ouvertes (projets interne / public)</div>
+        <div class="source-sub">
+          Documentation technique publique, standards ouverts (ISO, OTAN déclassifiés, EASA),
+          publications académiques, dépôts de code open-source, forums spécialisés.
+          <br>Utilisable pour les <strong>connaissances génériques du domaine</strong>
+          (vocabulaire, structure des réponses, raisonnement) mais jamais pour des données opérationnelles.
+        </div>
+      </div>
+      <span class="source-badge badge-web">OUVERT</span>
+    </div>
+
+    <div class="source-row">
+      <div class="source-icon">🤖</div>
+      <div class="source-content">
+        <div class="source-title">Données synthétiques (générées par IA)</div>
+        <div class="source-sub">
+          À partir de bons exemples réels, un modèle Claude (via AWS Bedrock, en phase de scoping uniquement)
+          génère des variations, reformulations, cas limites. Permet de <strong>multiplier un corpus
+          limité</strong> sans en altérer la substance.
+          <br>Toujours validé par un expert humain avant intégration.
+        </div>
+      </div>
+      <span class="source-badge badge-synth">AUGMENTATION</span>
+    </div>
+  </div>
+
+  <div class="callout green" style="margin-top:32px">
+    <div class="callout-title">Ce que nous demandons au client en amont</div>
+    <p>
+      Avant tout démarrage de fine-tuning, le client fournit un corpus initial de <strong>200 à 2 000 exemples
+      annotés</strong> par domaine fonctionnel (paire : question / réponse attendue).
+      Plus le corpus est représentatif des vrais cas d'usage, plus le modèle sera précis.
+      Notre équipe l'accompagne dans la sélection et la mise en forme de ces exemples.
+    </p>
+  </div>
+</div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ 6. Souveraineté -->
+<section>
+<div class="container">
+  <div class="section-num">06 — Souveraineté &amp; sécurité</div>
+  <h2>Zéro donnée ne quitte<br>le périmètre classifié</h2>
+  <p class="lead">
+    La souveraineté n'est pas une option — c'est l'architecture de base.
+    Chaque composant de la chaîne est conçu pour fonctionner sans aucune connexion externe.
+  </p>
+
+  <div class="sov-grid">
+    <div class="sov-item">
+      <div class="sov-icon">🖥️</div>
+      <div class="sov-label">Entraînement local</div>
+      <div class="sov-sub">Fine-tuning sur station Capgemini. Aucune donnée client ne transite vers un cloud.</div>
+    </div>
+    <div class="sov-item">
+      <div class="sov-icon">📦</div>
+      <div class="sov-label">Bundle embarqué</div>
+      <div class="sov-sub">Livraison sur support physique. Fonctionne en réseau fermé, sans internet.</div>
+    </div>
+    <div class="sov-item">
+      <div class="sov-icon">🔒</div>
+      <div class="sov-label">Inférence 100 % locale</div>
+      <div class="sov-sub">Le modèle tourne sur le matériel du client. Les requêtes ne sortent jamais.</div>
+    </div>
+    <div class="sov-item">
+      <div class="sov-icon">🌐</div>
+      <div class="sov-label">Exception Bedrock</div>
+      <div class="sov-sub">Claude (AWS Bedrock) est utilisé <em>uniquement en phase de scoping</em>, avant tout accès aux données client.</div>
+    </div>
+    <div class="sov-item">
+      <div class="sov-icon">🏗️</div>
+      <div class="sov-label">IP Capgemini</div>
+      <div class="sov-sub">Les adapters LoRA sont notre propriété intellectuelle. Le modèle de base est open-source.</div>
+    </div>
+    <div class="sov-item">
+      <div class="sov-icon">🔄</div>
+      <div class="sov-label">Amélioration fermée</div>
+      <div class="sov-sub">Le feedback opérationnel alimente les cycles suivants sans jamais sortir du périmètre client.</div>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ Footer -->
+<footer>
+  <strong>Capgemini · MLOps Factory</strong> — Document interne · Usage direction &amp; clients<br>
+  <span style="font-size:11px">Généré par MLOps Factory · Tous les entraînements s'exécutent localement sur matériel Capgemini</span>
+</footer>
+
+</body>
+</html>
