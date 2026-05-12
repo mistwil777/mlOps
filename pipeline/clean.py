@@ -262,7 +262,7 @@ def main() -> None:
     args = parser.parse_args()
 
     config = _load_project_config(args.project)
-    input_path = Path(f"datalake/projects/{args.project}/processed/pairs_raw.jsonl")
+    input_path = Path(f"datalake/projects/{args.project}/raw/pairs_raw.jsonl")
     train_path = Path(f"datalake/projects/{args.project}/fine-tuning-ready/train.jsonl")
     valid_path = Path(f"datalake/projects/{args.project}/fine-tuning-ready/valid.jsonl")
 
