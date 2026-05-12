@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
 import json
+from collections import Counter
 from pathlib import Path
 from typing import Any, Optional
 
@@ -540,6 +542,212 @@ def evaluate_selection(body: EvaluateSelectionRequest) -> dict[str, Any]:
         return _parse_recommendation(raw)
     except (json.JSONDecodeError, KeyError) as exc:
         raise HTTPException(422, f"Model returned invalid JSON: {exc}\nRaw: {raw[:500]}")
+
+
+_PAIR_QUALITY_TEMPLATE = """\
+You are a training data quality expert for LLM fine-tuning.
+Analyze this training pair for the adapter "{adapter_name}" ({adapter_desc}).
+
+PROMPT:
+{prompt}
+
+COMPLETION:
+{completion}
+
+Rate it on a scale 0-10 and reply with valid JSON only:
+{{"score": <int 0-10>, "issues": ["issue1"], "verdict": "keep"|"fix"|"discard"}}
+"""
+
+_PAIR_GENERATE_TEMPLATE = """\
+You are a training data generator for a LoRA adapter named "{adapter_name}".
+Adapter purpose: {adapter_desc}
+Domain need: {need}
+
+Generate exactly 1 high-quality training pair for this adapter.
+The pair must be realistic, specific, and ready for fine-tuning.
+
+Reply with valid JSON only (no markdown):
+{{"prompt": "the input prompt", "completion": "the expected output"}}
+"""
+
+_MANUAL_BRIEF_TEMPLATE = """\
+You are an MLOps data architect.
+An adapter named "{adapter_name}" ({adapter_desc}) needs training data.
+Domain: {need}
+
+Based on the scraped pairs quality analysis below:
+{quality_summary}
+
+Write a precise data brief for a human data annotator who will create the remaining pairs manually.
+Include: recommended nature, format, topics to cover, number of pairs needed (target: {target_pairs}), priority order.
+Write in French. Be actionable and specific.
+
+Reply with plain text (no markdown headers), 150-250 words.
+"""
+
+
+class AnalyzePairsRequest(BaseModel):
+    adapter_name: str
+    adapter_desc: str
+    need: str
+    pairs_sample: list[dict[str, Any]]   # subset of raw pairs to analyze
+    n_generate: int = 10                  # how many synthetic pairs to generate
+    target_pairs: int = 500              # total pairs target for this adapter
+
+
+async def _score_pair(pair: dict[str, Any], adapter_name: str, adapter_desc: str) -> dict[str, Any]:
+    prompt = _PAIR_QUALITY_TEMPLATE.format(
+        adapter_name=adapter_name,
+        adapter_desc=adapter_desc,
+        prompt=pair.get("prompt", "")[:600],
+        completion=pair.get("completion", "")[:600],
+    )
+    try:
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None,
+            lambda: _client.messages.create(
+                model=_HAIKU_MODEL,
+                max_tokens=128,
+                messages=[{"role": "user", "content": prompt}],
+            ),
+        )
+        raw = response.content[0].text.strip()
+        if raw.startswith("```"):
+            raw = "\n".join(raw.splitlines()[1:-1] if raw.endswith("```") else raw.splitlines()[1:])
+        return {**pair, **json.loads(raw)}
+    except Exception:
+        return {**pair, "score": 5, "issues": [], "verdict": "keep"}
+
+
+async def _generate_one_pair(adapter_name: str, adapter_desc: str, need: str) -> dict[str, Any] | None:
+    prompt = _PAIR_GENERATE_TEMPLATE.format(
+        adapter_name=adapter_name,
+        adapter_desc=adapter_desc,
+        need=need[:400],
+    )
+    try:
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None,
+            lambda: _client.messages.create(
+                model=_HAIKU_MODEL,
+                max_tokens=1024,
+                messages=[{"role": "user", "content": prompt}],
+            ),
+        )
+        raw = response.content[0].text.strip()
+        if raw.startswith("```"):
+            raw = "\n".join(raw.splitlines()[1:-1] if raw.endswith("```") else raw.splitlines()[1:])
+        pair = json.loads(raw)
+        if "prompt" in pair and "completion" in pair:
+            return pair
+        return None
+    except Exception:
+        return None
+
+
+@router.post("/analyze-pairs")
+async def analyze_pairs(body: AnalyzePairsRequest) -> dict[str, Any]:
+    sample = body.pairs_sample[:30]  # cap at 30 pairs to control cost
+
+    # 1. Score all pairs in parallel
+    scored = await asyncio.gather(*[
+        _score_pair(p, body.adapter_name, body.adapter_desc)
+        for p in sample
+    ])
+    scored_list = list(scored)
+
+    # Quality summary for brief
+    n_keep    = sum(1 for p in scored_list if p.get("verdict") == "keep")
+    n_fix     = sum(1 for p in scored_list if p.get("verdict") == "fix")
+    n_discard = sum(1 for p in scored_list if p.get("verdict") == "discard")
+    avg_score = sum(p.get("score", 5) for p in scored_list) / max(len(scored_list), 1)
+    all_issues = [i for p in scored_list for i in p.get("issues", [])]
+
+    quality_summary = (
+        f"Analyzed {len(scored_list)} pairs: {n_keep} keep, {n_fix} fix, {n_discard} discard. "
+        f"Average score: {avg_score:.1f}/10. "
+        f"Common issues: {', '.join(set(all_issues[:10])) or 'none'}."
+    )
+
+    # 2. Generate n_generate pairs in parallel (batched to avoid rate limits)
+    n_gen = min(body.n_generate, 50)
+    generated_raw = await asyncio.gather(*[
+        _generate_one_pair(body.adapter_name, body.adapter_desc, body.need)
+        for _ in range(n_gen)
+    ])
+    generated = [p for p in generated_raw if p is not None]
+
+    # 3. Manual brief via Haiku
+    brief_prompt = _MANUAL_BRIEF_TEMPLATE.format(
+        adapter_name=body.adapter_name,
+        adapter_desc=body.adapter_desc,
+        need=body.need[:400],
+        quality_summary=quality_summary,
+        target_pairs=body.target_pairs,
+    )
+    try:
+        loop = asyncio.get_event_loop()
+        brief_resp = await loop.run_in_executor(
+            None,
+            lambda: _client.messages.create(
+                model=_HAIKU_MODEL,
+                max_tokens=512,
+                messages=[{"role": "user", "content": brief_prompt}],
+            ),
+        )
+        manual_brief = brief_resp.content[0].text.strip()
+    except anthropic.APIError as exc:
+        raise HTTPException(502, f"Anthropic API error: {exc}")
+
+    quality_report = {
+        "total_analyzed": len(scored_list),
+        "n_keep": n_keep,
+        "n_fix": n_fix,
+        "n_discard": n_discard,
+        "avg_score": round(avg_score, 2),
+        "common_issues": list(set(all_issues[:10])),
+        "scored_pairs": scored_list,
+    }
+
+    return {
+        "adapter_name": body.adapter_name,
+        "quality_report": quality_report,
+        "generated_pairs": generated,
+        "manual_brief": manual_brief,
+    }
+
+
+@router.get("/cross-project-matches")
+async def cross_project_matches(adapter_desc: str, k: int = 10) -> dict[str, Any]:
+    """
+    Semantic match of an adapter description against all indexed datalake pairs.
+    Returns aggregate counts by project + freshness info for the wizard.
+    """
+    from pipeline.datalake_index import DatalakeIndex  # noqa: PLC0415
+    loop = asyncio.get_event_loop()
+    try:
+        idx = await loop.run_in_executor(None, DatalakeIndex)
+        results = await loop.run_in_executor(
+            None, lambda: idx.match_adapter(adapter_desc, k=k)
+        )
+    except Exception as exc:
+        raise HTTPException(503, f"Datalake index unavailable: {exc}")
+
+    by_project = dict(Counter(r.get("project_id", "unknown") for r in results))
+    total = sum(by_project.values())
+
+    # Oldest collected_at for freshness warning
+    dates = [r["collected_at"] for r in results if r.get("collected_at")]
+    oldest = min(dates) if dates else None
+
+    return {
+        "total_matching": total,
+        "by_project": by_project,
+        "samples": results[:3],
+        "oldest_collected_at": oldest,
+    }
 
 
 @router.post("/recommend")

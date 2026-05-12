@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
-  import { createProject, advisorRecommend, advisorAlternatives, advisorEvaluateSelection, advisorFillGap, advisorResolveOverlap, advisorExtractDoc, getDataHealth, launchEvaluation, startCollect, startPipeline } from '$lib/api';
+  import { createProject, advisorRecommend, advisorAlternatives, advisorEvaluateSelection, advisorFillGap, advisorResolveOverlap, advisorExtractDoc, advisorAnalyzePairs, advisorCrossProjectMatches, getDataHealth, launchEvaluation, startCollect, startPipeline } from '$lib/api';
+  import type { PairAnalysisResult, CrossProjectMatch } from '$lib/api';
   import type { AdvisorRecommendation, AdvisorAdapter, SelectionEval, ReviewItem, OverlapResolution } from '$lib/types';
   import Topbar from '$lib/components/Topbar.svelte';
   import SovereigntyBadge from '$lib/components/SovereigntyBadge.svelte';
@@ -11,7 +12,7 @@
   // ── Étapes du wizard ──────────────────────────────────────────────────────
   // 0 Accueil  1 Besoin  2 Architecture  2.5 Sources+Collecte  3 Projet  4 Données  5 Training  6 Évaluation  7 Livraison
   let step = $state(0);
-  let step2Tab = $state<'architecture' | 'sources'>('architecture');
+  let step2Tab = $state<'architecture' | 'sources' | 'data-analysis'>('architecture');
   let analysisSavedAt = $state<string | null>(null);
 
   // Étape 1 — besoin
@@ -33,6 +34,27 @@
   let orchestrator = $state<AdvisorAdapter | null>(null);
   let selEval      = $state<SelectionEval | null>(null);
   let evalLoading  = $state(false);
+
+  // Cross-project reuse detection
+  let crossMatches = $state<Record<string, CrossProjectMatch>>({});
+
+  async function loadCrossMatches() {
+    if (wizardSelection.length === 0) return;
+    const entries = await Promise.allSettled(
+      wizardSelection.map(a =>
+        advisorCrossProjectMatches(a.description, 10)
+          .then(r => [a.name, r] as [string, CrossProjectMatch])
+          .catch(() => null)
+      )
+    );
+    const result: Record<string, CrossProjectMatch> = {};
+    for (const e of entries) {
+      if (e.status === 'fulfilled' && e.value) {
+        result[e.value[0]] = e.value[1];
+      }
+    }
+    crossMatches = result;
+  }
 
   let altTarget    = $state<AdvisorAdapter | null>(null);
   let altLoading   = $state(false);
@@ -101,6 +123,11 @@
     step2Tab = 'sources';
   }
 
+  function switchToDataAnalysis() {
+    initDataAnalysisAdapter();
+    step2Tab = 'data-analysis';
+  }
+
   async function launchCollect(tempProjectId: string) {
     const selectedSources = sourceEntries.filter(e => e.selected).map(e => e.source);
     if (selectedSources.length === 0) { collectErr = 'Sélectionnez au moins une source.'; return; }
@@ -163,6 +190,52 @@
 
   const collectSelectedCount = $derived(sourceEntries.filter(e => e.selected).length);
 
+  // Étape 2 — Analyse données (onglet data-analysis)
+  interface AdapterAnalysis { result: PairAnalysisResult | null; loading: boolean; error: string; nGenerate: number; }
+  let dataAnalyses = $state<Record<string, AdapterAnalysis>>({});
+  let dataAnalysisAdapter = $state<string>(''); // adapter sélectionné pour l'analyse
+
+  function initDataAnalysisAdapter() {
+    if (!dataAnalysisAdapter && wizardSelection.length > 0) {
+      dataAnalysisAdapter = wizardSelection[0].name;
+    }
+  }
+
+  async function runDataAnalysis(adapter: AdvisorAdapter) {
+    const current = dataAnalyses[adapter.name] ?? { result: null, loading: false, error: '', nGenerate: 10 };
+    const nGen = current.nGenerate ?? 10;
+    dataAnalyses = { ...dataAnalyses, [adapter.name]: { ...current, loading: true, error: '' } };
+    try {
+      const result = await advisorAnalyzePairs({
+        adapter_name: adapter.name,
+        adapter_desc: adapter.description,
+        need,
+        pairs_sample: collectedPairs.map(p => ({ prompt: p.prompt, completion: p.completion })),
+        n_generate: nGen,
+        target_pairs: adapter.estimated_pairs,
+      });
+      dataAnalyses = { ...dataAnalyses, [adapter.name]: { result, loading: false, error: '', nGenerate: nGen } };
+    } catch (e) {
+      dataAnalyses = { ...dataAnalyses, [adapter.name]: { result: null, loading: false, error: (e as Error).message, nGenerate: nGen } };
+    }
+  }
+
+  function addGeneratedPairs(adapterName: string) {
+    const analysis = dataAnalyses[adapterName];
+    if (!analysis?.result?.generated_pairs?.length) return;
+    // On stocke les paires dans une variable accessible pour l'export ultérieur
+    // (elles seront réutilisées au moment de la création du projet)
+    generatedPairsStore = {
+      ...generatedPairsStore,
+      [adapterName]: [...(generatedPairsStore[adapterName] ?? []), ...analysis.result.generated_pairs],
+    };
+    dataAnalyses = { ...dataAnalyses, [adapterName]: { ...analysis, result: { ...analysis.result, generated_pairs: [] } } };
+  }
+
+  let generatedPairsStore = $state<Record<string, Array<{ prompt: string; completion: string }>>>({});
+
+  const totalGeneratedPairs = $derived(Object.values(generatedPairsStore).reduce((s, arr) => s + arr.length, 0));
+
   // Étape 3 — création projet
   let projName   = $state('');
   let projDomain = $state('code');
@@ -213,6 +286,7 @@
       }
       step = 2;
       runWizardEval();
+      loadCrossMatches();
     } catch (e) { analyzeErr = (e as Error).message; }
     finally { analyzing = false; }
   }
@@ -514,6 +588,7 @@
         projName, projDomain, projClass, baseModel,
         sourceEntries, collectTopic, collectMaxPairs,
         step2Tab,
+        generatedPairsStore,
         savedAt,
       }));
       analysisSavedAt = savedAt;
@@ -564,14 +639,16 @@
       projDomain   = s.projDomain   ?? projDomain;
       projClass    = s.projClass    ?? projClass;
       baseModel    = s.baseModel    ?? baseModel;
-      sourceEntries   = s.sourceEntries   ?? [];
-      collectTopic    = s.collectTopic    ?? '';
-      collectMaxPairs = s.collectMaxPairs ?? 50;
-      step2Tab        = s.step2Tab        ?? 'architecture';
+      sourceEntries        = s.sourceEntries        ?? [];
+      collectTopic         = s.collectTopic         ?? '';
+      collectMaxPairs      = s.collectMaxPairs      ?? 50;
+      step2Tab             = s.step2Tab             ?? 'architecture';
+      generatedPairsStore  = s.generatedPairsStore  ?? {};
       analysisSavedAt = s.savedAt ?? null;
       if (adapters.length > 0) {
         step = 2;
         if (!selEval) runWizardEval();
+        loadCrossMatches();
       } else {
         step = 1;
       }
@@ -664,6 +741,7 @@
   $effect(() => {
     void adapters; void orchestrator; void selEval;
     void sourceEntries; void collectTopic; void collectMaxPairs; void step2Tab;
+    void generatedPairsStore;
     if (adapters.length > 0 || orchestrator) saveAnalysis();
   });
 </script>
@@ -872,6 +950,10 @@
           Sources & Collecte
           <span class="tab-badge">{allSources.length}</span>
         </button>
+        <button class="step2-tab" class:active={step2Tab === 'data-analysis'} onclick={switchToDataAnalysis}>
+          Analyse données
+          {#if totalGeneratedPairs > 0}<span class="tab-badge tab-badge-green">{totalGeneratedPairs}</span>{/if}
+        </button>
       </div>
       <div class="step2-actions">
         <button class="btn btn-ghost btn-sm" onclick={() => { step = 1; altTarget = null; sourcesAdapter = null; }}>← Besoin</button>
@@ -1047,13 +1129,31 @@
 
           <div class="adapters-list">
             {#each adapters as adapter (adapter.name)}
-              <AdapterCard
-                {adapter}
-                active={altTarget?.name === adapter.name || sourcesAdapter?.name === adapter.name}
-                onSources={openSources}
-                onAlternatives={openAlternatives}
-                onRemove={removeAdapter}
-              />
+              <div class="adapter-with-match">
+                <AdapterCard
+                  {adapter}
+                  active={altTarget?.name === adapter.name || sourcesAdapter?.name === adapter.name}
+                  onSources={openSources}
+                  onAlternatives={openAlternatives}
+                  onRemove={removeAdapter}
+                />
+                {#if crossMatches[adapter.name]?.total_matching > 0}
+                  {@const cm = crossMatches[adapter.name]}
+                  {@const oldestMonths = cm.oldest_collected_at ? Math.round((Date.now() - new Date(cm.oldest_collected_at).getTime()) / (1000 * 60 * 60 * 24 * 30)) : null}
+                  <div class="cross-match-badge" style="border-color:{oldestMonths != null && oldestMonths > 18 ? 'rgba(247,84,84,.3)' : oldestMonths != null && oldestMonths > 6 ? 'rgba(247,170,80,.3)' : 'rgba(62,207,142,.3)'}">
+                    <span style="color:{oldestMonths != null && oldestMonths > 18 ? 'var(--red)' : oldestMonths != null && oldestMonths > 6 ? 'var(--yellow)' : 'var(--green)'}">◈</span>
+                    <span class="cmb-text">~{cm.total_matching} paires existantes</span>
+                    {#each Object.entries(cm.by_project) as [proj, count]}
+                      <span class="cmb-proj">{proj} ({count})</span>
+                    {/each}
+                    {#if oldestMonths != null}
+                      <span class="cmb-age" style="color:{oldestMonths > 18 ? 'var(--red)' : oldestMonths > 6 ? 'var(--yellow)' : 'var(--text-dim)'}">
+                        · {oldestMonths < 12 ? `${oldestMonths} mois` : `${Math.round(oldestMonths/12)} an${oldestMonths >= 24 ? 's' : ''}`}
+                      </span>
+                    {/if}
+                  </div>
+                {/if}
+              </div>
             {/each}
             {#if orchestrator}
               <AdapterCard
@@ -1183,7 +1283,7 @@
     </div>
 
     <!-- Onglet Sources & Collecte -->
-    {:else}
+    {:else if step2Tab === 'sources'}
       {@const tempProjectId = projName.trim() || 'wizard-temp'}
       <div class="collect-layout">
 
@@ -1312,6 +1412,183 @@
                 {/if}
               {/if}
             </div>
+          {/if}
+        </div>
+      </div>
+    <!-- Onglet Analyse données -->
+    {:else if step2Tab === 'data-analysis'}
+      <div class="da-layout">
+
+        <!-- Col gauche : sélecteur d'adapter -->
+        <div class="da-left">
+          <div class="card mb-16">
+            <div class="card-title mb-12">Adapter à analyser</div>
+            <div class="da-adapter-list">
+              {#each wizardSelection as adapter}
+                {@const an = dataAnalyses[adapter.name]}
+                <button
+                  class="da-adapter-btn"
+                  class:active={dataAnalysisAdapter === adapter.name}
+                  onclick={() => { dataAnalysisAdapter = adapter.name; }}
+                >
+                  <span class="da-adapter-name mono">{adapter.name}</span>
+                  {#if an?.result}
+                    <span class="da-score-pill" style="background:{an.result.quality_report.avg_score >= 7 ? 'rgba(80,200,120,.15)' : an.result.quality_report.avg_score >= 4 ? 'rgba(255,180,0,.15)' : 'rgba(247,84,84,.15)'}; color:{an.result.quality_report.avg_score >= 7 ? 'var(--green)' : an.result.quality_report.avg_score >= 4 ? 'var(--yellow)' : 'var(--red)'}">
+                      {an.result.quality_report.avg_score.toFixed(1)}/10
+                    </span>
+                  {:else if an?.loading}
+                    <span class="spinner spinner-xs"></span>
+                  {/if}
+                </button>
+              {/each}
+            </div>
+          </div>
+
+          {#if totalGeneratedPairs > 0}
+            <div class="card da-total-card">
+              <div class="da-total-count">{totalGeneratedPairs}</div>
+              <div class="da-total-label">paires synthétiques générées</div>
+              <div class="hint mt-4">Disponibles pour l'ingestion après création du projet.</div>
+            </div>
+          {/if}
+        </div>
+
+        <!-- Col droite : panneau d'analyse pour l'adapter sélectionné -->
+        <div class="da-right">
+          {#if !dataAnalysisAdapter}
+            <div class="collect-placeholder">
+              <div class="cp-icon">◎</div>
+              <div class="cp-title">Sélectionnez un adapter</div>
+            </div>
+          {:else}
+            {@const selectedAdapter = wizardSelection.find(a => a.name === dataAnalysisAdapter)}
+            {@const an = dataAnalyses[dataAnalysisAdapter]}
+            {#if selectedAdapter}
+              <div class="card mb-16">
+                <div class="card-header mb-12">
+                  <div>
+                    <div class="card-title">Analyse — <span class="mono">{selectedAdapter.name}</span></div>
+                    <div class="hint mt-2">{selectedAdapter.description}</div>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:8px">
+                    <label class="da-n-label" for="da-ngen">Paires à générer</label>
+                    <input
+                      id="da-ngen"
+                      type="number" min="1" max="50" class="da-n-input"
+                      value={an?.nGenerate ?? 10}
+                      onchange={(e) => {
+                        const v = parseInt((e.currentTarget as HTMLInputElement).value) || 10;
+                        dataAnalyses = { ...dataAnalyses, [dataAnalysisAdapter]: { ...(dataAnalyses[dataAnalysisAdapter] ?? { result: null, loading: false, error: '', nGenerate: 10 }), nGenerate: Math.min(50, Math.max(1, v)) } };
+                      }}
+                    />
+                    <button
+                      class="btn btn-primary btn-sm"
+                      disabled={an?.loading || (collectedPairs.length === 0 && collectStatus !== 'completed')}
+                      onclick={() => runDataAnalysis(selectedAdapter)}
+                    >
+                      {#if an?.loading}<span class="spinner"></span> Analyse Haiku…
+                      {:else if an?.result}↺ Relancer
+                      {:else}◎ Analyser{/if}
+                    </button>
+                  </div>
+                </div>
+
+                {#if collectedPairs.length === 0 && collectStatus !== 'completed'}
+                  <div class="da-hint-collect">
+                    <span class="da-hint-icon">⚠</span>
+                    Lancez d'abord une collecte dans l'onglet <button class="da-link" onclick={switchToSources}>Sources & Collecte</button> pour avoir des paires à analyser.
+                    L'analyse de qualité et la génération synthétique fonctionnent indépendamment.
+                  </div>
+                {/if}
+
+                {#if an?.error}
+                  <div class="api-error">{an.error}</div>
+                {/if}
+
+                {#if an?.result}
+                  {@const qr = an.result.quality_report}
+
+                  <!-- Rapport qualité -->
+                  <div class="da-section mb-16">
+                    <div class="da-section-title">Rapport qualité ({qr.total_analyzed} paires analysées)</div>
+                    <div class="da-verdict-grid">
+                      <div class="da-verdict-item da-verdict-keep">
+                        <span class="da-verdict-count">{qr.n_keep}</span>
+                        <span class="da-verdict-label">✓ À garder</span>
+                      </div>
+                      <div class="da-verdict-item da-verdict-fix">
+                        <span class="da-verdict-count">{qr.n_fix}</span>
+                        <span class="da-verdict-label">⚑ À corriger</span>
+                      </div>
+                      <div class="da-verdict-item da-verdict-discard">
+                        <span class="da-verdict-count">{qr.n_discard}</span>
+                        <span class="da-verdict-label">✕ À supprimer</span>
+                      </div>
+                    </div>
+                    <div class="da-avg-score mt-10">
+                      Score moyen : <span style="color:{qr.avg_score >= 7 ? 'var(--green)' : qr.avg_score >= 4 ? 'var(--yellow)' : 'var(--red)'}; font-weight:600">{qr.avg_score.toFixed(1)}/10</span>
+                    </div>
+                    {#if qr.common_issues.length > 0}
+                      <div class="da-issues mt-8">
+                        <span class="meta-label">Problèmes récurrents</span>
+                        <div class="tags mt-4">
+                          {#each qr.common_issues as issue}
+                            <span class="tag tag-warn">{issue}</span>
+                          {/each}
+                        </div>
+                      </div>
+                    {/if}
+                  </div>
+
+                  <!-- Paires générées -->
+                  <div class="da-section mb-16">
+                    <div class="da-section-header">
+                      <div class="da-section-title">Paires synthétiques générées ({an.result.generated_pairs.length})</div>
+                      {#if an.result.generated_pairs.length > 0}
+                        <button class="btn-use" onclick={() => addGeneratedPairs(selectedAdapter.name)}>
+                          + Ajouter toutes ({an.result.generated_pairs.length})
+                        </button>
+                      {/if}
+                    </div>
+                    {#if an.result.generated_pairs.length === 0}
+                      <div class="hint mt-4">Toutes les paires ont été ajoutées.</div>
+                    {:else}
+                      <div class="da-pairs-list mt-8">
+                        {#each an.result.generated_pairs.slice(0, 5) as pair, i}
+                          <div class="da-pair-item">
+                            <div class="da-pair-idx">#{i + 1}</div>
+                            <div class="da-pair-body">
+                              <div class="da-pair-prompt">{pair.prompt.slice(0, 120)}{pair.prompt.length > 120 ? '…' : ''}</div>
+                              <div class="da-pair-completion">{pair.completion.slice(0, 120)}{pair.completion.length > 120 ? '…' : ''}</div>
+                            </div>
+                          </div>
+                        {/each}
+                        {#if an.result.generated_pairs.length > 5}
+                          <div class="hint">… et {an.result.generated_pairs.length - 5} paires supplémentaires</div>
+                        {/if}
+                      </div>
+                    {/if}
+                    {#if (generatedPairsStore[selectedAdapter.name]?.length ?? 0) > 0}
+                      <div class="da-added-count mt-8">
+                        <span style="color:var(--green)">✓</span>
+                        {generatedPairsStore[selectedAdapter.name].length} paires ajoutées pour cet adapter
+                      </div>
+                    {/if}
+                  </div>
+
+                  <!-- Brief données manuelles -->
+                  <div class="da-section">
+                    <div class="da-section-header">
+                      <div class="da-section-title">Brief données manuelles</div>
+                      <button class="btn btn-ghost btn-sm" onclick={() => navigator.clipboard.writeText(an.result!.manual_brief)}>
+                        Copier
+                      </button>
+                    </div>
+                    <div class="da-brief mt-8">{an.result.manual_brief}</div>
+                  </div>
+                {/if}
+              </div>
+            {/if}
           {/if}
         </div>
       </div>
@@ -2057,4 +2334,102 @@
   .doc-info { font-size: 10px; color: var(--text-dim); }
   .doc-remove { opacity: 0.5; }
   .doc-remove:hover { opacity: 1; color: var(--red); }
+
+  /* Cross-project match badge */
+  .adapter-with-match { display: flex; flex-direction: column; }
+  .cross-match-badge {
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    padding: 5px 10px; margin-top: -1px;
+    border: 1px solid rgba(62,207,142,.3); border-top: none;
+    border-radius: 0 0 var(--radius) var(--radius);
+    background: rgba(62,207,142,.04);
+    font-size: 11px;
+  }
+  .cmb-text { color: var(--text-muted); font-weight: 500; }
+  .cmb-proj { font-family: var(--font-mono); font-size: 10px; color: var(--accent); background: var(--accent-dim); padding: 1px 5px; border-radius: 999px; }
+  .cmb-age  { font-size: 10px; }
+
+  /* Tab badge green */
+  .tab-badge-green { background: rgba(62,207,142,.15) !important; color: var(--green) !important; }
+
+  /* Onglet Analyse données */
+  .da-layout {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    gap: 20px;
+    align-items: start;
+  }
+  @media (max-width: 900px) { .da-layout { grid-template-columns: 1fr; } }
+
+  .da-adapter-list { display: flex; flex-direction: column; gap: 4px; }
+  .da-adapter-btn {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 8px 12px; border-radius: var(--radius);
+    background: var(--surface-2); border: 1px solid transparent;
+    cursor: pointer; text-align: left; transition: border-color 150ms, background 150ms;
+  }
+  .da-adapter-btn.active { background: var(--accent-dim); border-color: var(--accent); }
+  .da-adapter-btn:not(.active):hover { border-color: var(--border); }
+  .da-adapter-name { font-size: 12px; color: var(--text); }
+  .da-score-pill { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 999px; flex-shrink: 0; }
+
+  .da-total-card { text-align: center; padding: 16px; }
+  .da-total-count { font-size: 28px; font-weight: 800; color: var(--green); line-height: 1; }
+  .da-total-label { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+  .da-n-label { font-size: 11px; color: var(--text-dim); flex-shrink: 0; }
+  .da-n-input {
+    width: 56px; background: var(--surface-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 4px 8px; font-size: 12px; text-align: center;
+  }
+
+  .da-hint-collect {
+    display: flex; align-items: flex-start; gap: 8px;
+    padding: 10px 12px; border-radius: var(--radius);
+    background: rgba(255,180,0,.08); border: 1px solid rgba(255,180,0,.2);
+    font-size: 12px; color: var(--text-muted); line-height: 1.5; margin-bottom: 12px;
+  }
+  .da-hint-icon { font-size: 14px; flex-shrink: 0; margin-top: 1px; color: var(--yellow, #ffb400); }
+  .da-link { background: none; border: none; padding: 0; color: var(--accent); cursor: pointer; text-decoration: underline; font-size: 12px; }
+
+  .da-section { display: flex; flex-direction: column; }
+  .da-section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--text-dim); }
+  .da-section-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+
+  .da-verdict-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-top: 10px; }
+  .da-verdict-item {
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    padding: 10px 6px; border-radius: var(--radius); border: 1px solid transparent;
+  }
+  .da-verdict-keep    { background: rgba(62,207,142,.08);  border-color: rgba(62,207,142,.2); }
+  .da-verdict-fix     { background: rgba(255,180,0,.08);   border-color: rgba(255,180,0,.2); }
+  .da-verdict-discard { background: rgba(247,84,84,.08);   border-color: rgba(247,84,84,.2); }
+  .da-verdict-count { font-size: 20px; font-weight: 800; }
+  .da-verdict-keep    .da-verdict-count { color: var(--green); }
+  .da-verdict-fix     .da-verdict-count { color: var(--yellow, #ffb400); }
+  .da-verdict-discard .da-verdict-count { color: var(--red); }
+  .da-verdict-label { font-size: 10px; color: var(--text-dim); text-align: center; }
+  .da-avg-score { font-size: 12px; color: var(--text-muted); }
+
+  .da-issues { display: flex; flex-direction: column; }
+
+  .da-pairs-list { display: flex; flex-direction: column; gap: 6px; max-height: 240px; overflow-y: auto; }
+  .da-pair-item {
+    display: flex; gap: 8px; align-items: flex-start;
+    padding: 7px 10px; border-radius: var(--radius);
+    background: var(--surface-2); border: 1px solid var(--border);
+  }
+  .da-pair-idx { font-size: 10px; font-weight: 700; color: var(--text-dim); width: 20px; flex-shrink: 0; padding-top: 1px; font-family: var(--font-mono); }
+  .da-pair-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .da-pair-prompt     { font-size: 11px; color: var(--accent); white-space: pre-wrap; word-break: break-word; }
+  .da-pair-completion { font-size: 11px; color: var(--text-muted); white-space: pre-wrap; word-break: break-word; border-top: 1px solid var(--border); padding-top: 3px; margin-top: 2px; }
+  .da-added-count { font-size: 12px; color: var(--text-muted); }
+
+  .da-brief {
+    font-size: 12px; color: var(--text-muted); line-height: 1.7;
+    background: var(--surface-2); border-radius: var(--radius); padding: 12px 14px;
+    white-space: pre-wrap; word-break: break-word;
+    max-height: 300px; overflow-y: auto;
+  }
 </style>

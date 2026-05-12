@@ -107,6 +107,30 @@ export const advisorResolveOverlap = (need: string, adapter_a: AdvisorAdapter, a
     body: JSON.stringify({ need, adapter_a, adapter_b, current_selection, model: model ?? 'us.anthropic.claude-sonnet-4-6' }),
   });
 
+export interface PairAnalysisResult {
+  adapter_name: string;
+  quality_report: {
+    total_analyzed: number;
+    n_keep: number;
+    n_fix: number;
+    n_discard: number;
+    avg_score: number;
+    common_issues: string[];
+    scored_pairs: Array<{ prompt: string; completion: string; score: number; issues: string[]; verdict: 'keep' | 'fix' | 'discard' }>;
+  };
+  generated_pairs: Array<{ prompt: string; completion: string }>;
+  manual_brief: string;
+}
+
+export const advisorAnalyzePairs = (body: {
+  adapter_name: string;
+  adapter_desc: string;
+  need: string;
+  pairs_sample: Array<{ prompt: string; completion: string }>;
+  n_generate?: number;
+  target_pairs?: number;
+}) => req<PairAnalysisResult>('/advisor/analyze-pairs', { method: 'POST', body: JSON.stringify(body) });
+
 // Data
 export const startCollect      = (body: { project_id: string; topic: string; max_pairs?: number; domain?: string; task_type?: string }) =>
   req<CollectJob>('/data/collect', { method: 'POST', body: JSON.stringify(body) });
@@ -116,11 +140,41 @@ export const getReview         = (projectId: string, page = 0, pageSize = 20, st
 export const postReview        = (projectId: string, body: { index: number; action: string; corrected_prompt?: string; corrected_completion?: string }) =>
   req<{ ok: boolean; index: number; status: string }>(`/data/review/${projectId}`, { method: 'POST', body: JSON.stringify(body) });
 export const getReviewStats    = (projectId: string) => req<ReviewStats>(`/data/review/${projectId}/stats`);
-export const startPipeline     = (body: { project_id: string; use_llm_score?: boolean; threshold?: number }) =>
+export const startPipeline     = (body: { project_id: string; threshold?: number }) =>
   req<CollectJob>('/data/pipeline', { method: 'POST', body: JSON.stringify(body) });
 export const getPipelineStatus = (jobId: string) => req<JobStatus>(`/data/pipeline/${jobId}/status`);
 export const getDataHealth     = (projectId: string) => req<DataHealth>(`/data/health/${projectId}`);
 export const getLineage        = (projectId: string, limit = 100) => req<Record<string, unknown>[]>(`/data/lineage/${projectId}?limit=${limit}`);
+
+export interface DatalakePair {
+  project_id: string;
+  stage: string;
+  prompt: string;
+  completion: string;
+  quality_score?: number;
+  collected_at?: string;
+  source_url?: string;
+  pair_hash: string;
+}
+
+export interface CrossProjectMatch {
+  total_matching: number;
+  by_project: Record<string, number>;
+  samples: DatalakePair[];
+  oldest_collected_at: string | null;
+}
+
+export const searchDatalakePairs = (body: {
+  query: string; project_id?: string; stage?: string; k?: number; page?: number;
+}) => req<{ total: number; page: number; page_size: number; items: DatalakePair[] }>(
+  '/data/search', { method: 'POST', body: JSON.stringify(body) }
+);
+
+export const indexProjectPairs = (projectId: string) =>
+  req<{ ok: boolean; project_id: string }>(`/data/index-project/${projectId}`, { method: 'POST' });
+
+export const advisorCrossProjectMatches = (adapterDesc: string, k = 10) =>
+  req<CrossProjectMatch>(`/advisor/cross-project-matches?adapter_desc=${encodeURIComponent(adapterDesc)}&k=${k}`);
 
 // Project next-actions
 export const getNextActions    = (projectId: string) => req<import('./types').NextActions>(`/projects/${projectId}/next-actions`);

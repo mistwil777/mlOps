@@ -279,7 +279,6 @@ async def review_stats(project_id: str) -> dict[str, Any]:
 
 class PipelineRequest(BaseModel):
     project_id: str
-    use_llm_score: bool = False
     threshold: float = 0.7
 
 
@@ -297,7 +296,7 @@ async def _run_pipeline(job_id: str, req: PipelineRequest) -> None:
     cmd = [
         sys.executable, "-m", "pipeline.clean",
         "--project", req.project_id,
-        "--score", str(req.use_llm_score).lower(),
+        "--score", "false",
         "--threshold", str(req.threshold),
     ]
 
@@ -312,7 +311,11 @@ async def _run_pipeline(job_id: str, req: PipelineRequest) -> None:
             _JOBS[job_id]["lines"].append(line)
 
         await proc.wait()
-        _JOBS[job_id]["status"] = "completed" if proc.returncode == 0 else "failed"
+        if proc.returncode == 0:
+            _JOBS[job_id]["status"] = "completed"
+            asyncio.create_task(_index_datalake_pairs(req.project_id, job_id))
+        else:
+            _JOBS[job_id]["status"] = "failed"
         _JOBS[job_id]["returncode"] = proc.returncode
     except Exception as exc:
         _JOBS[job_id]["status"] = "failed"
@@ -320,6 +323,24 @@ async def _run_pipeline(job_id: str, req: PipelineRequest) -> None:
     finally:
         _JOBS[job_id]["finished_at"] = datetime.now(timezone.utc).timestamp()
         _purge_old_jobs()
+
+
+async def _index_datalake_pairs(project_id: str, job_id: str | None = None) -> None:
+    from pipeline.datalake_index import DatalakeIndex  # noqa: PLC0415
+    try:
+        idx = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: DatalakeIndex()
+        )
+        n = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: idx.index_project(project_id)
+        )
+        msg = f"[datalake-index] Indexed {n} pairs for {project_id}"
+        if job_id and job_id in _JOBS:
+            _JOBS[job_id]["lines"].append(msg)
+    except Exception as exc:
+        msg = f"[datalake-index] Warning: {exc}"
+        if job_id and job_id in _JOBS:
+            _JOBS[job_id]["lines"].append(msg)
 
 
 @router.get("/pipeline/{job_id}/stream")
@@ -543,3 +564,48 @@ async def get_lineage(project_id: str, limit: int = 100) -> list[dict[str, Any]]
         "SELECT * FROM data_lineage WHERE project_id = ? ORDER BY collected_at DESC LIMIT ?",
         (project_id, limit),
     )
+
+
+# ── Datalake Search ────────────────────────────────────────────────────────────
+
+class SearchPairsRequest(BaseModel):
+    query: str
+    project_id: Optional[str] = None
+    stage: Optional[str] = None   # "raw" | "fine-tuning-ready"
+    k: int = 20
+    page: int = 0
+
+
+@router.post("/search")
+async def search_pairs(body: SearchPairsRequest) -> dict[str, Any]:
+    from pipeline.datalake_index import DatalakeIndex  # noqa: PLC0415
+    loop = asyncio.get_event_loop()
+    try:
+        idx = await loop.run_in_executor(None, DatalakeIndex)
+        results = await loop.run_in_executor(
+            None,
+            lambda: idx.search(
+                body.query,
+                project_id=body.project_id or None,
+                stage=body.stage or None,
+                k=body.k,
+            ),
+        )
+    except Exception as exc:
+        raise HTTPException(503, f"Datalake index unavailable: {exc}")
+
+    offset = body.page * body.k
+    page_items = results[offset: offset + body.k] if offset < len(results) else results
+
+    return {
+        "total": len(results),
+        "page": body.page,
+        "page_size": body.k,
+        "items": page_items,
+    }
+
+
+@router.post("/index-project/{project_id}")
+async def index_project_pairs(project_id: str) -> dict[str, Any]:
+    asyncio.create_task(_index_datalake_pairs(project_id))
+    return {"ok": True, "project_id": project_id}

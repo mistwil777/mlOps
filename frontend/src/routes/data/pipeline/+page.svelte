@@ -5,7 +5,6 @@
 
   let projects: Project[] = $state([]);
   let selectedProject = $state('');
-  let useLLMScore = $state(false);
   let threshold = $state(0.7);
   let running = $state(false);
   let jobId = $state('');
@@ -31,7 +30,6 @@
     try {
       const res = await startPipeline({
         project_id: selectedProject,
-        use_llm_score: useLLMScore,
         threshold,
       });
       jobId = res.job_id;
@@ -103,14 +101,6 @@
         </div>
       </label>
 
-      <label class="form-field toggle-field">
-        <span class="field-label">Scoring LLM</span>
-        <label class="toggle">
-          <input type="checkbox" bind:checked={useLLMScore} />
-          <span class="toggle-track"></span>
-        </label>
-        <span class="text-muted" style="font-size:11px">{useLLMScore ? 'mlx_lm.server (lent)' : 'heuristiques (rapide)'}</span>
-      </label>
     </div>
 
     <div style="margin-top:16px; display:flex; gap:10px; align-items:center">
@@ -148,15 +138,8 @@
   .pipeline-info { line-height: 1.6; }
   .form-grid { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-end; }
   .form-field { display: flex; flex-direction: column; gap: 6px; }
-  .toggle-field { flex-direction: row; align-items: center; gap: 10px; }
   .field-label { font-size: 12px; color: var(--text-muted); }
   .input { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 10px; font-size: 13px; }
-  .toggle { position: relative; display: inline-block; width: 36px; height: 20px; }
-  .toggle input { opacity: 0; width: 0; height: 0; }
-  .toggle-track { position: absolute; inset: 0; background: var(--surface-2); border-radius: 20px; border: 1px solid var(--border); cursor: pointer; transition: background 0.2s; }
-  .toggle input:checked + .toggle-track { background: var(--accent); border-color: var(--accent); }
-  .toggle-track::after { content:''; position:absolute; width:14px; height:14px; border-radius:50%; background:#fff; top:2px; left:2px; transition:transform 0.2s; }
-  .toggle input:checked + .toggle-track::after { transform:translateX(16px); }
   .section-title { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px; }
   .log-box { background: var(--surface-2); border-radius: var(--radius); padding: 12px; height: 360px; overflow-y: auto; font-family: var(--font-mono); font-size: 12px; display: flex; flex-direction: column; gap: 2px; }
   .log-line { white-space: pre-wrap; word-break: break-all; color: var(--text-muted); }

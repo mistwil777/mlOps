@@ -8,6 +8,7 @@
     { href: '/data/ingest',   label: 'Ingestion manuelle' },
     { href: '/data/review',   label: 'Revue humaine' },
     { href: '/data/pipeline', label: 'Pipeline nettoyage' },
+    { href: '/data/search',   label: 'Recherche data' },
   ];
 
   function isActive(href: string) {

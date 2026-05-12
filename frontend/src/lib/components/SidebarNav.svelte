@@ -30,6 +30,7 @@
         { href: '/data/review',   icon: '◈', label: 'Révision' },
         { href: '/data/collect',  icon: '◩', label: 'Collecte web' },
         { href: '/data/rag',      icon: '◈', label: 'RAG / Index' },
+        { href: '/data/search',   icon: '⌕', label: 'Recherche data' },
       ],
     },
     {
