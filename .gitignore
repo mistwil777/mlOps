@@ -10,8 +10,17 @@
 *.pth
 *.ckpt
 
-# Raw datalake (immutable, not versioned in Git — use DVC)
-datalake/raw/
+# Datalake data files (versioned via DVC, not Git)
+datalake/
+
+# Qdrant runtime data
+qdrant_data/
+
+# Binary documents (not source — track via external storage if needed)
+docs/*.pptx
+docs/*.ppt
+docs/*.docx
+docs/*.xlsx
 
 # MLflow runs (tracked separately)
 mlruns/
@@ -35,7 +44,7 @@ build/
 
 # Logs
 *.log
-!.claude/audit.log
+.claude/audit.log
 
 # LanceDB
 lancedb/
