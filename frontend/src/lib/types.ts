@@ -159,12 +159,20 @@ export interface DataHealth {
   lineage_summary?: Array<{ source_type: string; n: number; avg_q: number | null }>;
 }
 
+export interface SourceSuggestion {
+  label: string;
+  collector_type: 'rosetta_code' | 'crawl4ai' | 'manual' | 'github_repo';
+  value: string;
+  estimated_pairs?: number;
+}
+
 export interface AdvisorAdapter {
   name: string;
   role: 'specialist' | 'orchestrator';
   description: string;
   data_types: string[];
   data_sources: string[];
+  source_configs?: SourceSuggestion[];
   rag_recommended?: boolean;
   estimated_pairs: number;
   // populated only for alternatives

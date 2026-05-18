@@ -83,7 +83,7 @@
   );
 
   // Étape 2.5 — sources + collecte + pipeline
-  interface SourceEntry { source: string; adapter: string; selected: boolean; }
+  interface SourceEntry { source: string; adapter: string; selected: boolean; collector_type: string; source_value: string; }
   let sourceEntries = $state<SourceEntry[]>([]);
   let collectMaxPairs = $state(50);
   let collectTopic    = $state('');
@@ -107,10 +107,22 @@
     const seen = new Set<string>();
     const entries: SourceEntry[] = [];
     for (const a of wizardSelection) {
-      for (const s of (a.data_sources ?? [])) {
-        if (!seen.has(s)) {
-          seen.add(s);
-          entries.push({ source: s, adapter: a.name, selected: true });
+      if (a.source_configs && a.source_configs.length > 0) {
+        // Structured sources from Advisor — preferred
+        for (const sc of a.source_configs) {
+          const key = `${sc.collector_type}:${sc.value}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            entries.push({ source: sc.label, adapter: a.name, selected: true, collector_type: sc.collector_type, source_value: sc.value });
+          }
+        }
+      } else {
+        // Fallback: legacy string data_sources → crawl4ai
+        for (const s of (a.data_sources ?? [])) {
+          if (!seen.has(s)) {
+            seen.add(s);
+            entries.push({ source: s, adapter: a.name, selected: true, collector_type: 'crawl4ai', source_value: s });
+          }
         }
       }
     }
@@ -129,12 +141,22 @@
   }
 
   async function launchCollect(tempProjectId: string) {
-    const selectedSources = sourceEntries.filter(e => e.selected).map(e => e.source);
+    const selectedSources = sourceEntries.filter(e => e.selected);
     if (selectedSources.length === 0) { collectErr = 'Sélectionnez au moins une source.'; return; }
     collectErr = ''; collectLogs = []; collectRunning = true; collectStatus = 'running';
     collectedPairs = []; collectedTotal = 0;
+    // Use the first selected source's collector_type; mixed types run sequentially per source
+    const firstSrc = selectedSources[0];
     try {
-      const res = await startCollect({ project_id: tempProjectId, topic: collectTopic || need.trim(), max_pairs: collectMaxPairs, domain: projDomain, task_type: 'generation' });
+      const res = await startCollect({
+        project_id: tempProjectId,
+        topic: collectTopic || need.trim(),
+        max_pairs: collectMaxPairs,
+        domain: projDomain,
+        task_type: 'generation',
+        collector_type: firstSrc.collector_type,
+        source_value: firstSrc.source_value,
+      });
       collectJobId = res.job_id;
       collectEs = new EventSource(`/api/data/collect/${collectJobId}/stream`);
       collectEs.addEventListener('log', (e) => {
@@ -1306,8 +1328,15 @@
                   {#each entries as entry}
                     <label class="source-row">
                       <input type="checkbox" bind:checked={entry.selected} class="source-checkbox" />
+                      <span class="collector-badge collector-badge--{entry.collector_type}">
+                        {entry.collector_type === 'rosetta_code' ? 'Rosetta' : entry.collector_type === 'crawl4ai' ? 'Web' : entry.collector_type === 'manual' ? 'Manuel' : 'GitHub'}
+                      </span>
                       <span class="source-name">{entry.source}</span>
-                      <a href={sourceUrl(entry.source)} target="_blank" rel="noopener noreferrer" class="source-ext" title="Ouvrir">↗</a>
+                      {#if entry.collector_type === 'crawl4ai' && entry.source_value?.startsWith('http')}
+                        <a href={entry.source_value} target="_blank" rel="noopener noreferrer" class="source-ext" title="Ouvrir">↗</a>
+                      {:else if entry.collector_type === 'rosetta_code'}
+                        <a href="https://rosettacode.org/wiki/Category:Programming_Tasks" target="_blank" rel="noopener noreferrer" class="source-ext" title="Rosetta Code">↗</a>
+                      {/if}
                     </label>
                   {/each}
                 </div>
@@ -2221,6 +2250,17 @@
     flex-shrink: 0; transition: color 150ms;
   }
   .source-ext:hover { color: var(--accent); }
+
+  .collector-badge {
+    display: inline-flex; align-items: center;
+    padding: 1px 6px; border-radius: 4px;
+    font-size: 10px; font-weight: 700; flex-shrink: 0;
+    letter-spacing: .04em; text-transform: uppercase;
+  }
+  .collector-badge--rosetta_code { background: rgba(34,197,94,.15); color: #22c55e; }
+  .collector-badge--crawl4ai     { background: rgba(91,152,248,.15); color: var(--accent); }
+  .collector-badge--manual       { background: rgba(251,146,60,.15); color: #fb923c; }
+  .collector-badge--github_repo  { background: rgba(168,85,247,.15); color: #a855f7; }
 
   .log-box {
     background: var(--bg, #0d1117); border: 1px solid var(--border);

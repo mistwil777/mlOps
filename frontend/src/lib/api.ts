@@ -132,7 +132,7 @@ export const advisorAnalyzePairs = (body: {
 }) => req<PairAnalysisResult>('/advisor/analyze-pairs', { method: 'POST', body: JSON.stringify(body) });
 
 // Data
-export const startCollect      = (body: { project_id: string; topic: string; max_pairs?: number; domain?: string; task_type?: string }) =>
+export const startCollect      = (body: { project_id: string; topic: string; max_pairs?: number; domain?: string; task_type?: string; collector_type?: string; source_value?: string }) =>
   req<CollectJob>('/data/collect', { method: 'POST', body: JSON.stringify(body) });
 export const getCollectStatus  = (jobId: string) => req<JobStatus>(`/data/collect/${jobId}/status`);
 export const getReview         = (projectId: string, page = 0, pageSize = 20, status?: string) =>

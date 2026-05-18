@@ -120,6 +120,14 @@ For each adapter score it:
 - cons: 1-2 short strings
 - team_note: one sentence
 
+For each adapter also include "source_configs": a list of typed data sources.
+Rules for collector_type:
+  - domain=code AND task_type contains "migration" or "translation" → use "rosetta_code" first
+  - web documentation, tutorials, articles, legal texts → use "crawl4ai"
+  - proprietary or internal data only → use "manual"
+For rosetta_code: set value to the Rosetta Code topic keyword (e.g. "sorting", "string manipulation", "file io")
+For crawl4ai: set value to the target URL
+
 Return ONLY a raw JSON object (no markdown, no prose, start immediately with {{):
 {{
   "adapters": [
@@ -129,6 +137,10 @@ Return ONLY a raw JSON object (no markdown, no prose, start immediately with {{)
       "description": "one sentence",
       "data_types": ["type1", "type2"],
       "data_sources": ["source1", "source2"],
+      "source_configs": [
+        {{"label": "Rosetta Code — Python/Java", "collector_type": "rosetta_code", "value": "sorting", "estimated_pairs": 200}},
+        {{"label": "Documentation officielle Python", "collector_type": "crawl4ai", "value": "https://docs.python.org/3/", "estimated_pairs": 100}}
+      ],
       "rag_recommended": true,
       "estimated_pairs": 800,
       "score": 16,
@@ -143,6 +155,7 @@ Return ONLY a raw JSON object (no markdown, no prose, start immediately with {{)
     "role": "orchestrator",
     "description": "one sentence",
     "data_types": ["routing examples"],
+    "source_configs": [],
     "estimated_pairs": 200,
     "score": 15,
     "team_score": 18,

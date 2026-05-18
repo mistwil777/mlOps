@@ -78,3 +78,11 @@ topics:
       - "python to java migration"
       - "java to python conversion"
       - "code migration refactoring examples"
+
+  python-to-java:
+    # Primary: Rosetta Code aligned pairs (handled by rosetta_collector.py, not crawl4ai)
+    quality_repos:
+      - https://github.com/javaparser/javaparser
+    github_search:
+      - "python to java migration examples site:github.com"
+      - "rosetta code python java translation"

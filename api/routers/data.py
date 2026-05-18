@@ -87,6 +87,8 @@ class CollectRequest(BaseModel):
     max_pairs: int = 50
     domain: Optional[str] = None
     task_type: Optional[str] = None
+    collector_type: str = "crawl4ai"   # "crawl4ai" | "rosetta_code"
+    source_value: Optional[str] = None # collector-specific param (e.g. rosetta topic)
 
 
 @router.post("/collect")
@@ -102,7 +104,10 @@ async def start_collect(req: CollectRequest) -> dict[str, str]:
     job_id = str(uuid.uuid4())[:8]
     _JOBS[job_id] = {"status": "running", "lines": [], "project_id": req.project_id}
 
-    asyncio.create_task(_run_collect(job_id, req.project_id, req.topic, req.max_pairs, config))
+    asyncio.create_task(_run_collect(
+        job_id, req.project_id, req.topic, req.max_pairs, config,
+        req.collector_type, req.source_value,
+    ))
     return {"job_id": job_id}
 
 
@@ -115,21 +120,32 @@ async def _run_collect(
     topic: str,
     max_pairs: int,
     config: dict[str, Any],
+    collector_type: str = "crawl4ai",
+    source_value: str | None = None,
 ) -> None:
-    domain    = config.get("domain", "code")
-    task_type = config.get("task_type", "generation")
-    output    = Path(f"datalake/projects/{project_id}/raw/pairs_raw.jsonl")
+    output = Path(f"datalake/projects/{project_id}/raw/pairs_raw.jsonl")
     output.parent.mkdir(parents=True, exist_ok=True)
 
-    cmd = [
-        sys.executable, "-m", "agents.web_collector",
-        "--project",   project_id,
-        "--topic",     topic,
-        "--domain",    domain,
-        "--task-type", task_type,
-        "--max-pages", str(max_pairs),
-        "--output",    str(output),
-    ]
+    if collector_type == "rosetta_code":
+        rosetta_topic = source_value or topic
+        cmd = [
+            sys.executable, "-m", "agents.rosetta_collector",
+            "--topic",     rosetta_topic,
+            "--max-tasks", str(max_pairs),
+            "--output",    str(output),
+        ]
+    else:
+        domain    = config.get("domain", "code")
+        task_type = config.get("task_type", "generation")
+        cmd = [
+            sys.executable, "-m", "agents.web_collector",
+            "--project",   project_id,
+            "--topic",     topic,
+            "--domain",    domain,
+            "--task-type", task_type,
+            "--max-pages", str(max_pairs),
+            "--output",    str(output),
+        ]
 
     try:
         proc = await asyncio.create_subprocess_exec(
