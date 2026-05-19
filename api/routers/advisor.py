@@ -571,7 +571,7 @@ def resolve_overlap(body: ResolveOverlapRequest) -> list[dict[str, Any]]:
     try:
         response = _client.messages.create(
             model=body.model,
-            max_tokens=2500,
+            max_tokens=4096,
             system=[{"type": "text", "text": _SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
             messages=[{"role": "user", "content": prompt}],
         )
@@ -581,7 +581,13 @@ def resolve_overlap(body: ResolveOverlapRequest) -> list[dict[str, Any]]:
 
     try:
         result = _parse_recommendation(raw)
-        return result if isinstance(result, list) else []
+        if isinstance(result, list):
+            return result
+        # model sometimes wraps in {"resolutions": [...]} or {"data": [...]}
+        for key in ("resolutions", "data", "items", "result"):
+            if key in result and isinstance(result[key], list):
+                return result[key]
+        return []
     except (json.JSONDecodeError, KeyError) as exc:
         raise HTTPException(422, f"Model returned invalid JSON: {exc}\nRaw: {raw[:500]}")
 

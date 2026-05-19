@@ -74,6 +74,30 @@
   let overlapError   = $state('');
   let overlapResolutions = $state<OverlapResolution[]>([]);
 
+  // Raffinement post-analyse
+  let refineInput   = $state('');
+  let refineLoading = $state(false);
+  let refineError   = $state('');
+
+  async function refineSelection() {
+    const q = refineInput.trim();
+    if (!q || refineLoading) return;
+    refineLoading = true; refineError = '';
+    // Build an augmented need: original need + refinement instruction
+    const augmentedNeed = `${need}\n\n[RAFFINEMENT DEMANDÉ]: ${q}\nSélection actuelle : ${wizardSelection.map(a => a.name).join(', ')}. Modifie uniquement ce qui est demandé, conserve le reste.`;
+    try {
+      const result = await advisorRecommend(augmentedNeed, aiModel, uploadedDocs.map(d => d.text));
+      adapters     = [...result.recommendation.adapters];
+      orchestrator = { ...result.recommendation.orchestrator };
+      refineInput  = '';
+      triggerEval();
+    } catch (e) {
+      refineError = e instanceof Error ? e.message : String(e);
+    } finally {
+      refineLoading = false;
+    }
+  }
+
   const wizardSelection = $derived([...adapters, ...(orchestrator ? [orchestrator] : [])]);
   const wizardTotalPairs = $derived(wizardSelection.reduce((s, a) => s + a.estimated_pairs, 0));
   const allSources = $derived(
@@ -434,8 +458,9 @@
     const a = wizardSelection.find(x => x.name === pair[0]);
     const b = wizardSelection.find(x => x.name === pair[1]);
     if (!a || !b) { overlapLoading = false; return; }
+    const slimSelection = wizardSelection.map(x => ({ name: x.name, role: x.role, description: x.description, estimated_pairs: x.estimated_pairs })) as AdvisorAdapter[];
     try {
-      const results = await advisorResolveOverlap(need, a, b, wizardSelection, aiModel);
+      const results = await advisorResolveOverlap(need, a, b, slimSelection, aiModel);
       overlapResolutions = Array.isArray(results) ? results : [];
     } catch (e) {
       overlapError = e instanceof Error ? e.message : String(e);
@@ -476,7 +501,7 @@
     if (!selEval?.overlaps?.length) return;
     altTarget = null; gapTarget = null; overlapTarget = null; sourcesAdapter = null;
     resolveAllLoading = true; resolveAllResults = [];
-    const snapshot = [...wizardSelection];
+    const snapshot = wizardSelection.map(x => ({ name: x.name, role: x.role, description: x.description, estimated_pairs: x.estimated_pairs })) as AdvisorAdapter[];
     try {
       const pairs = selEval.overlaps as [string, string][];
       const results = await Promise.all(
@@ -994,6 +1019,24 @@
         <button class="btn btn-primary btn-sm" onclick={() => step = 3}>✓ Créer le projet</button>
       </div>
     </div>
+
+    <!-- Barre de raffinement -->
+    {#if step2Tab === 'architecture'}
+    <div class="refine-bar mb-16">
+      <input
+        class="refine-input"
+        type="text"
+        placeholder="Demander une modification… ex: « ajoute un adapter pour la migration des enums » ou « fusionne les deux translators Spring »"
+        bind:value={refineInput}
+        disabled={refineLoading}
+        onkeydown={e => e.key === 'Enter' && refineSelection()}
+      />
+      <button class="btn btn-ghost btn-sm refine-btn" onclick={refineSelection} disabled={refineLoading || !refineInput.trim()}>
+        {#if refineLoading}<span class="spinner spinner-xs"></span> En cours…{:else}↺ Affiner{/if}
+      </button>
+    </div>
+    {#if refineError}<div class="api-error mb-8">{refineError}</div>{/if}
+    {/if}
 
     <!-- Onglet Architecture -->
     {#if step2Tab === 'architecture'}
@@ -1977,6 +2020,18 @@
   .mt-6 { margin-top:6px; }
   .mt-10 { margin-top:10px; }
 
+  .refine-bar {
+    display: flex; gap: 8px; align-items: center;
+  }
+  .refine-input {
+    flex: 1; background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 7px 12px; font-size: 12px;
+    color: var(--text); outline: none; transition: border-color 150ms;
+  }
+  .refine-input:focus { border-color: var(--accent); }
+  .refine-input::placeholder { color: var(--text-dim); }
+  .refine-input:disabled { opacity: .5; cursor: default; }
+  .refine-btn { white-space: nowrap; min-width: 90px; }
   .btn-reeval {
     font-size:10px; font-weight:600; padding:2px 8px;
     background: rgba(91,152,248,.1); border:1px solid rgba(91,152,248,.25);
