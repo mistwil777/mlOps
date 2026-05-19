@@ -363,7 +363,8 @@ async def _index_datalake_pairs(project_id: str, job_id: str | None = None, stag
         if job_id and job_id in _JOBS:
             _JOBS[job_id]["lines"].append(msg)
     except Exception as exc:
-        msg = f"[datalake-index] Warning: {exc}"
+        hint = " (Qdrant not running — start with: docker compose up qdrant -d)" if "Connection refused" in str(exc) else ""
+        msg = f"[datalake-index] Skipped — Qdrant unavailable{hint}"
         if job_id and job_id in _JOBS:
             _JOBS[job_id]["lines"].append(msg)
 

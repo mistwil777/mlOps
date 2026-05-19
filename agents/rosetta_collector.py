@@ -186,8 +186,13 @@ class RosettaCollector:
             for p in pairs:
                 p["adapter_name"] = adapter_name
         if pairs:
-            write_jsonl(output, pairs)
-            logger.info("Written %d pairs → %s", len(pairs), output)
+            # Append to existing file instead of overwriting
+            existing = []
+            if output.exists():
+                from pipeline.utils.jsonl import read_jsonl  # noqa: PLC0415
+                existing = read_jsonl(output)
+            write_jsonl(output, existing + pairs)
+            logger.info("Written %d pairs → %s (total: %d)", len(pairs), output, len(existing) + len(pairs))
         return len(pairs)
 
 

@@ -37,7 +37,12 @@ def _resolve_urls(domain: str, topic: str) -> list[tuple[str, str]]:
     Resolve ordered URL list for (domain, topic).
     Returns list of (url, source_tier) — tier = official_docs | official_repo |
     quality_repos | github_search.
+    If topic is a URL, use it directly without consulting the registry.
     """
+    # Direct URL — scrape it immediately, skip registry lookup
+    if topic.startswith(("http://", "https://")):
+        return [(topic, "direct_url")]
+
     registry = _load_source_registry(domain)
     topics: dict[str, Any] = registry.get("topics", {})
 
@@ -177,8 +182,13 @@ class WebCollector:
             for p in pairs:
                 p["adapter_name"] = adapter_name
         if pairs:
-            write_jsonl(output, pairs)
-            logger.info("Written %d pairs to %s", len(pairs), output)
+            # Append to existing file instead of overwriting
+            existing = []
+            if output.exists():
+                from pipeline.utils.jsonl import read_jsonl  # noqa: PLC0415
+                existing = read_jsonl(output)
+            write_jsonl(output, existing + pairs)
+            logger.info("Written %d pairs to %s (total: %d)", len(pairs), output, len(existing) + len(pairs))
         return len(pairs)
 
 
