@@ -502,8 +502,8 @@
         if (updated) orchestrator = mergeAdapter(orchestrator, updated) ?? orchestrator;
       }
     }
+    dismissOverlap([nameA, nameB].join('↔'));
     overlapTarget = null; overlapResolutions = [];
-    selEval = null; // clear stale overlaps — user re-evaluates manually
   }
 
   async function resolveAllOverlaps() {
@@ -567,8 +567,11 @@
     }
 
     adapters = newAdapters;
+    // dismiss all resolved overlaps so they disappear without clearing the score
+    for (const { pair } of resolveAllResults) {
+      dismissOverlap((pair as string[]).join('↔'));
+    }
     resolveAllResults = [];
-    selEval = null; // clear stale overlaps — user re-evaluates manually
   }
 
   let evalTimer: ReturnType<typeof setTimeout> | null = null;
