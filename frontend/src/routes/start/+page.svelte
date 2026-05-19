@@ -472,25 +472,24 @@
   function applyOverlapResolution(res: OverlapResolution) {
     if (!overlapTarget) return;
     const [nameA, nameB] = overlapTarget;
-    if (res.type === 'remove') {
-      // l'adapter survivant est dans res.adapters[0]
+    const origA = adapters.find(a => a.name === nameA);
+    const origB = adapters.find(a => a.name === nameB);
+
+    if (res.type === 'remove' || res.type === 'merge') {
       adapters = adapters.filter(a => a.name !== nameA && a.name !== nameB);
       if (orchestrator?.name === nameA || orchestrator?.name === nameB) orchestrator = null;
-      if (res.adapters[0]) adapters = [...adapters, res.adapters[0]];
-    } else if (res.type === 'merge') {
-      adapters = adapters.filter(a => a.name !== nameA && a.name !== nameB);
-      if (orchestrator?.name === nameA || orchestrator?.name === nameB) orchestrator = null;
-      if (res.adapters[0]) adapters = [...adapters, res.adapters[0]];
+      const merged = mergeAdapter(origA ?? origB, res.adapters?.[0]);
+      if (merged) adapters = [...adapters, merged];
     } else {
-      // clarify: replace both adapters — fallback by position since Claude may rename
+      // clarify: update both in-place by position, preserving original fields
       adapters = adapters.map(a => {
-        if (a.name === nameA) return res.adapters[0] ?? a;
-        if (a.name === nameB) return res.adapters[1] ?? res.adapters[0] ?? a;
+        if (a.name === nameA) return mergeAdapter(a, res.adapters?.[0]) ?? a;
+        if (a.name === nameB) return mergeAdapter(a, res.adapters?.[1] ?? res.adapters?.[0]) ?? a;
         return a;
       });
       if (orchestrator) {
-        const updated = res.adapters.find(r => r.name === orchestrator!.name);
-        if (updated) orchestrator = updated;
+        const updated = res.adapters?.find(r => r.name === orchestrator!.name);
+        if (updated) orchestrator = mergeAdapter(orchestrator, updated) ?? orchestrator;
       }
     }
     overlapTarget = null; overlapResolutions = [];
@@ -523,27 +522,41 @@
     } finally { resolveAllLoading = false; }
   }
 
+  // Merge a slim backend adapter with the original full adapter to preserve all fields
+  function mergeAdapter(original: AdvisorAdapter | undefined, updated: AdvisorAdapter | undefined): AdvisorAdapter | undefined {
+    if (!updated) return original;
+    return { ...(original ?? {}), ...updated } as AdvisorAdapter;
+  }
+
   function applyAllOverlapResolutions() {
-    // applique séquentiellement — chaque résolution travaille sur l'état courant
+    if (!resolveAllResults.length) return;
+    let newAdapters = [...adapters];
+
     for (const { pair, resolution } of resolveAllResults) {
       const [nameA, nameB] = pair;
+      const origA = newAdapters.find(a => a.name === nameA);
+      const origB = newAdapters.find(a => a.name === nameB);
+
       if (resolution.type === 'remove' || resolution.type === 'merge') {
-        adapters = adapters.filter(a => a.name !== nameA && a.name !== nameB);
+        newAdapters = newAdapters.filter(a => a.name !== nameA && a.name !== nameB);
         if (orchestrator?.name === nameA || orchestrator?.name === nameB) orchestrator = null;
-        if (resolution.adapters[0]) adapters = [...adapters, resolution.adapters[0]];
+        const merged = mergeAdapter(origA ?? origB, resolution.adapters?.[0]);
+        if (merged) newAdapters = [...newAdapters, merged];
       } else {
-        // clarify: fallback by position
-        adapters = adapters.map(a => {
-          if (a.name === nameA) return resolution.adapters[0] ?? a;
-          if (a.name === nameB) return resolution.adapters[1] ?? resolution.adapters[0] ?? a;
+        // clarify: update both adapters in-place by position
+        newAdapters = newAdapters.map(a => {
+          if (a.name === nameA) return mergeAdapter(a, resolution.adapters?.[0]) ?? a;
+          if (a.name === nameB) return mergeAdapter(a, resolution.adapters?.[1] ?? resolution.adapters?.[0]) ?? a;
           return a;
         });
         if (orchestrator) {
-          const updated = resolution.adapters.find(r => r.name === orchestrator!.name);
-          if (updated) orchestrator = updated;
+          const updated = resolution.adapters?.find(r => r.name === orchestrator!.name);
+          if (updated) orchestrator = mergeAdapter(orchestrator, updated) ?? orchestrator;
         }
       }
     }
+
+    adapters = newAdapters;
     resolveAllResults = [];
     triggerEval();
   }
