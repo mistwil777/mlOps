@@ -656,7 +656,8 @@ async def get_lineage(project_id: str, limit: int = 100) -> list[dict[str, Any]]
 class SearchPairsRequest(BaseModel):
     query: str
     project_id: Optional[str] = None
-    stage: Optional[str] = None   # "raw" | "fine-tuning-ready"
+    stage: Optional[str] = None         # "raw" | "fine-tuning-ready"
+    adapter_name: Optional[str] = None  # filter by adapter
     k: int = 20
     page: int = 0
 
@@ -673,6 +674,7 @@ async def search_pairs(body: SearchPairsRequest) -> dict[str, Any]:
                 body.query,
                 project_id=body.project_id or None,
                 stage=body.stage or None,
+                adapter_name=body.adapter_name or None,
                 k=body.k,
             ),
         )
@@ -687,6 +689,35 @@ async def search_pairs(body: SearchPairsRequest) -> dict[str, Any]:
         "page": body.page,
         "page_size": body.k,
         "items": page_items,
+    }
+
+
+@router.get("/browse/{project_id}")
+async def browse_pairs(
+    project_id: str,
+    stage: str = "raw",
+    adapter_name: Optional[str] = None,
+    page: int = 0,
+    page_size: int = 20,
+) -> dict[str, Any]:
+    """Browse raw JSONL pairs directly — no Qdrant needed. Supports adapter_name filter."""
+    _load_project_config(project_id)
+    raw_path = _pair_path(project_id, stage)
+    records = _list_jsonl(raw_path)
+
+    if adapter_name:
+        records = [r for r in records if r.get("adapter_name") == adapter_name]
+
+    total = len(records)
+    sliced = records[page * page_size: (page + 1) * page_size]
+
+    return {
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "adapter_name": adapter_name,
+        "stage": stage,
+        "items": sliced,
     }
 
 

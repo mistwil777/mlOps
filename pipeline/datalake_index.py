@@ -59,10 +59,11 @@ class DatalakeIndex:
             vectors_config=VectorParams(size=_EMBED_DIM, distance=Distance.COSINE),
         )
         for field, schema in (
-            ("prompt",     PayloadSchemaType.TEXT),
-            ("completion", PayloadSchemaType.TEXT),
-            ("project_id", PayloadSchemaType.KEYWORD),
-            ("stage",      PayloadSchemaType.KEYWORD),
+            ("prompt",       PayloadSchemaType.TEXT),
+            ("completion",   PayloadSchemaType.TEXT),
+            ("project_id",   PayloadSchemaType.KEYWORD),
+            ("stage",        PayloadSchemaType.KEYWORD),
+            ("adapter_name", PayloadSchemaType.KEYWORD),
         ):
             self._client.create_payload_index(
                 collection_name=_COLLECTION,
@@ -145,6 +146,7 @@ class DatalakeIndex:
                         "quality_score": pair.get("quality_score"),
                         "collected_at":  pair.get("collected_at"),
                         "source_url":    pair.get("source_url"),
+                        "adapter_name":  pair.get("adapter_name"),
                         "pair_hash":     ph,
                     },
                 )
@@ -158,11 +160,12 @@ class DatalakeIndex:
         *,
         project_id: str | None = None,
         stage: str | None = None,
+        adapter_name: str | None = None,
         k: int = 20,
     ) -> list[dict[str, Any]]:
         """
         Hybrid semantic + fulltext search over datalake_pairs.
-        Optional filters on project_id and/or stage.
+        Optional filters on project_id, stage, and/or adapter_name.
         Returns list of payload dicts.
         """
         must: list[FieldCondition] = []
@@ -170,6 +173,8 @@ class DatalakeIndex:
             must.append(FieldCondition(key="project_id", match=MatchValue(value=project_id)))
         if stage:
             must.append(FieldCondition(key="stage", match=MatchValue(value=stage)))
+        if adapter_name:
+            must.append(FieldCondition(key="adapter_name", match=MatchValue(value=adapter_name)))
 
         qfilter: Filter | None = Filter(must=must) if must else None
         vec = _embed([query])[0]

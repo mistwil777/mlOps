@@ -186,13 +186,17 @@ class RosettaCollector:
             for p in pairs:
                 p["adapter_name"] = adapter_name
         if pairs:
-            # Append to existing file instead of overwriting
             existing = []
             if output.exists():
                 from pipeline.utils.jsonl import read_jsonl  # noqa: PLC0415
                 existing = read_jsonl(output)
-            write_jsonl(output, existing + pairs)
-            logger.info("Written %d pairs → %s (total: %d)", len(pairs), output, len(existing) + len(pairs))
+            seen = {(r.get("prompt", ""), r.get("completion", "")) for r in existing}
+            new_unique = [p for p in pairs if (p.get("prompt", ""), p.get("completion", "")) not in seen]
+            dupes = len(pairs) - len(new_unique)
+            if dupes:
+                logger.info("Deduplicated %d pairs already in file", dupes)
+            write_jsonl(output, existing + new_unique)
+            logger.info("Written %d pairs → %s (total: %d)", len(new_unique), output, len(existing) + len(new_unique))
         return len(pairs)
 
 

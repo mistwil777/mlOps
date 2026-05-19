@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { getProjects, searchDatalakePairs, indexProjectPairs } from '$lib/api';
+  import { getProjects, searchDatalakePairs, indexProjectPairs, browsePairs } from '$lib/api';
   import type { DatalakePair } from '$lib/api';
   import type { Project } from '$lib/types';
 
@@ -9,7 +9,8 @@
   let projects: Project[] = $state([]);
   let query          = $state('');
   let filterProject  = $state('');
-  let filterStage    = $state('');
+  let filterStage    = $state('raw');
+  let filterAdapter  = $state('');
   let page           = $state(0);
   let items: DatalakePair[] = $state([]);
   let total          = $state(0);
@@ -22,30 +23,66 @@
   // Modal
   let modalPair: DatalakePair | null = $state(null);
 
+  // Adapters available for selected project
+  const selectedProjectObj = $derived(projects.find(p => p.id === filterProject) ?? null);
+  const adapterOptions = $derived(selectedProjectObj?.adapters?.map(a => a.name) ?? []);
+
   onMount(async () => {
     projects = await getProjects().catch(() => []);
+    if (projects.length > 0) {
+      filterProject = projects[0].id;
+      await doBrowse(); // auto-load raw on mount
+    }
   });
 
   function triggerSearch() {
     if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => { page = 0; doSearch(); }, 400);
+    debounceTimer = setTimeout(() => { page = 0; query.trim() ? doSearch() : doBrowse(); }, 400);
   }
 
+  function triggerFilter() {
+    page = 0;
+    query.trim() ? doSearch() : doBrowse();
+  }
+
+  // Browse mode: direct JSONL read, no Qdrant needed
+  async function doBrowse() {
+    if (!filterProject) return;
+    loading = true; error = '';
+    try {
+      const res = await browsePairs(filterProject, filterStage || 'raw', filterAdapter || undefined, page, PAGE_SIZE);
+      items = res.items as DatalakePair[];
+      total = res.total;
+    } catch (e) {
+      error = (e as Error).message;
+    } finally {
+      loading = false;
+    }
+  }
+
+  // Semantic search mode: requires Qdrant
   async function doSearch() {
-    if (!query.trim()) { items = []; total = 0; return; }
+    if (!query.trim()) { return doBrowse(); }
     loading = true; error = '';
     try {
       const res = await searchDatalakePairs({
         query: query.trim(),
         project_id: filterProject || undefined,
         stage: filterStage || undefined,
+        adapter_name: filterAdapter || undefined,
         k: PAGE_SIZE,
         page,
       });
       items = res.items;
       total = res.total;
     } catch (e) {
-      error = (e as Error).message;
+      // Qdrant down — fall back to browse
+      if ((e as Error).message.includes('503')) {
+        error = 'Qdrant non disponible — affichage en mode parcours (sans recherche sémantique).';
+        await doBrowse();
+      } else {
+        error = (e as Error).message;
+      }
     } finally {
       loading = false;
     }
@@ -66,8 +103,8 @@
 
   const totalPages = $derived(Math.max(1, Math.ceil(total / PAGE_SIZE)));
 
-  function prevPage() { if (page > 0) { page--; doSearch(); } }
-  function nextPage() { if (page < totalPages - 1) { page++; doSearch(); } }
+  function prevPage() { if (page > 0) { page--; query.trim() ? doSearch() : doBrowse(); } }
+  function nextPage() { if (page < totalPages - 1) { page++; query.trim() ? doSearch() : doBrowse(); } }
 
   function formatDate(iso: string | undefined): string {
     if (!iso) return '';
@@ -122,7 +159,7 @@
 
         <div class="form-field mb-10">
           <label class="field-label" for="fp">Projet</label>
-          <select id="fp" class="input" bind:value={filterProject} onchange={() => { page = 0; doSearch(); }}>
+          <select id="fp" class="input" bind:value={filterProject} onchange={() => { filterAdapter = ''; triggerFilter(); }}>
             <option value="">Tous les projets</option>
             {#each projects as p}
               <option value={p.id}>{p.name ?? p.id}</option>
@@ -130,12 +167,22 @@
           </select>
         </div>
 
+        <div class="form-field mb-10">
+          <label class="field-label" for="fa">Adapter</label>
+          <select id="fa" class="input" bind:value={filterAdapter} onchange={triggerFilter}>
+            <option value="">Tous les adapters</option>
+            {#each adapterOptions as a}
+              <option value={a}>{a}</option>
+            {/each}
+          </select>
+        </div>
+
         <div class="form-field mb-12">
           <label class="field-label" for="fs">Stage</label>
-          <select id="fs" class="input" bind:value={filterStage} onchange={() => { page = 0; doSearch(); }}>
-            <option value="">Tous les stages</option>
-            <option value="fine-tuning-ready">fine-tuning-ready</option>
+          <select id="fs" class="input" bind:value={filterStage} onchange={triggerFilter}>
             <option value="raw">raw</option>
+            <option value="fine-tuning-ready">fine-tuning-ready</option>
+            <option value="">Tous les stages</option>
           </select>
         </div>
 
@@ -144,9 +191,9 @@
           style="width:100%"
           disabled={indexing || !filterProject}
           onclick={reindex}
-          title="Ré-indexer les paires du projet sélectionné dans Qdrant"
+          title="Ré-indexer les paires dans Qdrant (requis pour la recherche sémantique)"
         >
-          {#if indexing}<span class="spinner spinner-xs"></span> Indexation…{:else}↻ Ré-indexer{/if}
+          {#if indexing}<span class="spinner spinner-xs"></span> Indexation…{:else}↻ Ré-indexer (Qdrant){/if}
         </button>
         {#if indexMsg}
           <div class="hint mt-6" style="color:var(--text-muted)">{indexMsg}</div>
@@ -157,7 +204,8 @@
         <div class="card">
           <div class="card-title mb-8">Résultats</div>
           <div class="stat-big">{total}</div>
-          <div class="hint">paires correspondantes</div>
+          <div class="hint">{query.trim() ? 'paires correspondantes' : 'paires dans le datalake'}</div>
+          {#if filterAdapter}<div class="hint mt-2">adapter : {filterAdapter}</div>{/if}
           {#if page > 0 || total > PAGE_SIZE}
             <div class="hint mt-4">Page {page + 1} / {totalPages}</div>
           {/if}
@@ -167,17 +215,7 @@
 
     <!-- Col droite : résultats -->
     <div class="search-right">
-      {#if !query.trim()}
-        <div class="search-placeholder">
-          <div class="sp-icon">⌕</div>
-          <div class="sp-title">Recherche sémantique dans le datalake</div>
-          <div class="sp-sub">
-            Tapez une requête en langage naturel pour trouver des paires d'entraînement pertinentes
-            dans tous les projets. Utilise un index vectoriel hybride (sémantique + mots-clés).
-          </div>
-        </div>
-
-      {:else if loading}
+      {#if loading}
         <div class="search-loading">
           <span class="spinner"></span>
           <span class="text-muted" style="font-size:13px">Recherche en cours…</span>
@@ -189,8 +227,8 @@
       {:else if items.length === 0}
         <div class="search-placeholder">
           <div class="sp-icon">◎</div>
-          <div class="sp-title">Aucun résultat</div>
-          <div class="sp-sub">Aucune paire ne correspond à cette requête. Essayez d'autres termes ou lancez une collecte.</div>
+          <div class="sp-title">Aucune paire{filterAdapter ? ` pour l'adapter « ${filterAdapter} »` : ''}</div>
+          <div class="sp-sub">Lancez une collecte pour alimenter ce projet.</div>
         </div>
 
       {:else}
@@ -200,7 +238,9 @@
               <!-- L1 : header — badges + actions -->
               <div class="rc-header">
                 <div class="rc-badges">
-                  <span class="badge badge-project">{pair.project_id}</span>
+                  {#if pair.adapter_name}
+                    <span class="badge badge-adapter">{pair.adapter_name}</span>
+                  {/if}
                   <span class="badge badge-stage">{pair.stage}</span>
                   {#if pair.quality_score != null}
                     <span class="badge" style="background:rgba(0,0,0,.1); color:{scoreColor(pair.quality_score)}">
@@ -352,6 +392,7 @@
   }
   .badge-project { background: var(--accent-dim); color: var(--accent); }
   .badge-stage   { background: var(--surface-3, var(--border)); color: var(--text-dim); }
+  .badge-adapter { background: rgba(168,85,247,.15); color: #a855f7; }
 
   .rc-cols {
     display: grid; grid-template-columns: 1fr 1fr; gap: 10px;

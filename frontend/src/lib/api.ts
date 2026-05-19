@@ -146,6 +146,8 @@ export const startPipeline     = (body: { project_id: string; threshold?: number
 export const getPipelineStatus = (jobId: string) => req<JobStatus>(`/data/pipeline/${jobId}/status`);
 export const getDataHealth     = (projectId: string) => req<DataHealth>(`/data/health/${projectId}`);
 export const getLineage        = (projectId: string, limit = 100) => req<Record<string, unknown>[]>(`/data/lineage/${projectId}?limit=${limit}`);
+export const browsePairs       = (projectId: string, stage = 'raw', adapterName?: string, page = 0, pageSize = 20) =>
+  req<{ total: number; page: number; page_size: number; items: DatalakePair[] }>(`/data/browse/${projectId}?stage=${stage}&page=${page}&page_size=${pageSize}${adapterName ? `&adapter_name=${encodeURIComponent(adapterName)}` : ''}`);
 
 export interface DatalakePair {
   project_id: string;
@@ -155,6 +157,7 @@ export interface DatalakePair {
   quality_score?: number;
   collected_at?: string;
   source_url?: string;
+  adapter_name?: string;
   pair_hash: string;
 }
 
