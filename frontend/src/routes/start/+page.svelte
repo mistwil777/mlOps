@@ -32,8 +32,16 @@
   // Étape 2 — adapters éditables + éval équipe + panel contextuel
   let adapters     = $state<AdvisorAdapter[]>([]);
   let orchestrator = $state<AdvisorAdapter | null>(null);
-  let selEval      = $state<SelectionEval | null>(null);
-  let evalLoading  = $state(false);
+  let selEval          = $state<SelectionEval | null>(null);
+  let evalLoading      = $state(false);
+  let dismissedGaps    = $state<Set<string>>(new Set());
+  let dismissedOverlaps = $state<Set<string>>(new Set());
+
+  function dismissGap(g: string) { dismissedGaps = new Set([...dismissedGaps, g]); }
+  function dismissOverlap(key: string) { dismissedOverlaps = new Set([...dismissedOverlaps, key]); }
+
+  const visibleGaps     = $derived((selEval?.gaps ?? []).filter(g => !dismissedGaps.has(g)));
+  const visibleOverlaps = $derived((selEval?.overlaps ?? [] as string[][]).filter(p => !dismissedOverlaps.has((p as string[]).join('↔'))));
 
   // Cross-project reuse detection
   let crossMatches = $state<Record<string, CrossProjectMatch>>({});
@@ -340,6 +348,8 @@
   async function runWizardEval() {
     if (wizardSelection.length === 0) return;
     evalLoading = true;
+    dismissedGaps = new Set();
+    dismissedOverlaps = new Set();
     try {
       selEval = await advisorEvaluateSelection(need, wizardSelection, aiModel);
     } catch { /* non-blocking */ }
@@ -427,14 +437,14 @@
   let resolveAllResults = $state<ResolveAllEntry[]>([]);
 
   async function fillAllGaps() {
-    if (!selEval?.gaps.length) return;
+    if (!visibleGaps.length) return;
     altTarget = null; overlapTarget = null; sourcesAdapter = null;
     gapTarget = null; gapResult = null;
     fillAllLoading = true; fillAllResults = [];
-    const snapshot = [...wizardSelection]; // sélection figée au moment du lancement
+    const snapshot = [...wizardSelection];
     try {
       const results = await Promise.all(
-        selEval.gaps.map(g => advisorFillGap(need, g, snapshot, aiModel).catch(() => null))
+        visibleGaps.map(g => advisorFillGap(need, g, snapshot, aiModel).catch(() => null)))
       );
       fillAllResults = results.filter((r): r is AdvisorAdapter => r !== null);
     } finally { fillAllLoading = false; }
@@ -502,7 +512,7 @@
     resolveAllLoading = true; resolveAllResults = [];
     const snapshot = wizardSelection.map(x => ({ name: x.name, role: x.role, description: x.description, estimated_pairs: x.estimated_pairs })) as AdvisorAdapter[];
     try {
-      const pairs = selEval.overlaps as [string, string][];
+      const pairs = visibleOverlaps as [string, string][];
       const results = await Promise.all(
         pairs.map(async pair => {
           const a = snapshot.find(x => x.name === pair[0]);
@@ -1103,10 +1113,10 @@
                 </div>
               {/each}
             </div>
-            {#if selEval.gaps.length}
+            {#if visibleGaps.length}
               <div class="eval-section mt-12">
                 <div class="eval-section-header">
-                  <span class="meta-label">Lacunes ({selEval.gaps.length})</span>
+                  <span class="meta-label">Lacunes ({visibleGaps.length})</span>
                   <button
                     class="tag-fill-all"
                     disabled={fillAllLoading}
@@ -1118,17 +1128,20 @@
                   </button>
                 </div>
                 <div class="action-tags mt-6">
-                  {#each selEval.gaps as g}
-                    <button
-                      class="tag tag-warn tag-action"
-                      class:tag-active={gapTarget === g}
-                      disabled={fillAllLoading}
-                      onclick={() => openFillGap(g)}
-                      title="Générer un adapter pour cette lacune"
-                    >
-                      {#if gapLoading && gapTarget === g}<span class="spinner spinner-xs"></span>{:else}+{/if}
-                      {g}
-                    </button>
+                  {#each visibleGaps as g}
+                    <div class="gap-row">
+                      <button
+                        class="tag tag-warn tag-action"
+                        class:tag-active={gapTarget === g}
+                        disabled={fillAllLoading}
+                        onclick={() => openFillGap(g)}
+                        title="Générer un adapter pour cette lacune"
+                      >
+                        {#if gapLoading && gapTarget === g}<span class="spinner spinner-xs"></span>{:else}+{/if}
+                        {g}
+                      </button>
+                      <button class="dismiss-btn" onclick={() => dismissGap(g)} title="Ignorer cette lacune">✕</button>
+                    </div>
                   {/each}
                 </div>
                 {#if fillAllResults.length > 0}
@@ -1149,10 +1162,10 @@
                 {/if}
               </div>
             {/if}
-            {#if selEval.overlaps?.length}
+            {#if visibleOverlaps.length}
               <div class="eval-section mt-10">
                 <div class="eval-section-header">
-                  <span class="meta-label">Chevauchements ({selEval.overlaps.length})</span>
+                  <span class="meta-label">Chevauchements ({visibleOverlaps.length})</span>
                   <button
                     class="tag-fill-all tag-fill-all-danger"
                     disabled={resolveAllLoading}
@@ -1164,18 +1177,22 @@
                   </button>
                 </div>
                 <div class="action-tags mt-6">
-                  {#each selEval.overlaps as pair}
+                  {#each visibleOverlaps as pair}
                     {@const pairKey = pair as [string, string]}
-                    <button
-                      class="tag tag-danger tag-action"
-                      class:tag-active={overlapTarget?.[0] === pairKey[0] && overlapTarget?.[1] === pairKey[1]}
-                      disabled={resolveAllLoading}
-                      onclick={() => openResolveOverlap(pairKey)}
-                      title="Choisir manuellement la résolution"
-                    >
-                      {#if overlapLoading && overlapTarget?.[0] === pairKey[0]}<span class="spinner spinner-xs"></span>{:else}⚡{/if}
-                      {pairKey.join(' ↔ ')}
-                    </button>
+                    {@const overlapKey = pairKey.join('↔')}
+                    <div class="gap-row">
+                      <button
+                        class="tag tag-danger tag-action"
+                        class:tag-active={overlapTarget?.[0] === pairKey[0] && overlapTarget?.[1] === pairKey[1]}
+                        disabled={resolveAllLoading}
+                        onclick={() => openResolveOverlap(pairKey)}
+                        title="Choisir manuellement la résolution"
+                      >
+                        {#if overlapLoading && overlapTarget?.[0] === pairKey[0]}<span class="spinner spinner-xs"></span>{:else}⚡{/if}
+                        {pairKey.join(' ↔ ')}
+                      </button>
+                      <button class="dismiss-btn" onclick={() => dismissOverlap(overlapKey)} title="Ignorer ce chevauchement">✕</button>
+                    </div>
                   {/each}
                 </div>
                 {#if resolveAllResults.length > 0}
@@ -2045,6 +2062,15 @@
   .refine-input::placeholder { color: var(--text-dim); }
   .refine-input:disabled { opacity: .5; cursor: default; }
   .refine-btn { white-space: nowrap; min-width: 90px; }
+  .gap-row { display: flex; align-items: center; gap: 4px; }
+  .dismiss-btn {
+    flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%;
+    background: transparent; border: none; cursor: pointer;
+    color: var(--text-dim); font-size: 10px; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 120ms, color 120ms;
+  }
+  .dismiss-btn:hover { background: var(--surface-3); color: var(--text); }
   .btn-reeval {
     font-size:10px; font-weight:600; padding:2px 8px;
     background: rgba(91,152,248,.1); border:1px solid rgba(91,152,248,.25);

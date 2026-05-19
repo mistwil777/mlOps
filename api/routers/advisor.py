@@ -340,10 +340,20 @@ Score the selection on these axes (0-20 each):
 - balance: is the workload distribution balanced (estimated_pairs)?
 - orchestrability: can a single orchestrator route between them effectively?
 
+STRICT RULES for gaps and overlaps — read carefully:
+
+gaps: List ONLY sub-domains that are completely absent AND critical for the client need.
+Do NOT report gaps for: edge cases, rare scenarios, future extensions, or anything the \
+orchestrator can handle. Maximum 3 gaps. If the selection is reasonably complete, return [].
+
+overlaps: Report ONLY pairs where an orchestrator CANNOT distinguish which adapter to call \
+because their input/output contracts are IDENTICAL in practice — not just semantically related.
+Two adapters that share a domain but have clearly different scopes (e.g. one handles source \
+files, the other handles test files) are NOT overlapping. Maximum 2 overlaps. \
+If routing is unambiguous, return [].
+
 Also provide:
 - overall: weighted average (coverage*0.4 + cohesion*0.3 + balance*0.15 + orchestrability*0.15)
-- gaps: list of sub-domains NOT covered that would be important
-- overlaps: list of adapter pairs that risk overlapping
 - recommendation: one sentence on what to change to improve the team
 
 Respond with JSON matching exactly:
@@ -353,8 +363,8 @@ Respond with JSON matching exactly:
   "balance": 12,
   "orchestrability": 18,
   "overall": 15.0,
-  "gaps": ["gap 1"],
-  "overlaps": [["adapter-a", "adapter-b"]],
+  "gaps": [],
+  "overlaps": [],
   "recommendation": "one sentence"
 }}
 All text fields (gaps, recommendation) MUST be in French.
