@@ -451,10 +451,11 @@
       if (orchestrator?.name === nameA || orchestrator?.name === nameB) orchestrator = null;
       if (res.adapters[0]) adapters = [...adapters, res.adapters[0]];
     } else {
-      // clarify: on remplace les deux avec les descriptions mises à jour
+      // clarify: replace both adapters — fallback by position since Claude may rename
       adapters = adapters.map(a => {
-        const updated = res.adapters.find(r => r.name === a.name);
-        return updated ?? a;
+        if (a.name === nameA) return res.adapters[0] ?? a;
+        if (a.name === nameB) return res.adapters[1] ?? res.adapters[0] ?? a;
+        return a;
       });
       if (orchestrator) {
         const updated = res.adapters.find(r => r.name === orchestrator!.name);
@@ -499,9 +500,11 @@
         if (orchestrator?.name === nameA || orchestrator?.name === nameB) orchestrator = null;
         if (resolution.adapters[0]) adapters = [...adapters, resolution.adapters[0]];
       } else {
+        // clarify: fallback by position
         adapters = adapters.map(a => {
-          const updated = resolution.adapters.find(r => r.name === a.name);
-          return updated ?? a;
+          if (a.name === nameA) return resolution.adapters[0] ?? a;
+          if (a.name === nameB) return resolution.adapters[1] ?? resolution.adapters[0] ?? a;
+          return a;
         });
         if (orchestrator) {
           const updated = resolution.adapters.find(r => r.name === orchestrator!.name);

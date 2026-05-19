@@ -463,17 +463,22 @@ Propose exactly 3 concrete resolutions. Each resolution is one of:
 
 For each resolution, provide updated adapter definitions (for "remove", only one).
 
-Respond ONLY with a JSON array (no markdown):
+Rules for the "adapters" field:
+- "clarify": provide BOTH updated adapters with clarified boundaries (2 items)
+- "merge": provide exactly ONE new merged adapter (1 item)
+- "remove": provide exactly ONE surviving adapter (1 item), use the name of the one kept
+
+Respond ONLY with a JSON array of exactly 3 objects (no markdown, start with [):
 [
   {{
-    "type": "clarify" | "merge" | "remove",
-    "label": "short action label (French)",
-    "explanation": "one sentence in French explaining why this resolves the overlap",
+    "type": "clarify",
+    "label": "libellé court en français",
+    "explanation": "une phrase en français",
     "adapters": [
       {{
         "name": "kebab-case-name",
         "role": "specialist",
-        "description": "updated description",
+        "description": "description clarifiée",
         "data_types": ["type1"],
         "data_sources": ["source1"],
         "rag_recommended": false,
@@ -485,6 +490,18 @@ Respond ONLY with a JSON array (no markdown):
         "team_note": "une phrase"
       }}
     ]
+  }},
+  {{
+    "type": "merge",
+    "label": "libellé court en français",
+    "explanation": "une phrase en français",
+    "adapters": [{{ ... }}]
+  }},
+  {{
+    "type": "remove",
+    "label": "libellé court en français",
+    "explanation": "une phrase en français",
+    "adapters": [{{ ... }}]
   }}
 ]
 All text fields MUST be in French. Output ONLY valid JSON.
