@@ -211,6 +211,7 @@ export interface AdvisorRecommendation {
     orchestrator: AdvisorAdapter;
     rag_global: boolean;
     notes: string;
+    software_components?: string[];
   };
 }
 

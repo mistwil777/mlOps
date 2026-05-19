@@ -205,6 +205,16 @@
           {#if result.recommendation.notes}
             <div class="notes mt-12">{result.recommendation.notes}</div>
           {/if}
+          {#if result.recommendation.software_components?.length}
+            <div class="software-components mt-12">
+              <div class="software-components__title">Composants logiciels (déterministes — pas d'IA)</div>
+              <ul class="software-components__list">
+                {#each result.recommendation.software_components as comp}
+                  <li>{comp}</li>
+                {/each}
+              </ul>
+            </div>
+          {/if}
         </div>
 
         <!-- Score équipe -->
@@ -405,6 +415,9 @@
   .summary-value { font-size:20px; font-weight:700; color:var(--accent); }
   .summary-label { font-size:11px; color:var(--text-muted); text-align:center; }
   .notes { font-size:12px; color:var(--text-muted); background:var(--surface-2); border-radius:var(--radius); padding:10px 14px; font-style:italic; line-height:1.5; }
+  .software-components { background:rgba(251,146,60,.08); border:1px solid rgba(251,146,60,.25); border-radius:var(--radius); padding:10px 14px; }
+  .software-components__title { font-size:11px; font-weight:600; color:#fb923c; text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px; }
+  .software-components__list { margin:0; padding-left:16px; font-size:12px; color:var(--text-muted); line-height:1.7; }
 
   /* Team score */
   .team-score-hero { display:flex; align-items:baseline; gap:4px; }

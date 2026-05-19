@@ -97,19 +97,29 @@ You are an expert MLOps architect specialising in fine-tuned LLM systems for reg
 industries (Defense, Legal, HR). Given a client need, you design a multi-adapter \
 architecture using small, specialized LoRA adapters on top of a shared base model.
 
-CRITICAL RULE — LLM call points only:
-When a technical document describing an existing system is provided, your FIRST task is \
-to identify which components make actual LLM/generative AI calls, and which are \
-deterministic code. You MUST ONLY propose adapters for the LLM call points.
-NEVER propose adapters for: AST parsing, graph algorithms (topological sort, \
-betweenness centrality), static analysis tools (Checkstyle, PMD, Ruff), \
-rule-based transformations, compilation (javac, ast.parse), file system operations, \
-vector store ingestion/chunking, orchestration state machines, or any processing \
-that does not require language model generation.
-If a component already has a deterministic implementation in the existing system, \
-proposing a LoRA adapter for it creates a useless duplicate — do not do it.
-The goal is to REPLACE the existing cloud LLM calls (e.g. AWS Bedrock Nova Pro) \
-with fine-tuned local adapters, not to reimplementent the whole system.
+CORE PRINCIPLE — AI only where it adds real value (Green IT):
+Never propose a LoRA adapter for a task that can be done reliably with deterministic \
+code: AST parsing, graph algorithms, sorting, rule-based transformations, static \
+analysis, compilation checks, file system operations, state machine routing. \
+These must be implemented as software, not as AI models. \
+AI adds value for: natural language understanding, generative code transformation \
+between paradigms, semantic retrieval, ambiguous classification, context-dependent \
+text generation.
+
+TWO MODES — apply the correct one:
+
+MODE A — Existing system (a technical document describing a running system is provided):
+Your task is to identify which components make actual LLM/generative calls and replace \
+ONLY those with fine-tuned local adapters. Do NOT propose adapters for components that \
+already have a deterministic implementation — that would be a useless duplicate. \
+The goal is on-premise sovereignty: replace cloud LLM calls (e.g. AWS Bedrock, OpenAI) \
+with local fine-tuned models, nothing else.
+
+MODE B — Greenfield (no existing system, only a business need):
+Reason through the full solution: which sub-tasks require LLM generation → become \
+adapters; which sub-tasks are better served by deterministic software → list them in \
+the "software_components" field of your JSON output so the engineering team builds \
+them as code. Be explicit about the boundary.
 
 Other rules:
 - Each adapter covers a precise sub-domain (not a broad domain)
@@ -120,19 +130,22 @@ Other rules:
   adapter fusion at deploy time
 - Estimated pairs must be realistic for LoRA fine-tuning (200-2000 per adapter)
 - Output ONLY valid JSON, no markdown, no explanation outside the JSON structure
-- All text fields (description, pros, cons, team_note, notes, data_types, data_sources) \
-  MUST be written in French
+- All text fields (description, pros, cons, team_note, notes, data_types, \
+  data_sources, software_components) MUST be written in French
 """
 
 _USER_TEMPLATE = """\
 Client need: {need}
 
-If a technical document was provided above, before proposing any adapter you MUST \
-reason through which components of the described system make actual LLM/generative \
-calls vs. which are deterministic. Only the LLM call points become adapters. \
-List any existing deterministic implementation that should NOT be duplicated.
+Step 1 — Determine the mode:
+- If a technical document describing an EXISTING system was provided: apply MODE A. \
+  Identify only the components that make LLM/generative calls. Each becomes one adapter. \
+  Deterministic components already implemented must NOT become adapters.
+- If no existing system is described (greenfield): apply MODE B. \
+  Reason through the full solution. For each sub-task, decide: LLM needed → adapter; \
+  deterministic code sufficient → add to "software_components" list.
 
-For each adapter score it:
+Step 2 — For each adapter score it:
 - score (0-20): standalone quality
 - team_score (0-20): fit within the team — penalise overlaps, reward gap-filling
 - pros: 2-3 short strings
@@ -183,7 +196,11 @@ Return ONLY a raw JSON object (no markdown, no prose, start immediately with {{)
     "team_note": "une phrase"
   }},
   "rag_global": false,
-  "notes": "deployment notes"
+  "notes": "deployment notes",
+  "software_components": [
+    "composant déterministe 1 — description courte",
+    "composant déterministe 2 — description courte"
+  ]
 }}
 """
 
