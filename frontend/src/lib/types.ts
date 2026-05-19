@@ -241,6 +241,25 @@ export interface NextActions {
   actions: NextAction[];
 }
 
+export interface AdapterCoverageItem {
+  adapter_name: string;
+  role: 'specialist' | 'orchestrator';
+  target: number;
+  collected: number;
+  missing: number;
+  pct: number;
+  source_configs: SourceSuggestion[];
+}
+
+export interface AdapterCoverageResult {
+  project_id: string;
+  total_target: number;
+  total_collected: number;
+  total_raw: number;
+  untagged: number;
+  adapters: AdapterCoverageItem[];
+}
+
 export interface PackageInfo {
   model_id: string;
   project_name: string;

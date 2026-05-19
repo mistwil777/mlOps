@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { getProjects, startCollect, getCollectStatus } from '$lib/api';
-  import type { Project, ProjectAdapter, SourceSuggestion } from '$lib/types';
+  import { getProjects, startCollect, getCollectStatus, getAdapterCoverage } from '$lib/api';
+  import type { Project, ProjectAdapter, SourceSuggestion, AdapterCoverageResult } from '$lib/types';
 
   let projects: Project[] = $state([]);
   let selectedProject = $state<Project | null>(null);
@@ -12,6 +12,9 @@
   let jobStatus = $state<'idle' | 'running' | 'completed' | 'failed'>('idle');
   let error = $state('');
   let es: EventSource | null = null;
+
+  let coverage = $state<AdapterCoverageResult | null>(null);
+  let coverageLoading = $state(false);
 
   // Selected source to collect (one at a time)
   let selectedSource = $state<{ adapter: ProjectAdapter; source: SourceSuggestion } | null>(null);
@@ -29,16 +32,36 @@
     projects = await getProjects().catch(() => []);
     if (projects.length > 0) {
       selectedProject = projects[0];
+      await loadCoverage();
     }
   });
 
   onDestroy(() => es?.close());
 
-  function selectProject(id: string) {
+  async function selectProject(id: string) {
     selectedProject = projects.find(p => p.id === id) ?? null;
     selectedSource = null;
     jobStatus = 'idle';
     logs = [];
+    coverage = null;
+    await loadCoverage();
+  }
+
+  async function loadCoverage() {
+    if (!selectedProject) return;
+    coverageLoading = true;
+    try {
+      coverage = await getAdapterCoverage(selectedProject.id);
+    } catch {
+      coverage = null;
+    } finally {
+      coverageLoading = false;
+    }
+  }
+
+  // Find coverage entry for a given adapter name
+  function adapterCov(name: string) {
+    return coverage?.adapters.find(a => a.adapter_name === name) ?? null;
   }
 
   async function handleStart() {
@@ -57,6 +80,7 @@
         task_type: selectedProject.task_type,
         collector_type: selectedSource.source.collector_type,
         source_value: selectedSource.source.value,
+        adapter_name: selectedSource.adapter.name,
       });
       jobId = res.job_id;
       openSSE();
@@ -75,11 +99,12 @@
       logs = [...logs, d.line];
       scrollLog();
     });
-    es.addEventListener('done', (e) => {
+    es.addEventListener('done', async (e) => {
       const d = JSON.parse(e.data);
       jobStatus = d.status;
       running = false;
       es?.close();
+      if (d.status === 'completed') await loadCoverage();
     });
     es.onerror = () => {
       if (jobStatus === 'running') { jobStatus = 'failed'; running = false; }
@@ -128,11 +153,68 @@
 
   {#if selectedProject && !hasAdapters}
     <div class="banner-warn mb-16">
-      Ce projet n'a pas encore d'adapters définis. Retournez dans le wizard pour compléter l'analyse du besoin et créer le projet avec ses adapters.
+      Ce projet n'a pas encore d'adapters définis. Retournez dans le wizard pour compléter l'analyse du besoin.
     </div>
   {/if}
 
   {#if selectedProject && hasAdapters}
+
+    <!-- Couverture par adapter -->
+    <div class="card mb-16">
+      <div class="card-header mb-12">
+        <div class="card-title">Couverture des données</div>
+        {#if !coverageLoading}
+          <button class="btn-icon" onclick={loadCoverage} title="Rafraîchir">↺</button>
+        {/if}
+      </div>
+
+      {#if coverageLoading}
+        <p class="hint">Chargement…</p>
+      {:else if coverage}
+        <!-- Global bar -->
+        <div class="global-bar mb-12">
+          <div class="global-bar-label">
+            <span class="bar-count">{coverage.total_collected}</span>
+            <span class="hint">/ {coverage.total_target} paires cibles</span>
+            {#if coverage.untagged > 0}
+              <span class="hint ml-8">({coverage.untagged} non taguées)</span>
+            {/if}
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" style="width:{Math.min(100, Math.round(coverage.total_collected / Math.max(coverage.total_target,1) * 100))}%"></div>
+          </div>
+        </div>
+
+        <!-- Per-adapter rows -->
+        <div class="adapter-coverage-list">
+          {#each selectedProject.adapters ?? [] as adapter}
+            {@const cov = adapterCov(adapter.name)}
+            <div class="cov-row">
+              <div class="cov-left">
+                <span class="role-badge role-badge--{adapter.role}">{adapter.role === 'orchestrator' ? 'ORCH' : 'SPEC'}</span>
+                <span class="cov-name">{adapter.name}</span>
+              </div>
+              <div class="cov-bar-wrap">
+                <div class="cov-progress-track">
+                  <div class="cov-progress-fill" class:fill-ok={cov && cov.pct >= 80} style="width:{cov ? Math.min(100, cov.pct) : 0}%"></div>
+                </div>
+                <span class="cov-numbers">
+                  {cov?.collected ?? 0} / {cov?.target ?? adapter.estimated_pairs}
+                  {#if cov && cov.missing > 0}
+                    <span class="missing-badge">−{cov.missing}</span>
+                  {:else if cov && cov.pct >= 100}
+                    <span class="ok-badge">✓</span>
+                  {/if}
+                </span>
+              </div>
+            </div>
+          {/each}
+        </div>
+      {:else}
+        <p class="hint">Aucune donnée collectée pour ce projet.</p>
+      {/if}
+    </div>
+
     <!-- Sources par adapter -->
     <div class="card mb-16">
       <div class="card-header mb-12">
@@ -142,11 +224,17 @@
 
       {#each selectedProject.adapters ?? [] as adapter}
         {#if (adapter.source_configs ?? []).length > 0}
+          {@const cov = adapterCov(adapter.name)}
           <div class="adapter-section mb-12">
             <div class="adapter-name mb-6">
               <span class="role-badge role-badge--{adapter.role}">{adapter.role === 'orchestrator' ? 'ORCH' : 'SPEC'}</span>
               {adapter.name}
-              <span class="hint">~{adapter.estimated_pairs} paires</span>
+              <span class="hint">~{adapter.estimated_pairs} paires cibles</span>
+              {#if cov && cov.missing > 0}
+                <span class="missing-badge">−{cov.missing} manquantes</span>
+              {:else if cov && cov.pct >= 100}
+                <span class="ok-badge">✓ complet</span>
+              {/if}
             </div>
             <div class="sources-list">
               {#each adapter.source_configs as sc}
@@ -231,6 +319,41 @@
   }
   .input-sm { min-width:70px; }
   .hint { font-size:11px; color:var(--text-dim); }
+  .ml-8 { margin-left:8px; }
+
+  /* Coverage */
+  .global-bar-label { display:flex; align-items:center; gap:6px; margin-bottom:6px; }
+  .bar-count { font-size:13px; font-weight:600; color:var(--text); }
+  .progress-track {
+    height:6px; background:var(--surface-3); border-radius:3px; overflow:hidden;
+  }
+  .progress-fill {
+    height:100%; background:var(--accent); border-radius:3px;
+    transition:width 400ms ease;
+  }
+  .adapter-coverage-list { display:flex; flex-direction:column; gap:6px; margin-top:4px; }
+  .cov-row { display:flex; align-items:center; gap:10px; }
+  .cov-left { display:flex; align-items:center; gap:6px; min-width:200px; }
+  .cov-name { font-size:12px; color:var(--text); font-weight:500; }
+  .cov-bar-wrap { flex:1; display:flex; align-items:center; gap:8px; }
+  .cov-progress-track {
+    flex:1; height:5px; background:var(--surface-3); border-radius:3px; overflow:hidden;
+  }
+  .cov-progress-fill {
+    height:100%; background:var(--accent); border-radius:3px;
+    transition:width 400ms ease;
+  }
+  .cov-progress-fill.fill-ok { background:var(--green); }
+  .cov-numbers { font-size:11px; color:var(--text-dim); white-space:nowrap; display:flex; align-items:center; gap:4px; }
+  .missing-badge { background:rgba(255,80,80,.15); color:var(--red); border-radius:3px; padding:1px 5px; font-size:10px; font-weight:700; }
+  .ok-badge { background:rgba(34,197,94,.15); color:#22c55e; border-radius:3px; padding:1px 5px; font-size:10px; font-weight:700; }
+
+  .btn-icon {
+    background:none; border:none; color:var(--text-muted); cursor:pointer;
+    font-size:14px; padding:2px 6px; border-radius:4px;
+    transition:color 120ms;
+  }
+  .btn-icon:hover { color:var(--text); }
 
   .adapter-section { border-left:2px solid var(--border); padding-left:12px; }
   .adapter-name {

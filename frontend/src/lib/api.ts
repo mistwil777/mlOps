@@ -1,4 +1,4 @@
-import type { AdvisorAdapter, AdvisorRecommendation, BaseModel, CollectJob, DataHealth, Dataset, DeployedModel, DownloadStatus, Evaluation, Health, JobStatus, Metric, OverlapResolution, PackageInfo, Project, ReviewItem, ReviewPage, ReviewStats, Run, SelectionEval } from './types';
+import type { AdapterCoverageResult, AdvisorAdapter, AdvisorRecommendation, BaseModel, CollectJob, DataHealth, Dataset, DeployedModel, DownloadStatus, Evaluation, Health, JobStatus, Metric, OverlapResolution, PackageInfo, Project, ReviewItem, ReviewPage, ReviewStats, Run, SelectionEval } from './types';
 
 const BASE = '/api';
 
@@ -132,8 +132,9 @@ export const advisorAnalyzePairs = (body: {
 }) => req<PairAnalysisResult>('/advisor/analyze-pairs', { method: 'POST', body: JSON.stringify(body) });
 
 // Data
-export const startCollect      = (body: { project_id: string; topic: string; max_pairs?: number; domain?: string; task_type?: string; collector_type?: string; source_value?: string }) =>
+export const startCollect      = (body: { project_id: string; topic: string; max_pairs?: number; domain?: string; task_type?: string; collector_type?: string; source_value?: string; adapter_name?: string }) =>
   req<CollectJob>('/data/collect', { method: 'POST', body: JSON.stringify(body) });
+export const getAdapterCoverage = (projectId: string) => req<AdapterCoverageResult>(`/data/adapter-coverage/${projectId}`);
 export const getCollectStatus  = (jobId: string) => req<JobStatus>(`/data/collect/${jobId}/status`);
 export const getReview         = (projectId: string, page = 0, pageSize = 20, status?: string) =>
   req<ReviewPage>(`/data/review/${projectId}?page=${page}&page_size=${pageSize}${status ? `&status=${status}` : ''}`);

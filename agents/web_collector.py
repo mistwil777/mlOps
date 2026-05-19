@@ -171,8 +171,11 @@ class WebCollector:
         logger.info("Total collected: %d raw pairs", len(pairs))
         return pairs
 
-    def run(self, topic: str, max_pages: int, output: Path) -> int:
+    def run(self, topic: str, max_pages: int, output: Path, adapter_name: str | None = None) -> int:
         pairs = asyncio.run(self.collect(topic, max_pages))
+        if adapter_name:
+            for p in pairs:
+                p["adapter_name"] = adapter_name
         if pairs:
             write_jsonl(output, pairs)
             logger.info("Written %d pairs to %s", len(pairs), output)
@@ -181,12 +184,13 @@ class WebCollector:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Collect training pairs from domain sources")
-    parser.add_argument("--project",   required=True)
-    parser.add_argument("--topic",     required=True)
-    parser.add_argument("--output",    required=True)
-    parser.add_argument("--domain",    default=None, help="Override domain from project config")
-    parser.add_argument("--task-type", default=None, dest="task_type", help="Override task_type from project config")
+    parser.add_argument("--project",      required=True)
+    parser.add_argument("--topic",        required=True)
+    parser.add_argument("--output",       required=True)
+    parser.add_argument("--domain",       default=None, help="Override domain from project config")
+    parser.add_argument("--task-type",    default=None, dest="task_type", help="Override task_type from project config")
     parser.add_argument("--max-pages", "--max-pairs", type=int, default=20, dest="max_pages")
+    parser.add_argument("--adapter-name", default=None, dest="adapter_name")
     args = parser.parse_args()
 
     cfg_path = Path("config/projects") / f"{args.project}.yaml"
@@ -199,7 +203,7 @@ def main() -> None:
     task_type = args.task_type or config.get("task_type", "generation")
 
     collector = WebCollector(project=args.project, domain=domain, task_type=task_type)
-    n = collector.run(topic=args.topic, max_pages=args.max_pages, output=Path(args.output))
+    n = collector.run(topic=args.topic, max_pages=args.max_pages, output=Path(args.output), adapter_name=args.adapter_name)
     print(f"Collected {n} pairs → {args.output}")
 
 

@@ -89,6 +89,7 @@ class CollectRequest(BaseModel):
     task_type: Optional[str] = None
     collector_type: str = "crawl4ai"   # "crawl4ai" | "rosetta_code"
     source_value: Optional[str] = None # collector-specific param (e.g. rosetta topic)
+    adapter_name: Optional[str] = None # which adapter these pairs belong to
 
 
 @router.post("/collect")
@@ -106,7 +107,7 @@ async def start_collect(req: CollectRequest) -> dict[str, str]:
 
     asyncio.create_task(_run_collect(
         job_id, req.project_id, req.topic, req.max_pairs, config,
-        req.collector_type, req.source_value,
+        req.collector_type, req.source_value, req.adapter_name,
     ))
     return {"job_id": job_id}
 
@@ -122,9 +123,12 @@ async def _run_collect(
     config: dict[str, Any],
     collector_type: str = "crawl4ai",
     source_value: str | None = None,
+    adapter_name: str | None = None,
 ) -> None:
     output = Path(f"datalake/projects/{project_id}/raw/pairs_raw.jsonl")
     output.parent.mkdir(parents=True, exist_ok=True)
+
+    adapter_args = ["--adapter-name", adapter_name] if adapter_name else []
 
     if collector_type == "rosetta_code":
         rosetta_topic = source_value or topic
@@ -133,6 +137,7 @@ async def _run_collect(
             "--topic",     rosetta_topic,
             "--max-tasks", str(max_pairs),
             "--output",    str(output),
+            *adapter_args,
         ]
     else:
         domain    = config.get("domain", "code")
@@ -145,6 +150,7 @@ async def _run_collect(
             "--task-type", task_type,
             "--max-pages", str(max_pairs),
             "--output",    str(output),
+            *adapter_args,
         ]
 
     try:
@@ -454,6 +460,58 @@ async def data_health(project_id: str) -> dict[str, Any]:
     }
 
 
+# ── Adapter Coverage ──────────────────────────────────────────────────────────
+
+@router.get("/adapter-coverage/{project_id}")
+async def adapter_coverage(project_id: str) -> dict[str, Any]:
+    """Return per-adapter pair counts vs targets, read directly from raw JSONL."""
+    cfg = _load_project_config(project_id)
+    adapters: list[dict[str, Any]] = cfg.get("adapters", [])
+
+    raw_path = _pair_path(project_id, "raw")
+    records = _list_jsonl(raw_path)
+
+    # Count by adapter_name from JSONL records
+    counts: dict[str, int] = {}
+    untagged = 0
+    for r in records:
+        name = r.get("adapter_name")
+        if name:
+            counts[name] = counts.get(name, 0) + 1
+        else:
+            untagged += 1
+
+    coverage = []
+    total_target = 0
+    total_collected = 0
+    for a in adapters:
+        name = a["name"]
+        target = a.get("estimated_pairs", 0)
+        collected = counts.get(name, 0)
+        missing = max(0, target - collected)
+        pct = round(collected / target * 100) if target > 0 else 0
+        total_target += target
+        total_collected += collected
+        coverage.append({
+            "adapter_name":  name,
+            "role":          a.get("role", "specialist"),
+            "target":        target,
+            "collected":     collected,
+            "missing":       missing,
+            "pct":           pct,
+            "source_configs": a.get("source_configs", []),
+        })
+
+    return {
+        "project_id":      project_id,
+        "total_target":    total_target,
+        "total_collected": total_collected,
+        "total_raw":       len(records),
+        "untagged":        untagged,
+        "adapters":        coverage,
+    }
+
+
 # ── Manual Ingestion ──────────────────────────────────────────────────────────
 
 @router.post("/ingest/{project_id}")
@@ -546,6 +604,11 @@ def _ensure_lineage_table() -> None:
         )
     except Exception:
         pass
+    # Migration: add adapter_name column if missing
+    try:
+        execute("ALTER TABLE data_lineage ADD COLUMN adapter_name TEXT")
+    except Exception:
+        pass
 
 
 def _track_lineage(project_id: str, record: dict[str, Any], source_type: str) -> None:
@@ -554,18 +617,20 @@ def _track_lineage(project_id: str, record: dict[str, Any], source_type: str) ->
         meta = record.get("meta", {})
         prompt_tokens = len(record.get("prompt", "").split())
         completion_tokens = len(record.get("completion", "").split())
+        adapter_name = record.get("adapter_name") or meta.get("adapter_name")
         execute(
-            "INSERT OR IGNORE INTO data_lineage VALUES (?,?,?,?,?,?,?,?,?)",
+            "INSERT OR IGNORE INTO data_lineage (id,project_id,source_type,source_url,collected_at,quality_score,review_status,prompt_tokens,completion_tokens,adapter_name) VALUES (?,?,?,?,?,?,?,?,?,?)",
             (
                 str(uuid.uuid4()),
                 project_id,
                 source_type,
-                meta.get("source_url", ""),
-                meta.get("ingested_at") or datetime.now(timezone.utc).isoformat(),
+                record.get("source_url") or meta.get("source_url", ""),
+                record.get("collected_at") or meta.get("ingested_at") or datetime.now(timezone.utc).isoformat(),
                 record.get("quality_score"),
                 record.get("review_status"),
                 prompt_tokens,
                 completion_tokens,
+                adapter_name,
             ),
         )
     except Exception:

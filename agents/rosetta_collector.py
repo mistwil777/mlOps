@@ -179,9 +179,12 @@ class RosettaCollector:
             logger.info("Collected %d aligned Python/Java pairs", len(pairs))
             return pairs
 
-    def run(self, topic: str, max_tasks: int, output: Path) -> int:
+    def run(self, topic: str, max_tasks: int, output: Path, adapter_name: str | None = None) -> int:
         output.parent.mkdir(parents=True, exist_ok=True)
         pairs = self.collect(topic, max_tasks)
+        if adapter_name:
+            for p in pairs:
+                p["adapter_name"] = adapter_name
         if pairs:
             write_jsonl(output, pairs)
             logger.info("Written %d pairs → %s", len(pairs), output)
@@ -190,13 +193,14 @@ class RosettaCollector:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Collect Python/Java pairs from Rosetta Code")
-    parser.add_argument("--topic",     default="all", help="Keyword filter on task names, or 'all'")
-    parser.add_argument("--max-tasks", type=int, default=100, dest="max_tasks")
-    parser.add_argument("--output",    required=True, help="Output JSONL file path")
+    parser.add_argument("--topic",        default="all", help="Keyword filter on task names, or 'all'")
+    parser.add_argument("--max-tasks",    type=int, default=100, dest="max_tasks")
+    parser.add_argument("--output",       required=True, help="Output JSONL file path")
+    parser.add_argument("--adapter-name", default=None, dest="adapter_name")
     args = parser.parse_args()
 
     collector = RosettaCollector()
-    n = collector.run(topic=args.topic, max_tasks=args.max_tasks, output=Path(args.output))
+    n = collector.run(topic=args.topic, max_tasks=args.max_tasks, output=Path(args.output), adapter_name=args.adapter_name)
     print(f"Collected {n} pairs → {args.output}")
 
 
