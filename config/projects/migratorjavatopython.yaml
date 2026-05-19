@@ -1,0 +1,102 @@
+name: migratorJavaToPython
+description: Besoin d'adapters pour permettre à migrator de fonctionner on premise
+  (voir CDC joint)
+classification: interne
+domain: code
+task_type: generation
+model: qwen2.5-coder-7b-4bit
+model_format: qwen
+rag_collection: patterns_migratorjavatopython
+baseline:
+  provider: nova-pro
+  model_id: us.amazon.nova-pro-v1:0
+  measured: false
+  metrics: {}
+quality_thresholds:
+  min_pass_rate: 0.85
+  min_rouge_l: 0.65
+  max_latency_ratio: 2.0
+min_tokens: 50
+max_tokens: 2048
+blacklist_patterns:
+- password
+- secret
+- api_key
+- TODO
+- FIXME
+retrain_threshold:
+  new_patterns: 200
+  min_quality: 0.85
+data:
+  raw: datalake/projects/migratorjavatopython/raw/
+  processed: datalake/projects/migratorjavatopython/processed/
+  fine_tuning_ready: datalake/projects/migratorjavatopython/fine-tuning-ready/
+adapters:
+- name: syntax_translator
+  role: specialist
+  description: Traduit la syntaxe Python vers Java — structures de contrôle, déclarations
+    de variables, lambdas, compréhensions de listes vers streams Java.
+  estimated_pairs: 800
+  rag_recommended: false
+  data_sources:
+  - Rosetta Code (Python/Java)
+  - GitHub repos de migration Python→Java
+  source_configs:
+  - label: Rosetta Code — Python/Java
+    collector_type: rosetta_code
+    value: all
+    estimated_pairs: 600
+  - label: GitHub — javaparser migration examples
+    collector_type: github_repo
+    value: https://github.com/javaparser/javaparser
+    estimated_pairs: 200
+- name: type_system_adapter
+  role: specialist
+  description: Gère la conversion du typage dynamique Python vers le typage statique
+    Java — annotations de type, génériques, boxing/unboxing, interfaces.
+  estimated_pairs: 400
+  rag_recommended: true
+  data_sources:
+  - Rosetta Code (Python/Java)
+  - Documentation officielle Java generics
+  source_configs:
+  - label: Rosetta Code — type conversion patterns
+    collector_type: rosetta_code
+    value: type-conversion
+    estimated_pairs: 300
+  - label: Web — Java generics guide
+    collector_type: crawl4ai
+    value: https://docs.oracle.com/javase/tutorial/java/generics/
+    estimated_pairs: 100
+- name: oop_restructurer
+  role: specialist
+  description: Restructure les patterns OOP Python (mixins, duck typing, métaclasses)
+    vers des patterns Java idiomatiques (interfaces, classes abstraites, design patterns).
+  estimated_pairs: 500
+  rag_recommended: true
+  data_sources:
+  - Rosetta Code (Python/Java OOP patterns)
+  - GitHub repos de design patterns
+  source_configs:
+  - label: Rosetta Code — OOP patterns
+    collector_type: rosetta_code
+    value: object-oriented
+    estimated_pairs: 400
+  - label: GitHub — java design patterns
+    collector_type: github_repo
+    value: https://github.com/iluwatar/java-design-patterns
+    estimated_pairs: 100
+- name: migration_orchestrator
+  role: orchestrator
+  description: Coordonne la migration complète d'un fichier ou module Python — analyse
+    le contexte, décompose en sous-tâches, appelle les specialists dans le bon ordre,
+    assemble le code Java final.
+  estimated_pairs: 300
+  rag_recommended: true
+  data_sources:
+  - Paires de migration complètes Python→Java
+  source_configs:
+  - label: Rosetta Code — full program pairs
+    collector_type: rosetta_code
+    value: all
+    estimated_pairs: 300

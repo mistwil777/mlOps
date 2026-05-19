@@ -1,3 +1,13 @@
+export interface ProjectAdapter {
+  name: string;
+  role: 'specialist' | 'orchestrator';
+  description: string;
+  estimated_pairs: number;
+  rag_recommended: boolean;
+  source_configs: SourceSuggestion[];
+  data_sources: string[];
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -16,6 +26,7 @@ export interface Project {
   last_run: string | null;
   last_status: RunStatus | null;
   db: Record<string, unknown> | null;
+  adapters?: ProjectAdapter[];
 }
 
 export interface BaseModel {

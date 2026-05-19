@@ -41,6 +41,7 @@ class ProjectCreate(BaseModel):
         "new_patterns": 200,
         "min_quality": 0.85,
     }
+    adapters: list[dict[str, Any]] = []
 
 
 class ProjectPatch(BaseModel):
@@ -51,6 +52,7 @@ class ProjectPatch(BaseModel):
     min_tokens: int | None = None
     max_tokens: int | None = None
     blacklist_patterns: list[str] | None = None
+    adapters: list[dict[str, Any]] | None = None
 
 
 def _enrich(project_id: str, cfg: dict[str, Any]) -> dict[str, Any]:
@@ -117,6 +119,7 @@ def create_project(body: ProjectCreate):
             "processed":         f"datalake/projects/{project_id}/processed/",
             "fine_tuning_ready": f"datalake/projects/{project_id}/fine-tuning-ready/",
         },
+        "adapters": body.adapters,
     }
     save_project_config(project_id, cfg)
 

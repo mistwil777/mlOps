@@ -610,6 +610,15 @@
         model: baseModel,
         model_format: baseModel.includes('qwen') ? 'qwen' : 'mistral',
         description: need.trim().slice(0, 200),
+        adapters: wizardSelection.map(a => ({
+          name: a.name,
+          role: a.role,
+          description: a.description,
+          estimated_pairs: a.estimated_pairs,
+          rag_recommended: a.rag_recommended ?? false,
+          source_configs: a.source_configs ?? [],
+          data_sources: a.data_sources ?? [],
+        })),
       });
       projectId = (proj as { id: string }).id;
       step = 4;
