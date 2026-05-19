@@ -424,18 +424,24 @@
   }
 
   async function openResolveOverlap(pair: [string, string]) {
+    if (overlapLoading) return; // ignore clicks while loading
     if (overlapTarget?.[0] === pair[0] && overlapTarget?.[1] === pair[1]) {
-      overlapTarget = null; overlapResolutions = []; return;
+      overlapTarget = null; overlapResolutions = []; overlapLoading = false; return;
     }
     altTarget = null; gapTarget = null; sourcesAdapter = null;
-    overlapTarget = pair; overlapLoading = true; overlapError = ''; overlapResolutions = [];
+    overlapTarget = [...pair] as [string, string]; // snapshot — avoid reactive reference mutation
+    overlapLoading = true; overlapError = ''; overlapResolutions = [];
     const a = wizardSelection.find(x => x.name === pair[0]);
     const b = wizardSelection.find(x => x.name === pair[1]);
     if (!a || !b) { overlapLoading = false; return; }
     try {
-      overlapResolutions = await advisorResolveOverlap(need, a, b, wizardSelection, aiModel);
-    } catch (e) { overlapError = (e as Error).message; }
-    finally { overlapLoading = false; }
+      const results = await advisorResolveOverlap(need, a, b, wizardSelection, aiModel);
+      overlapResolutions = Array.isArray(results) ? results : [];
+    } catch (e) {
+      overlapError = e instanceof Error ? e.message : String(e);
+    } finally {
+      overlapLoading = false;
+    }
   }
 
   function applyOverlapResolution(res: OverlapResolution) {
@@ -478,7 +484,8 @@
           const a = snapshot.find(x => x.name === pair[0]);
           const b = snapshot.find(x => x.name === pair[1]);
           if (!a || !b) return null;
-          const resolutions = await advisorResolveOverlap(need, a, b, snapshot, aiModel).catch(() => null);
+          const raw = await advisorResolveOverlap(need, a, b, snapshot, aiModel).catch(() => null);
+          const resolutions = Array.isArray(raw) ? raw : null;
           if (!resolutions?.length) return null;
           // priorité : clarify > merge > remove
           const best = resolutions.find(r => r.type === 'clarify')
