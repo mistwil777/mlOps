@@ -36,67 +36,84 @@ adapters:
   role: specialist
   description: Traduit la syntaxe Python vers Java — structures de contrôle, déclarations
     de variables, lambdas, compréhensions de listes vers streams Java.
-  estimated_pairs: 800
+  estimated_pairs: 300
   rag_recommended: false
   data_sources:
   - Rosetta Code (Python/Java)
-  - GitHub repos de migration Python→Java
   source_configs:
-  - label: Rosetta Code — Python/Java
+  - label: Rosetta Code — tri et algorithmes de base
     collector_type: rosetta_code
-    value: all
-    estimated_pairs: 600
-  - label: GitHub — javaparser migration examples
-    collector_type: github_repo
-    value: https://github.com/javaparser/javaparser
-    estimated_pairs: 200
+    value: sort
+    estimated_pairs: 80
+  - label: Rosetta Code — manipulation de chaînes
+    collector_type: rosetta_code
+    value: string
+    estimated_pairs: 80
+  - label: Rosetta Code — récursion et itération
+    collector_type: rosetta_code
+    value: fibonacci
+    estimated_pairs: 40
+  - label: Rosetta Code — structures de données
+    collector_type: rosetta_code
+    value: linked list
+    estimated_pairs: 60
 - name: type_system_adapter
   role: specialist
   description: Gère la conversion du typage dynamique Python vers le typage statique
     Java — annotations de type, génériques, boxing/unboxing, interfaces.
-  estimated_pairs: 400
+  estimated_pairs: 150
   rag_recommended: true
   data_sources:
   - Rosetta Code (Python/Java)
-  - Documentation officielle Java generics
   source_configs:
-  - label: Rosetta Code — type conversion patterns
+  - label: Rosetta Code — conversion et casting
     collector_type: rosetta_code
-    value: type-conversion
-    estimated_pairs: 300
-  - label: Web — Java generics guide
-    collector_type: crawl4ai
-    value: https://docs.oracle.com/javase/tutorial/java/generics/
-    estimated_pairs: 100
+    value: convert
+    estimated_pairs: 50
+  - label: Rosetta Code — arbres et structures typées
+    collector_type: rosetta_code
+    value: tree
+    estimated_pairs: 60
+  - label: Paires synthétiques (typage statique)
+    collector_type: manual
+    value: type-system-synthetic
+    estimated_pairs: 40
 - name: oop_restructurer
   role: specialist
   description: Restructure les patterns OOP Python (mixins, duck typing, métaclasses)
     vers des patterns Java idiomatiques (interfaces, classes abstraites, design patterns).
-  estimated_pairs: 500
+  estimated_pairs: 200
   rag_recommended: true
   data_sources:
-  - Rosetta Code (Python/Java OOP patterns)
-  - GitHub repos de design patterns
+  - Rosetta Code (Python/Java)
   source_configs:
-  - label: Rosetta Code — OOP patterns
+  - label: Rosetta Code — création d'objets et classes
     collector_type: rosetta_code
-    value: object-oriented
-    estimated_pairs: 400
-  - label: GitHub — java design patterns
-    collector_type: github_repo
-    value: https://github.com/iluwatar/java-design-patterns
-    estimated_pairs: 100
+    value: object
+    estimated_pairs: 60
+  - label: Rosetta Code — héritage et polymorphisme
+    collector_type: rosetta_code
+    value: inherit
+    estimated_pairs: 60
+  - label: Rosetta Code — patterns et structures
+    collector_type: rosetta_code
+    value: pattern
+    estimated_pairs: 60
+  - label: Paires synthétiques (design patterns)
+    collector_type: manual
+    value: oop-patterns-synthetic
+    estimated_pairs: 20
 - name: migration_orchestrator
   role: orchestrator
   description: Coordonne la migration complète d'un fichier ou module Python — analyse
     le contexte, décompose en sous-tâches, appelle les specialists dans le bon ordre,
     assemble le code Java final.
-  estimated_pairs: 300
+  estimated_pairs: 150
   rag_recommended: true
   data_sources:
-  - Paires de migration complètes Python→Java
+  - Rosetta Code (Python/Java — programmes complets)
   source_configs:
-  - label: Rosetta Code — full program pairs
+  - label: Rosetta Code — programmes complets (tout)
     collector_type: rosetta_code
     value: all
-    estimated_pairs: 300
+    estimated_pairs: 150
