@@ -493,7 +493,7 @@
       }
     }
     overlapTarget = null; overlapResolutions = [];
-    triggerEval();
+    selEval = null; // clear stale overlaps — user re-evaluates manually
   }
 
   async function resolveAllOverlaps() {
@@ -558,7 +558,7 @@
 
     adapters = newAdapters;
     resolveAllResults = [];
-    triggerEval();
+    selEval = null; // clear stale overlaps — user re-evaluates manually
   }
 
   let evalTimer: ReturnType<typeof setTimeout> | null = null;
