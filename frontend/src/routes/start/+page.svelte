@@ -391,7 +391,7 @@
     if (!gapResult) return;
     adapters = [...adapters, { ...gapResult, role: 'specialist' }];
     gapTarget = null; gapResult = null;
-    triggerEval();
+    // No auto-eval: same rationale as applyAllGapAdapters.
   }
 
   let fillAllLoading = $state(false);
@@ -419,7 +419,8 @@
   function applyAllGapAdapters() {
     adapters = [...adapters, ...fillAllResults.map(r => ({ ...r, role: 'specialist' as const }))];
     fillAllResults = [];
-    triggerEval();
+    // No auto-eval: user decides when selection is final. Re-evaluating immediately
+    // produces new gaps on the enlarged scope and creates an infinite loop.
   }
 
   async function openResolveOverlap(pair: [string, string]) {
@@ -1014,7 +1015,11 @@
         <div class="card mb-16">
           <div class="card-header mb-12">
             <div class="card-title">Score équipe</div>
-            {#if evalLoading}<span class="spinner spinner-sm"></span>{/if}
+            {#if evalLoading}
+              <span class="spinner spinner-sm"></span>
+            {:else}
+              <button class="btn-reeval" onclick={triggerEval} title="Réévaluer la sélection actuelle">↺ Réévaluer</button>
+            {/if}
           </div>
           {#if selEval}
             <div class="team-score-hero">
@@ -1962,6 +1967,14 @@
   .mt-6 { margin-top:6px; }
   .mt-10 { margin-top:10px; }
 
+  .btn-reeval {
+    font-size:10px; font-weight:600; padding:2px 8px;
+    background: rgba(91,152,248,.1); border:1px solid rgba(91,152,248,.25);
+    border-radius:999px; color:var(--accent); cursor:pointer;
+    display:inline-flex; align-items:center; gap:4px;
+    transition: background 150ms;
+  }
+  .btn-reeval:hover { background: rgba(91,152,248,.2); }
   .tag-fill-all {
     font-size:10px; font-weight:600; padding:2px 8px;
     background: rgba(245,158,11,.12); border:1px solid rgba(245,158,11,.3);
