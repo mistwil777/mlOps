@@ -167,8 +167,11 @@ async def _run_collect(
             await proc.wait()
 
         await asyncio.wait_for(_read_stdout(), timeout=_COLLECT_TIMEOUT_S)
-        _JOBS[job_id]["status"] = "completed" if proc.returncode == 0 else "failed"
+        status = "completed" if proc.returncode == 0 else "failed"
+        _JOBS[job_id]["status"] = status
         _JOBS[job_id]["returncode"] = proc.returncode
+        if status == "completed":
+            asyncio.create_task(_index_datalake_pairs(project_id, job_id=job_id, stage="raw"))
     except asyncio.TimeoutError:
         _JOBS[job_id]["status"] = "failed"
         _JOBS[job_id]["lines"].append(f"ERROR: collect timed out after {_COLLECT_TIMEOUT_S}s")
@@ -347,16 +350,16 @@ async def _run_pipeline(job_id: str, req: PipelineRequest) -> None:
         _purge_old_jobs()
 
 
-async def _index_datalake_pairs(project_id: str, job_id: str | None = None) -> None:
+async def _index_datalake_pairs(project_id: str, job_id: str | None = None, stage: str | None = None) -> None:
     from pipeline.datalake_index import DatalakeIndex  # noqa: PLC0415
+    stages = [stage] if stage else ["raw", "fine-tuning-ready"]
     try:
-        idx = await asyncio.get_event_loop().run_in_executor(
-            None, lambda: DatalakeIndex()
-        )
-        n = await asyncio.get_event_loop().run_in_executor(
-            None, lambda: idx.index_project(project_id)
-        )
-        msg = f"[datalake-index] Indexed {n} pairs for {project_id}"
+        idx = await asyncio.get_event_loop().run_in_executor(None, DatalakeIndex)
+        total = 0
+        for s in stages:
+            n = await asyncio.get_event_loop().run_in_executor(None, lambda s=s: idx.index_project(project_id, stage=s))
+            total += n
+        msg = f"[datalake-index] Indexed {total} pairs for {project_id} (stages: {', '.join(stages)})"
         if job_id and job_id in _JOBS:
             _JOBS[job_id]["lines"].append(msg)
     except Exception as exc:
@@ -687,6 +690,6 @@ async def search_pairs(body: SearchPairsRequest) -> dict[str, Any]:
 
 
 @router.post("/index-project/{project_id}")
-async def index_project_pairs(project_id: str) -> dict[str, Any]:
-    asyncio.create_task(_index_datalake_pairs(project_id))
+async def index_project_pairs(project_id: str, stage: str | None = None) -> dict[str, Any]:
+    asyncio.create_task(_index_datalake_pairs(project_id, stage=stage))
     return {"ok": True, "project_id": project_id}

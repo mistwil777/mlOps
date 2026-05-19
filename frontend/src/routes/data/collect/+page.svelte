@@ -6,18 +6,28 @@
   let projects: Project[] = $state([]);
   let selectedProject = $state<Project | null>(null);
   let maxPairs = $state(50);
-  let running = $state(false);
-  let jobId = $state('');
-  let logs: string[] = $state([]);
-  let jobStatus = $state<'idle' | 'running' | 'completed' | 'failed'>('idle');
   let error = $state('');
   let es: EventSource | null = null;
 
   let coverage = $state<AdapterCoverageResult | null>(null);
   let coverageLoading = $state(false);
 
-  // Selected source to collect (one at a time)
+  // ── single-source mode ────────────────────────────────────────────────────
   let selectedSource = $state<{ adapter: ProjectAdapter; source: SourceSuggestion } | null>(null);
+  let singleRunning = $state(false);
+  let singleStatus = $state<'idle' | 'running' | 'completed' | 'failed'>('idle');
+
+  // ── batch mode ────────────────────────────────────────────────────────────
+  type QueueItem = { adapter: ProjectAdapter; source: SourceSuggestion };
+  type QueueStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+
+  let queue: QueueItem[] = $state([]);
+  let queueStatuses: QueueStatus[] = $state([]);
+  let queueIdx = $state(-1);   // -1 = not running
+  let batchRunning = $state(false);
+
+  // ── shared logs ──────────────────────────────────────────────────────────
+  let logs: string[] = $state([]);
 
   // Flat list of all sources across adapters
   const allSources = $derived(
@@ -27,6 +37,7 @@
   );
 
   const hasAdapters = $derived((selectedProject?.adapters ?? []).length > 0);
+  const running = $derived(singleRunning || batchRunning);
 
   onMount(async () => {
     projects = await getProjects().catch(() => []);
@@ -41,8 +52,11 @@
   async function selectProject(id: string) {
     selectedProject = projects.find(p => p.id === id) ?? null;
     selectedSource = null;
-    jobStatus = 'idle';
+    singleStatus = 'idle';
     logs = [];
+    queue = [];
+    queueStatuses = [];
+    queueIdx = -1;
     coverage = null;
     await loadCoverage();
   }
@@ -59,17 +73,17 @@
     }
   }
 
-  // Find coverage entry for a given adapter name
   function adapterCov(name: string) {
     return coverage?.adapters.find(a => a.adapter_name === name) ?? null;
   }
 
+  // ── single source ─────────────────────────────────────────────────────────
   async function handleStart() {
     if (!selectedProject || !selectedSource) return;
     error = '';
     logs = [];
-    running = true;
-    jobStatus = 'running';
+    singleRunning = true;
+    singleStatus = 'running';
 
     try {
       const res = await startCollect({
@@ -82,16 +96,81 @@
         source_value: selectedSource.source.value,
         adapter_name: selectedSource.adapter.name,
       });
-      jobId = res.job_id;
-      openSSE();
+      openSSE(res.job_id, () => {
+        singleRunning = false;
+        loadCoverage();
+      }, (s) => { singleStatus = s as typeof singleStatus; });
     } catch (e) {
       error = (e as Error).message;
-      running = false;
-      jobStatus = 'failed';
+      singleRunning = false;
+      singleStatus = 'failed';
     }
   }
 
-  function openSSE() {
+  // ── batch (tout lancer) ────────────────────────────────────────────────────
+  function startBatch() {
+    if (!selectedProject || allSources.length === 0 || batchRunning) return;
+    queue = [...allSources];
+    queueStatuses = allSources.map(() => 'pending' as QueueStatus);
+    queueIdx = 0;
+    batchRunning = true;
+    logs = [];
+    error = '';
+    selectedSource = null;
+    runNextInQueue();
+  }
+
+  async function runNextInQueue() {
+    if (!selectedProject || queueIdx < 0 || queueIdx >= queue.length) {
+      batchRunning = false;
+      queueIdx = -1;
+      await loadCoverage();
+      return;
+    }
+
+    const item = queue[queueIdx];
+    queueStatuses = queueStatuses.map((s, i) => i === queueIdx ? 'running' : s);
+    logs = [...logs, `\n── [${queueIdx + 1}/${queue.length}] ${item.adapter.name} / ${item.source.label} ──`];
+
+    try {
+      const res = await startCollect({
+        project_id: selectedProject.id,
+        topic: item.source.value,
+        max_pairs: maxPairs,
+        domain: selectedProject.domain,
+        task_type: selectedProject.task_type,
+        collector_type: item.source.collector_type,
+        source_value: item.source.value,
+        adapter_name: item.adapter.name,
+      });
+
+      openSSE(res.job_id, (finalStatus) => {
+        queueStatuses = queueStatuses.map((s, i) => i === queueIdx ? (finalStatus as QueueStatus) : s);
+        queueIdx++;
+        runNextInQueue();
+      }, () => {});
+    } catch (e) {
+      logs = [...logs, `ERROR: ${(e as Error).message}`];
+      queueStatuses = queueStatuses.map((s, i) => i === queueIdx ? 'failed' : s);
+      queueIdx++;
+      runNextInQueue();
+    }
+  }
+
+  function stopBatch() {
+    es?.close();
+    batchRunning = false;
+    queueIdx = -1;
+    queueStatuses = queueStatuses.map(s => s === 'pending' ? 'skipped' : s);
+    loadCoverage();
+  }
+
+  // ── SSE helper ────────────────────────────────────────────────────────────
+  function openSSE(
+    jobId: string,
+    onDone: (status: string) => void,
+    onStatus: (status: string) => void,
+  ) {
     es?.close();
     es = new EventSource(`/api/data/collect/${jobId}/stream`);
     es.addEventListener('log', (e) => {
@@ -101,14 +180,14 @@
     });
     es.addEventListener('done', async (e) => {
       const d = JSON.parse(e.data);
-      jobStatus = d.status;
-      running = false;
+      onStatus(d.status);
       es?.close();
-      if (d.status === 'completed') await loadCoverage();
+      onDone(d.status);
     });
     es.onerror = () => {
-      if (jobStatus === 'running') { jobStatus = 'failed'; running = false; }
+      onStatus('failed');
       es?.close();
+      onDone('failed');
     };
   }
 
@@ -124,6 +203,14 @@
     crawl4ai:     'Web',
     manual:       'Manuel',
     github_repo:  'GitHub',
+  };
+
+  const QUEUE_STATUS_ICONS: Record<QueueStatus, string> = {
+    pending:   '○',
+    running:   '⟳',
+    completed: '✓',
+    failed:    '✗',
+    skipped:   '–',
   };
 </script>
 
@@ -145,7 +232,7 @@
         {/each}
       </select>
       <label class="form-field-inline">
-        <span class="field-label">Paires max</span>
+        <span class="field-label">Paires max par source</span>
         <input bind:value={maxPairs} type="number" min="5" max="500" class="input input-sm" />
       </label>
     </div>
@@ -171,7 +258,6 @@
       {#if coverageLoading}
         <p class="hint">Chargement…</p>
       {:else if coverage}
-        <!-- Global bar -->
         <div class="global-bar mb-12">
           <div class="global-bar-label">
             <span class="bar-count">{coverage.total_collected}</span>
@@ -185,7 +271,6 @@
           </div>
         </div>
 
-        <!-- Per-adapter rows -->
         <div class="adapter-coverage-list">
           {#each selectedProject.adapters ?? [] as adapter}
             {@const cov = adapterCov(adapter.name)}
@@ -219,8 +304,33 @@
     <div class="card mb-16">
       <div class="card-header mb-12">
         <div class="card-title">Sources disponibles</div>
-        <span class="hint">{allSources.length} source{allSources.length > 1 ? 's' : ''} — sélectionnez-en une pour lancer la collecte</span>
+        <div style="display:flex; gap:8px; align-items:center">
+          <span class="hint">{allSources.length} source{allSources.length > 1 ? 's' : ''}</span>
+          {#if batchRunning}
+            <button class="btn btn-danger btn-sm" onclick={stopBatch}>⏹ Arrêter</button>
+          {:else}
+            <button class="btn btn-primary btn-sm" onclick={startBatch} disabled={running}>
+              ▶▶ Tout lancer ({allSources.length})
+            </button>
+          {/if}
+        </div>
       </div>
+
+      <!-- Batch queue progress -->
+      {#if queue.length > 0}
+        <div class="queue-list mb-12">
+          {#each queue as item, i}
+            {@const st = queueStatuses[i]}
+            <div class="queue-item" class:queue-item--running={st === 'running'} class:queue-item--done={st === 'completed'} class:queue-item--failed={st === 'failed'}>
+              <span class="queue-icon queue-icon--{st}">{QUEUE_STATUS_ICONS[st]}</span>
+              <span class="collector-badge collector-badge--{item.source.collector_type}">
+                {COLLECTOR_LABELS[item.source.collector_type] ?? item.source.collector_type}
+              </span>
+              <span class="queue-label">{item.adapter.name} / {item.source.label}</span>
+            </div>
+          {/each}
+        </div>
+      {/if}
 
       {#each selectedProject.adapters ?? [] as adapter}
         {#if (adapter.source_configs ?? []).length > 0}
@@ -260,8 +370,8 @@
       {/each}
     </div>
 
-    <!-- Lancement -->
-    {#if selectedSource}
+    <!-- Lancement source unique -->
+    {#if selectedSource && !batchRunning}
       <div class="card mb-16">
         <div class="card-header mb-8">
           <div class="card-title">Lancer la collecte</div>
@@ -275,11 +385,11 @@
         </div>
         <div style="display:flex; gap:10px; align-items:center">
           <button class="btn btn-primary" onclick={handleStart} disabled={running}>
-            {running ? '⟳ Collecte en cours…' : '▶ Lancer'}
+            {singleRunning ? '⟳ Collecte en cours…' : '▶ Lancer'}
           </button>
-          {#if jobStatus === 'completed'}
+          {#if singleStatus === 'completed'}
             <span class="badge badge-completed">✓ Terminé</span>
-          {:else if jobStatus === 'failed'}
+          {:else if singleStatus === 'failed'}
             <span class="badge badge-failed">✗ Échoué</span>
           {/if}
         </div>
@@ -328,8 +438,7 @@
     height:6px; background:var(--surface-3); border-radius:3px; overflow:hidden;
   }
   .progress-fill {
-    height:100%; background:var(--accent); border-radius:3px;
-    transition:width 400ms ease;
+    height:100%; background:var(--accent); border-radius:3px; transition:width 400ms ease;
   }
   .adapter-coverage-list { display:flex; flex-direction:column; gap:6px; margin-top:4px; }
   .cov-row { display:flex; align-items:center; gap:10px; }
@@ -340,8 +449,7 @@
     flex:1; height:5px; background:var(--surface-3); border-radius:3px; overflow:hidden;
   }
   .cov-progress-fill {
-    height:100%; background:var(--accent); border-radius:3px;
-    transition:width 400ms ease;
+    height:100%; background:var(--accent); border-radius:3px; transition:width 400ms ease;
   }
   .cov-progress-fill.fill-ok { background:var(--green); }
   .cov-numbers { font-size:11px; color:var(--text-dim); white-space:nowrap; display:flex; align-items:center; gap:4px; }
@@ -350,10 +458,26 @@
 
   .btn-icon {
     background:none; border:none; color:var(--text-muted); cursor:pointer;
-    font-size:14px; padding:2px 6px; border-radius:4px;
-    transition:color 120ms;
+    font-size:14px; padding:2px 6px; border-radius:4px; transition:color 120ms;
   }
   .btn-icon:hover { color:var(--text); }
+
+  /* Queue */
+  .queue-list { display:flex; flex-direction:column; gap:3px; background:var(--surface-2); border-radius:var(--radius); padding:8px 10px; }
+  .queue-item {
+    display:flex; align-items:center; gap:6px; padding:2px 0;
+    font-size:11px; color:var(--text-dim);
+    opacity:.6; transition:opacity 150ms;
+  }
+  .queue-item--running { opacity:1; color:var(--text); }
+  .queue-item--done    { opacity:.5; }
+  .queue-item--failed  { opacity:.8; color:var(--red); }
+  .queue-label { flex:1; }
+  .queue-icon { width:14px; text-align:center; font-size:10px; }
+  .queue-icon--running { color:var(--accent); animation:spin 1s linear infinite; display:inline-block; }
+  .queue-icon--completed { color:#22c55e; }
+  .queue-icon--failed    { color:var(--red); }
+  @keyframes spin { to { transform:rotate(360deg); } }
 
   .adapter-section { border-left:2px solid var(--border); padding-left:12px; }
   .adapter-name {
@@ -374,8 +498,8 @@
     border-radius:var(--radius); cursor:pointer; text-align:left;
     transition:border-color 120ms, background 120ms;
   }
-  .source-row:hover         { border-color:var(--accent); background:var(--surface-3); }
-  .source-row--selected     { border-color:var(--accent); background:rgba(91,152,248,.08); }
+  .source-row:hover     { border-color:var(--accent); background:var(--surface-3); }
+  .source-row--selected { border-color:var(--accent); background:rgba(91,152,248,.08); }
   .source-label  { flex:1; font-size:12px; color:var(--text); }
   .source-pairs  { font-size:11px; color:var(--text-dim); white-space:nowrap; }
   .source-value  { font-size:10px; color:var(--text-dim); max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -390,6 +514,9 @@
   .collector-badge--github_repo  { background:rgba(168,85,247,.15);  color:#a855f7; }
 
   .launch-summary { display:flex; align-items:center; gap:10px; }
+  .btn-sm { padding:4px 10px; font-size:11px; }
+  .btn-danger { background:rgba(255,80,80,.15); color:var(--red); border:1px solid rgba(255,80,80,.3); border-radius:var(--radius); cursor:pointer; }
+  .btn-danger:hover { background:rgba(255,80,80,.25); }
 
   .section-title { font-size:12px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:10px; }
   .log-box {
