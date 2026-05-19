@@ -444,7 +444,7 @@
     const snapshot = [...wizardSelection];
     try {
       const results = await Promise.all(
-        visibleGaps.map(g => advisorFillGap(need, g, snapshot, aiModel).catch(() => null)))
+        visibleGaps.map(g => advisorFillGap(need, g, snapshot, aiModel).catch(() => null))
       );
       fillAllResults = results.filter((r): r is AdvisorAdapter => r !== null);
     } finally { fillAllLoading = false; }
