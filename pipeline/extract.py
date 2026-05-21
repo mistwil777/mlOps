@@ -14,35 +14,59 @@ from pipeline.utils.logger import get_logger
 
 logger = get_logger("mlops.extract")
 
-LANG_EXTENSIONS: dict[str, str] = {
-    "python":     ".py",
-    "java":       ".java",
-    "javascript": ".js",
-    "typescript": ".ts",
-    "go":         ".go",
-    "rust":       ".rs",
-    "csharp":     ".cs",
-    "cpp":        ".cpp",
-    "php":        ".php",
-    "kotlin":     ".kt",
-    "swift":      ".swift",
-    "ruby":       ".rb",
-    "c":          ".c",
-}
+def _load_lang_extensions() -> dict[str, str]:
+    """Load lang→extension mapping from config/languages.yaml collector_defaults."""
+    path = Path("config/languages.yaml")
+    if not path.exists():
+        return {}
+    with path.open() as fh:
+        cfg = yaml.safe_load(fh) or {}
+    return cfg.get("collector_defaults", {}).get("lang_extensions", {})
 
-# Task-type → human-readable instruction template
-_TASK_INSTRUCTIONS: dict[str, str] = {
-    "migration":      "Migrate the following {src_lang} code to {tgt_lang}.",
-    "translation":    "Translate the following {src_lang} code to {tgt_lang}.",
-    "refactoring":    "Refactor the following {src_lang} code to improve quality.",
-    "summarization":  "Summarize the following content in a concise way.",
-    "documentation":  "Write documentation for the following code.",
-    "review":         "Review the following code and suggest improvements.",
-    "extraction":     "Extract the key information from the following content.",
-    "classification": "Classify the following content.",
-    "qa":             "Answer the following question based on the provided context.",
-    "generation":     "Generate the appropriate output for the following input.",
-}
+
+def _load_task_instructions() -> dict[str, str]:
+    """Load task-type instruction templates from config/transforms/*.yaml."""
+    transforms_dir = Path("config/transforms")
+    instructions: dict[str, str] = {}
+    if not transforms_dir.exists():
+        return instructions
+    for tmpl_path in transforms_dir.glob("*.yaml"):
+        with tmpl_path.open() as fh:
+            tmpl = yaml.safe_load(fh) or {}
+        tmpl_id = tmpl.get("id") or tmpl_path.stem
+        if "instruction_template" in tmpl:
+            # Strip trailing newline for single-line use
+            instructions[tmpl_id] = tmpl["instruction_template"].strip()
+    return instructions
+
+
+# Loaded lazily on first use — avoids import-time file dependency
+_LANG_EXTENSIONS_CACHE: dict[str, str] | None = None
+_TASK_INSTRUCTIONS_CACHE: dict[str, str] | None = None
+
+
+def _get_lang_extensions() -> dict[str, str]:
+    global _LANG_EXTENSIONS_CACHE
+    if _LANG_EXTENSIONS_CACHE is None:
+        _LANG_EXTENSIONS_CACHE = _load_lang_extensions()
+    return _LANG_EXTENSIONS_CACHE
+
+
+def _get_task_instructions() -> dict[str, str]:
+    global _TASK_INSTRUCTIONS_CACHE
+    if _TASK_INSTRUCTIONS_CACHE is None:
+        _TASK_INSTRUCTIONS_CACHE = _load_task_instructions()
+    return _TASK_INSTRUCTIONS_CACHE
+
+
+# Module-level dict populated on first access — backward-compatible public alias
+LANG_EXTENSIONS: dict[str, str] = {}   # populated lazily by _ensure_loaded()
+
+
+def _ensure_loaded() -> None:
+    global LANG_EXTENSIONS, _LANG_EXTENSIONS_CACHE, _TASK_INSTRUCTIONS_CACHE
+    if not LANG_EXTENSIONS:
+        LANG_EXTENSIONS.update(_get_lang_extensions())
 
 # Chat templates — prompt placeholder is {prompt}
 _TEMPLATES: dict[str, str] = {
@@ -61,6 +85,20 @@ def _load_project_config(project: str) -> dict[str, Any]:
         return yaml.safe_load(fh)
 
 
+_FALLBACK_INSTRUCTIONS: dict[str, str] = {
+    "migration":      "Migrate the following {src_lang} code to {tgt_lang}.",
+    "translation":    "Translate the following {src_lang} code to {tgt_lang}.",
+    "refactoring":    "Refactor the following {src_lang} code to improve quality.",
+    "summarization":  "Summarize the following content in a concise way.",
+    "documentation":  "Write documentation for the following code.",
+    "review":         "Review the following code and suggest improvements.",
+    "extraction":     "Extract the key information from the following content.",
+    "classification": "Classify the following content.",
+    "qa":             "Answer the following question based on the provided context.",
+    "generation":     "Generate the appropriate output for the following input.",
+}
+
+
 def _build_instruction(
     task_type: str,
     domain: str,
@@ -68,11 +106,17 @@ def _build_instruction(
     tgt_lang: str | None = None,
 ) -> str:
     """Build a domain-aware instruction string for this task type."""
-    template = _TASK_INSTRUCTIONS.get(task_type, _TASK_INSTRUCTIONS["generation"])
+    instructions = _get_task_instructions()
+    # Prefer transform-template instructions, fall back to built-in defaults
+    template = (instructions.get(task_type)
+                or _FALLBACK_INSTRUCTIONS.get(task_type)
+                or _FALLBACK_INSTRUCTIONS["generation"])
     return template.format(
         src_lang=src_lang or domain,
         tgt_lang=tgt_lang or domain,
-    )
+        input="",
+        lang=src_lang or domain,
+    ).strip()
 
 
 class PairExtractor:
@@ -101,6 +145,7 @@ class PairExtractor:
         self.tgt_lang = tgt_lang
         self.min_tokens = min_tokens
         self.max_tokens = max_tokens
+        _ensure_loaded()
         self._src_ext = LANG_EXTENSIONS.get(src_lang or "", f".{src_lang}") if src_lang else None
         self._tgt_ext = LANG_EXTENSIONS.get(tgt_lang or "", f".{tgt_lang}") if tgt_lang else None
         self._rag = rag_index

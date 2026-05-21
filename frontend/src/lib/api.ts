@@ -1,4 +1,4 @@
-import type { AdapterCoverageResult, AdvisorAdapter, AdvisorRecommendation, BaseModel, CollectJob, DataHealth, Dataset, DeployedModel, DownloadStatus, Evaluation, Health, JobStatus, Metric, OverlapResolution, PackageInfo, Project, ReviewItem, ReviewPage, ReviewStats, Run, SelectionEval } from './types';
+import type { AdapterCoverageResult, AdvisorAdapter, AdvisorRecommendation, BaseModel, CollectJob, DataHealth, Dataset, DeployedModel, DownloadStatus, Evaluation, Health, JobStatus, Metric, OverlapResolution, PackageInfo, Project, QualitySummary, RejectedPage, ReviewStats, Run, SamplePage, SelectionEval } from './types';
 
 const BASE = '/api';
 
@@ -132,15 +132,23 @@ export const advisorAnalyzePairs = (body: {
 }) => req<PairAnalysisResult>('/advisor/analyze-pairs', { method: 'POST', body: JSON.stringify(body) });
 
 // Data
-export const startCollect      = (body: { project_id: string; topic: string; max_pairs?: number; domain?: string; task_type?: string; collector_type?: string; source_value?: string; adapter_name?: string }) =>
+export const startCollect      = (body: { project_id: string; topic: string; max_pairs?: number; domain?: string; task_type?: string; collector_type?: string; source_value?: string; adapter_name?: string; lang?: string; langs?: string[] }) =>
   req<CollectJob>('/data/collect', { method: 'POST', body: JSON.stringify(body) });
+export const startFuse         = (body: { project_id: string; lang_pair: string; adapter_name?: string; max_fused?: number; llm_model?: string }) =>
+  req<CollectJob>('/data/fuse', { method: 'POST', body: JSON.stringify(body) });
 export const getAdapterCoverage = (projectId: string) => req<AdapterCoverageResult>(`/data/adapter-coverage/${projectId}`);
 export const getCollectStatus  = (jobId: string) => req<JobStatus>(`/data/collect/${jobId}/status`);
-export const getReview         = (projectId: string, page = 0, pageSize = 20, status?: string) =>
-  req<ReviewPage>(`/data/review/${projectId}?page=${page}&page_size=${pageSize}${status ? `&status=${status}` : ''}`);
-export const postReview        = (projectId: string, body: { index: number; action: string; corrected_prompt?: string; corrected_completion?: string }) =>
-  req<{ ok: boolean; index: number; status: string }>(`/data/review/${projectId}`, { method: 'POST', body: JSON.stringify(body) });
-export const getReviewStats    = (projectId: string) => req<ReviewStats>(`/data/review/${projectId}/stats`);
+// Review — pipeline-aware
+export const getQualitySummary   = (projectId: string) => req<QualitySummary>(`/data/review/${projectId}/quality-summary`);
+export const getRejected         = (projectId: string, step?: string, page = 0, pageSize = 20) =>
+  req<RejectedPage>(`/data/review/${projectId}/rejected?page=${page}&page_size=${pageSize}${step ? `&step=${step}` : ''}`);
+export const getSample           = (projectId: string, n = 20, adapterName?: string) =>
+  req<SamplePage>(`/data/review/${projectId}/sample?n=${n}${adapterName ? `&adapter_name=${encodeURIComponent(adapterName)}` : ''}`);
+export const flagRecord          = (projectId: string, body: { index: number; action: 'flag'; note?: string }) =>
+  req<{ ok: boolean; flagged_total: number }>(`/data/review/${projectId}/flag`, { method: 'POST', body: JSON.stringify(body) });
+export const rescueRecord        = (projectId: string, body: { index: number; action: 'rescue'; corrections?: Record<string, string>; note?: string }) =>
+  req<{ ok: boolean; rescued_from: string; record: unknown }>(`/data/review/${projectId}/rescue`, { method: 'POST', body: JSON.stringify(body) });
+export const getReviewStats      = (projectId: string) => req<ReviewStats>(`/data/review/${projectId}/stats`);
 export const startPipeline     = (body: { project_id: string; threshold?: number }) =>
   req<CollectJob>('/data/pipeline', { method: 'POST', body: JSON.stringify(body) });
 export const getPipelineStatus = (jobId: string) => req<JobStatus>(`/data/pipeline/${jobId}/status`);
@@ -179,6 +187,15 @@ export const indexProjectPairs = (projectId: string) =>
 
 export const advisorCrossProjectMatches = (adapterDesc: string, k = 10) =>
   req<CrossProjectMatch>(`/advisor/cross-project-matches?adapter_desc=${encodeURIComponent(adapterDesc)}&k=${k}`);
+
+export const advisorGetRecommendation = (projectId: string) =>
+  req<AdvisorRecommendation>(`/advisor/recommendation/${projectId}`);
+
+export const advisorPatchAdapterSources = (projectId: string, adapterName: string, sourceConfigs: import('./types').SourceSuggestion[]) =>
+  req<{ ok: boolean; adapter_name: string; n_sources: number }>(`/advisor/adapter-sources/${projectId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ adapter_name: adapterName, source_configs: sourceConfigs }),
+  });
 
 // Project next-actions
 export const getNextActions    = (projectId: string) => req<import('./types').NextActions>(`/projects/${projectId}/next-actions`);

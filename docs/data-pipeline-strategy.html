@@ -1,0 +1,894 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MLOps — Stratégie Pipeline Données</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface2: #1c2128;
+      --surface3: #21262d;
+      --border: #30363d;
+      --accent: #1f6feb;
+      --accent2: #388bfd;
+      --green: #3fb950;
+      --yellow: #d29922;
+      --red: #f85149;
+      --purple: #a371f7;
+      --orange: #f0883e;
+      --cyan: #58a6ff;
+      --teal: #2ea043;
+      --pink: #f778ba;
+      --text: #e6edf3;
+      --text-dim: #8b949e;
+      --text-muted: #484f58;
+      --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --mono: 'SF Mono', 'Fira Code', monospace;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; line-height: 1.6; }
+
+    /* Layout */
+    .page { max-width: 1100px; margin: 0 auto; padding: 40px 24px 80px; }
+
+    /* Header */
+    .doc-header { border-bottom: 1px solid var(--border); padding-bottom: 28px; margin-bottom: 40px; }
+    .doc-header h1 { font-size: 26px; font-weight: 700; color: var(--text); margin-bottom: 8px; }
+    .doc-header .subtitle { font-size: 14px; color: var(--text-dim); margin-bottom: 16px; }
+    .doc-meta { display: flex; gap: 24px; flex-wrap: wrap; }
+    .meta-item { font-size: 12px; color: var(--text-muted); }
+    .meta-item span { color: var(--text-dim); }
+
+    /* Nav */
+    .toc { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px 24px; margin-bottom: 40px; }
+    .toc-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); margin-bottom: 12px; }
+    .toc ol { padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+    .toc a { color: var(--accent2); text-decoration: none; font-size: 13px; }
+    .toc a:hover { text-decoration: underline; }
+    .toc li ol { margin-top: 4px; }
+    .toc li ol li a { color: var(--text-dim); font-size: 12px; }
+
+    /* Sections */
+    .section { margin-bottom: 52px; }
+    .section-header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+    .section-num { font-size: 11px; font-weight: 700; background: var(--accent); color: white; border-radius: 4px; padding: 2px 8px; flex-shrink: 0; }
+    .section-header h2 { font-size: 18px; font-weight: 700; }
+    .section-header h3 { font-size: 15px; font-weight: 600; color: var(--text-dim); }
+
+    h3.sub { font-size: 14px; font-weight: 700; color: var(--cyan); margin: 24px 0 10px; text-transform: uppercase; letter-spacing: .06em; }
+    h4.sub { font-size: 13px; font-weight: 600; color: var(--text-dim); margin: 16px 0 8px; }
+
+    p { margin-bottom: 12px; color: var(--text); font-size: 14px; line-height: 1.7; }
+    p:last-child { margin-bottom: 0; }
+
+    /* Cards */
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 18px 20px; margin-bottom: 16px; }
+    .card-title { font-size: 13px; font-weight: 700; margin-bottom: 8px; }
+    .card.decision { border-left: 3px solid var(--green); }
+    .card.warning  { border-left: 3px solid var(--yellow); }
+    .card.info     { border-left: 3px solid var(--accent); }
+    .card.agent    { border-left: 3px solid var(--purple); }
+    .card.tool     { border-left: 3px solid var(--orange); }
+
+    /* Pipeline diagram */
+    .pipeline { display: flex; flex-direction: column; gap: 0; margin: 20px 0; }
+    .pipe-step { display: flex; align-items: stretch; gap: 0; }
+    .pipe-box { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 12px 18px; flex: 1; }
+    .pipe-box .step-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); margin-bottom: 4px; }
+    .pipe-box .step-title { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+    .pipe-box .step-desc  { font-size: 12px; color: var(--text-dim); }
+    .pipe-box .step-cost  { font-size: 11px; color: var(--green); margin-top: 6px; font-family: var(--mono); }
+    .pipe-arrow { display: flex; align-items: center; justify-content: center; padding: 4px 0; color: var(--text-muted); font-size: 18px; }
+
+    /* Tags */
+    .tag { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; margin: 2px; }
+    .tag-green  { background: rgba(63,185,80,.15);  color: var(--green); }
+    .tag-blue   { background: rgba(56,139,253,.15); color: var(--accent2); }
+    .tag-purple { background: rgba(163,113,247,.15);color: var(--purple); }
+    .tag-orange { background: rgba(240,136,62,.15); color: var(--orange); }
+    .tag-red    { background: rgba(248,81,73,.15);  color: var(--red); }
+    .tag-yellow { background: rgba(210,153,34,.15); color: var(--yellow); }
+    .tag-cyan   { background: rgba(88,166,255,.15); color: var(--cyan); }
+
+    /* Table */
+    table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; }
+    th { background: var(--surface2); color: var(--text-dim); font-weight: 600; text-align: left; padding: 10px 14px; border: 1px solid var(--border); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+    td { padding: 10px 14px; border: 1px solid var(--border); color: var(--text); vertical-align: top; line-height: 1.5; }
+    tr:nth-child(even) td { background: var(--surface); }
+
+    /* Code */
+    .code-block { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 16px 18px; font-family: var(--mono); font-size: 12px; color: var(--text-dim); overflow-x: auto; margin: 12px 0; white-space: pre; line-height: 1.6; }
+    .code-block .comment { color: var(--text-muted); }
+    .code-block .key     { color: var(--cyan); }
+    .code-block .val     { color: var(--green); }
+    .code-block .str     { color: var(--orange); }
+
+    /* Rule box */
+    .rule-box { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 14px 18px; margin: 12px 0; }
+    .rule-box .rule-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); margin-bottom: 8px; }
+    .rule-box ul { padding-left: 18px; display: flex; flex-direction: column; gap: 5px; }
+    .rule-box li { font-size: 13px; color: var(--text-dim); }
+    .rule-box li strong { color: var(--text); }
+
+    /* Agent cards grid */
+    .agents-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
+    @media (max-width: 700px) { .agents-grid { grid-template-columns: 1fr; } }
+    .agent-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px 18px; border-top: 3px solid var(--purple); }
+    .agent-card.tool-card { border-top-color: var(--orange); }
+    .agent-card.mcp-card  { border-top-color: var(--cyan); }
+    .agent-name { font-size: 13px; font-weight: 700; font-family: var(--mono); color: var(--purple); margin-bottom: 6px; }
+    .agent-card.tool-card .agent-name { color: var(--orange); }
+    .agent-card.mcp-card  .agent-name { color: var(--cyan); }
+    .agent-role { font-size: 12px; color: var(--text-dim); margin-bottom: 10px; line-height: 1.5; }
+    .agent-details { display: flex; flex-direction: column; gap: 4px; }
+    .agent-detail { font-size: 11px; color: var(--text-muted); }
+    .agent-detail strong { color: var(--text-dim); }
+
+    /* Cost table */
+    .cost-total { background: var(--surface2); border: 1px solid var(--accent); border-radius: 6px; padding: 14px 18px; margin-top: 16px; display: flex; justify-content: space-between; align-items: center; }
+    .cost-total .label { font-size: 13px; font-weight: 700; }
+    .cost-total .amount { font-size: 20px; font-weight: 800; color: var(--accent2); font-family: var(--mono); }
+
+    /* Roadmap */
+    .roadmap { display: flex; flex-direction: column; gap: 12px; margin: 16px 0; }
+    .roadmap-item { display: flex; gap: 16px; align-items: flex-start; }
+    .roadmap-num { background: var(--surface2); border: 1px solid var(--border); border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0; color: var(--accent2); }
+    .roadmap-content { flex: 1; padding-top: 4px; }
+    .roadmap-title { font-size: 13px; font-weight: 700; margin-bottom: 3px; }
+    .roadmap-desc  { font-size: 12px; color: var(--text-dim); }
+
+    /* Footer */
+    .doc-footer { margin-top: 60px; padding-top: 20px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-muted); display: flex; justify-content: space-between; }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- HEADER -->
+  <div class="doc-header">
+    <h1>MLOps — Stratégie Pipeline Données</h1>
+    <p class="subtitle">Architecture de collecte, qualification, augmentation et préparation des données pour le fine-tuning d'adapters LoRA</p>
+    <div class="doc-meta">
+      <div class="meta-item">Version <span>1.0</span></div>
+      <div class="meta-item">Date <span>2026-05-21</span></div>
+      <div class="meta-item">Statut <span>En cours de construction</span></div>
+      <div class="meta-item">Audience <span>Auditeurs, responsables, équipe technique</span></div>
+    </div>
+  </div>
+
+  <!-- TOC -->
+  <div class="toc">
+    <div class="toc-title">Table des matières</div>
+    <ol>
+      <li><a href="#contexte">Contexte et objectifs</a></li>
+      <li><a href="#philosophie">Philosophie fondamentale</a>
+        <ol>
+          <li><a href="#qualite">Qualité > Volume</a></li>
+          <li><a href="#agnosticisme">Agnosticisme de la plateforme</a></li>
+          <li><a href="#humain">Rôle de l'humain</a></li>
+        </ol>
+      </li>
+      <li><a href="#pipeline">Pipeline de données — ordre des étapes</a></li>
+      <li><a href="#scoring">Mesure de la valeur d'une donnée</a></li>
+      <li><a href="#stockage">Stockage par adapter</a></li>
+      <li><a href="#augmentation">Augmentation des données</a></li>
+      <li><a href="#recommandation">Recommandation ciblée d'ajout</a></li>
+      <li><a href="#verifiers">Verifiers — outils de vérification</a></li>
+      <li><a href="#couts">Coûts computationnels et LLM</a></li>
+      <li><a href="#agents">Agents et outils à construire</a></li>
+      <li><a href="#roadmap">Ordre de construction recommandé</a></li>
+    </ol>
+  </div>
+
+  <!-- 1. CONTEXTE -->
+  <div class="section" id="contexte">
+    <div class="section-header">
+      <span class="section-num">01</span>
+      <h2>Contexte et objectifs</h2>
+    </div>
+
+    <p>La plateforme MLOps a pour mission de produire des adapters LoRA fine-tunés sur des modèles locaux (7B-14B 4-bit), en réponse à des besoins clients précis. L'objectif est une souveraineté totale : zéro appel cloud en production, modèles et données hébergés localement chez le client.</p>
+
+    <p>Le fine-tuning via LoRA nécessite des données d'entraînement de haute qualité, structurées par adapter. Ce document décrit la stratégie retenue pour collecter, qualifier, organiser et préparer ces données — depuis les sources brutes jusqu'au format exploitable par MLX-LM.</p>
+
+    <div class="card info">
+      <div class="card-title">Périmètre de ce document</div>
+      <p>Ce document couvre uniquement le pipeline de données (collecte → qualification → augmentation → préparation). Il ne couvre pas l'architecture d'entraînement, d'évaluation, ni de déploiement — ceux-ci font l'objet de documents séparés.</p>
+    </div>
+  </div>
+
+  <!-- 2. PHILOSOPHIE -->
+  <div class="section" id="philosophie">
+    <div class="section-header">
+      <span class="section-num">02</span>
+      <h2>Philosophie fondamentale</h2>
+    </div>
+
+    <h3 class="sub" id="qualite">Qualité > Volume</h3>
+    <p>Le principe central : il vaut mieux 50 données excellentes que 500 données bruyantes. Cette décision a des conséquences directes sur toute l'architecture :</p>
+
+    <div class="card decision">
+      <div class="card-title">✓ Décision validée — Seuil de départ</div>
+      <p><strong>50 données excellentes</strong> par adapter comme point de départ. Ce n'est pas un volume cible fixe — c'est un seuil minimal de qualité. Le système monitore les performances post-entraînement et recommande d'ajouter des données si nécessaire, de façon ciblée.</p>
+    </div>
+
+    <div class="card warning">
+      <div class="card-title">⚠ Principe GIGO (Garbage In, Garbage Out)</div>
+      <p>Une donnée douteuse est rejetée, jamais incluse. Les données collectées ne seront pas re-collectées — la qualité est non-négociable dès le départ. Dans de nombreux projets, c'est le client qui fournit les données ; si ce n'est pas le cas, il paye les traitements computationnels.</p>
+    </div>
+
+    <h3 class="sub" id="agnosticisme">Agnosticisme de la plateforme</h3>
+    <p>La plateforme MLOps ne contient aucun code en dur lié à un domaine, un langage ou un client spécifique. Tout ce qui est spécifique à un projet est déclaré dans les fichiers YAML de configuration. Un projet "C→Rust" ou "Assistant RH" fonctionne sans toucher une seule ligne de code Python.</p>
+
+    <div class="rule-box">
+      <div class="rule-label">Règle fondamentale</div>
+      <ul>
+        <li><strong>Collecteurs</strong> : génériques, reçoivent des paramètres depuis la config</li>
+        <li><strong>Verifiers</strong> : génériques, invoqués via MCP avec langage et code en paramètre</li>
+        <li><strong>Scorers</strong> : méthode déclarée dans le YAML de l'adapter, pas dans le code</li>
+        <li><strong>Transformations</strong> : templates YAML, pas de logique métier dans le pipeline</li>
+      </ul>
+    </div>
+
+    <h3 class="sub" id="humain">Rôle de l'humain</h3>
+    <p>L'humain intervient le moins possible et uniquement sur le <strong>quoi</strong>, jamais sur le <strong>comment</strong>.</p>
+
+    <table>
+      <tr>
+        <th>L'humain valide</th>
+        <th>La plateforme gère</th>
+      </tr>
+      <tr>
+        <td>Les adapters proposés pour son besoin</td>
+        <td>La configuration technique de chaque adapter</td>
+      </tr>
+      <tr>
+        <td>Les sources de données recommandées</td>
+        <td>La collecte, le nettoyage, la déduplication</td>
+      </tr>
+      <tr>
+        <td>Les verifiers proposés (type de vérification souhaitée)</td>
+        <td>L'installation, la configuration et l'invocation des MCP servers</td>
+      </tr>
+      <tr>
+        <td>La pertinence des YAMLs générés (commentés)</td>
+        <td>Le scoring, la qualification, l'augmentation</td>
+      </tr>
+    </table>
+
+    <div class="card info">
+      <div class="card-title">Pourquoi réduire l'intervention humaine</div>
+      <p>Le savoir-faire technique fin (configuration, validation de code, vérification d'équivalence sémantique) ne peut pas être délégué à un humain non spécialiste. La plateforme et les LLMs assistent le jugement humain — ils ne le remplacent pas sur les décisions métier, mais prennent en charge toute la vérification technique.</p>
+    </div>
+  </div>
+
+  <!-- 3. PIPELINE -->
+  <div class="section" id="pipeline">
+    <div class="section-header">
+      <span class="section-num">03</span>
+      <h2>Pipeline de données — ordre des étapes</h2>
+    </div>
+
+    <p>Le pipeline est strictement séquentiel. Chaque étape est un filtre : seules les données qui passent progressent vers l'étape suivante. Les rejets sont loggés avec leur motif.</p>
+
+    <div class="pipeline">
+      <div class="pipe-step">
+        <div class="pipe-box">
+          <div class="step-label">Étape 1</div>
+          <div class="step-title">Collecte brute</div>
+          <div class="step-desc">Sources déclarées par adapter dans le YAML projet. Collecteurs génériques (multilang_wiki, doc_crawl, web_crawl, manual). Output : enregistrements bruts avec métadonnées (source, date, langue, contexte).</div>
+          <div class="step-cost">Coût : ~0 (scraping) — variable selon volume</div>
+        </div>
+      </div>
+      <div class="pipe-arrow">↓</div>
+      <div class="pipe-step">
+        <div class="pipe-box">
+          <div class="step-label">Étape 2</div>
+          <div class="step-title">Vérification structurelle (software)</div>
+          <div class="step-desc">Via MCP servers. Syntaxe valide ? Longueur minimale ? Langue correctement détectée ? Code exécutable ? Filtres déterministes, rapides, coût nul. Rejette ~20-30% des records bruts.</div>
+          <div class="step-cost">Coût : 0 — déterministe et local</div>
+        </div>
+      </div>
+      <div class="pipe-arrow">↓</div>
+      <div class="pipe-step">
+        <div class="pipe-box">
+          <div class="step-label">Étape 3</div>
+          <div class="step-title">Scoring de pertinence (LLM)</div>
+          <div class="step-desc">Méthode déclarée dans le YAML de l'adapter (cosine+euclidean pour le juridique, TDV+cosine pour le code). Haiku par défaut, routé vers Sonnet pour les cas complexes. Score de pertinence par rapport à la tâche de l'adapter.</div>
+          <div class="step-cost">Coût : ~0.50€/adapter (Haiku) — principal levier de réduction</div>
+        </div>
+      </div>
+      <div class="pipe-arrow">↓</div>
+      <div class="pipe-step">
+        <div class="pipe-box">
+          <div class="step-label">Étape 4</div>
+          <div class="step-title">Vérification sémantique (software + LLM)</div>
+          <div class="step-desc">Pour le code : exécution sandboxée via MCP, comparaison d'outputs. Le LLM n'intervient que sur ce que le software ne peut pas trancher. Pour le texte : LLM juge (Sonnet) sur un sous-ensemble filtré par l'étape 3.</div>
+          <div class="step-cost">Coût : ~5-15€/adapter (Sonnet sur volume réduit)</div>
+        </div>
+      </div>
+      <div class="pipe-arrow">↓</div>
+      <div class="pipe-step">
+        <div class="pipe-box">
+          <div class="step-label">Étape 5</div>
+          <div class="step-title">Déduplication</div>
+          <div class="step-desc">Hash sur contenu normalisé. Détection des doublons sémantiques proches via embedding. Suppression des variantes trop similaires qui n'apportent pas de diversité.</div>
+          <div class="step-cost">Coût : ~0 (déterministe) + embedding si similarité sémantique</div>
+        </div>
+      </div>
+      <div class="pipe-arrow">↓</div>
+      <div class="pipe-step">
+        <div class="pipe-box">
+          <div class="step-label">Étape 6</div>
+          <div class="step-title">Couverture des catégories</div>
+          <div class="step-desc">Clustering des données validées. Comparaison avec les catégories attendues définies par l'advisor. Identification des gaps → recommandations ciblées de collecte supplémentaire.</div>
+          <div class="step-cost">Coût : ~0.20€ (embedding + clustering local)</div>
+        </div>
+      </div>
+      <div class="pipe-arrow">↓</div>
+      <div class="pipe-step">
+        <div class="pipe-box">
+          <div class="step-label">Étape 7</div>
+          <div class="step-title">Augmentation (optionnelle)</div>
+          <div class="step-desc">Uniquement sur les données ayant passé TOUTES les étapes précédentes. Inspirée de la data augmentation en Computer Vision : transformations qui préservent la relation sémantique. Vérifiée par exécution.</div>
+          <div class="step-cost">Coût : ~3-10€/adapter (Sonnet pour génération + vérification)</div>
+        </div>
+      </div>
+      <div class="pipe-arrow">↓</div>
+      <div class="pipe-step">
+        <div class="pipe-box">
+          <div class="step-label">Étape 8</div>
+          <div class="step-title">Transformation → format entraînable</div>
+          <div class="step-desc">Transformation en paires {prompt, completion} via templates YAML (config/transforms/). C'est LA SEULE étape où le format d'entraînement est appliqué. Formatage final pour MLX-LM LoRA.</div>
+          <div class="step-cost">Coût : ~0.20€ (Haiku pour formatage)</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card warning">
+      <div class="card-title">⚠ Point critique — Ordre inviolable</div>
+      <p>La transformation en paires {prompt, completion} se fait <strong>uniquement à l'étape 8</strong>. Les étapes 1 à 7 opèrent sur les données dans leur schéma natif (description/code, task_name/code, etc.). Appliquer le format d'entraînement plus tôt pollue la qualification et masque les problèmes de qualité.</p>
+    </div>
+  </div>
+
+  <!-- 4. SCORING -->
+  <div class="section" id="scoring">
+    <div class="section-header">
+      <span class="section-num">04</span>
+      <h2>Mesure de la valeur d'une donnée</h2>
+    </div>
+
+    <p>La méthode de scoring est déclarée dans le YAML de l'adapter selon son domaine. Pas de méthode universelle codée en dur. L'advisor recommande la méthode de scoring en même temps qu'il recommande l'adapter.</p>
+
+    <div class="code-block"><span class="comment"># Exemple YAML adapter — domaine juridique</span>
+<span class="key">scoring</span>:
+  <span class="key">method</span>: <span class="str">cosine_euclidean</span>       <span class="comment"># similarité cosinus + distance euclidienne</span>
+  <span class="key">threshold</span>: <span class="val">0.82</span>              <span class="comment"># score minimum pour passer l'étape</span>
+  <span class="key">reference_examples</span>: <span class="str">5</span>     <span class="comment"># exemples "idéaux" définis lors de l'analyse du besoin</span>
+
+<span class="comment"># Exemple YAML adapter — migration de code</span>
+<span class="key">scoring</span>:
+  <span class="key">method</span>: <span class="str">tdv_cosine</span>            <span class="comment"># test-driven validation + cosinus</span>
+  <span class="key">threshold</span>:
+    <span class="key">pass_rate</span>: <span class="val">0.95</span>           <span class="comment"># 95% des tests unitaires doivent passer</span>
+    <span class="key">semantic_score</span>: <span class="val">0.78</span>      <span class="comment"># score sémantique minimum</span></div>
+
+    <table>
+      <tr>
+        <th>Méthode</th>
+        <th>Domaine adapté</th>
+        <th>Coût</th>
+        <th>Fiabilité</th>
+      </tr>
+      <tr>
+        <td><span class="tag tag-blue">cosine + euclidean</span></td>
+        <td>Juridique, RH, texte structuré</td>
+        <td>Très faible (embedding local)</td>
+        <td>Bonne sur contenu homogène</td>
+      </tr>
+      <tr>
+        <td><span class="tag tag-orange">TDV (test-driven)</span></td>
+        <td>Code — migration, génération</td>
+        <td>Faible (exécution locale)</td>
+        <td>Excellente — vérification déterministe</td>
+      </tr>
+      <tr>
+        <td><span class="tag tag-purple">LLM juge (Sonnet)</span></td>
+        <td>Cas complexes, ambigu, métier</td>
+        <td>Moyen (~0.02€/record)</td>
+        <td>Bonne mais coûteuse — réserver aux cas difficiles</td>
+      </tr>
+      <tr>
+        <td><span class="tag tag-green">Heuristiques</span></td>
+        <td>Premier filtre universel</td>
+        <td>Nul</td>
+        <td>Faible sur le fond — indispensable en pré-filtre</td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- 5. STOCKAGE -->
+  <div class="section" id="stockage">
+    <div class="section-header">
+      <span class="section-num">05</span>
+      <h2>Stockage des données par adapter</h2>
+    </div>
+
+    <div class="card decision">
+      <div class="card-title">✓ Décision validée — Isolation par adapter</div>
+      <p>Chaque adapter dispose de ses propres données isolées dans le datalake. La duplication d'une donnée utile à deux adapters est acceptée.</p>
+    </div>
+
+    <div class="code-block">datalake/projects/{project_id}/
+  adapters/
+    {adapter_name}/
+      raw/             <span class="comment"># données brutes collectées</span>
+      validated/       <span class="comment"># données ayant passé les filtres</span>
+      augmented/       <span class="comment"># données augmentées (si applicable)</span>
+      ready/           <span class="comment"># format final {prompt, completion}</span></div>
+
+    <table>
+      <tr>
+        <th>Avantages de l'isolation par adapter</th>
+        <th>Inconvénients acceptés</th>
+      </tr>
+      <tr>
+        <td>Pipeline indépendant par adapter — un adapter peut être recollecté sans impacter les autres</td>
+        <td>Duplication si une donnée sert plusieurs adapters</td>
+      </tr>
+      <tr>
+        <td>Suppression propre — supprimer un adapter supprime toutes ses données</td>
+        <td>Stockage légèrement plus important</td>
+      </tr>
+      <tr>
+        <td>Audit clair — traçabilité complète par adapter</td>
+        <td rowspan="2">—</td>
+      </tr>
+      <tr>
+        <td>Pas de couplage — modifier les données d'un adapter n'impacte pas les autres</td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- 6. AUGMENTATION -->
+  <div class="section" id="augmentation">
+    <div class="section-header">
+      <span class="section-num">06</span>
+      <h2>Augmentation des données</h2>
+    </div>
+
+    <p>Inspirée de la <strong>data augmentation en Computer Vision</strong> : en CV, une rotation d'image préserve le label (un chat reste un chat). En MLOps, la règle équivalente est que toute transformation doit préserver la relation sémantique entre les données.</p>
+
+    <div class="card warning">
+      <div class="card-title">⚠ Condition préalable stricte</div>
+      <p>L'augmentation ne s'applique <strong>que sur des données ayant passé TOUS les filtres de qualité</strong>. Jamais sur de la data brute ou partiellement validée. Augmenter de la mauvaise data ne fait qu'amplifier le bruit.</p>
+    </div>
+
+    <h3 class="sub">Transformations valides</h3>
+    <div class="rule-box">
+      <div class="rule-label">Ce qui préserve la relation sémantique</div>
+      <ul>
+        <li><strong>Renommage de variables</strong> — x, y, z → noms sémantiques (count, index, result)</li>
+        <li><strong>Variations de style</strong> — même algorithme en impératif vs fonctionnel</li>
+        <li><strong>Montée en complexité contrôlée</strong> — ajouter gestion d'erreurs, cas limites, types</li>
+        <li><strong>Équivalents algorithmiques</strong> — bubble sort ↔ insertion sort (même complexité cognitive)</li>
+      </ul>
+    </div>
+
+    <h3 class="sub">Transformations invalides (GIGO)</h3>
+    <div class="rule-box">
+      <div class="rule-label">Ce qui introduit du bruit</div>
+      <ul>
+        <li><strong>Traduction automatique des commentaires</strong> sans compréhension du code</li>
+        <li><strong>Substitution de tokens aléatoire</strong> — équivalent du bruit gaussien en CV</li>
+        <li><strong>Code non vérifiable</strong> — toute augmentation doit être vérifiée par exécution</li>
+        <li><strong>Généralisation excessive</strong> — créer des cas qui n'existent pas dans la vraie base client</li>
+      </ul>
+    </div>
+
+    <div class="card decision">
+      <div class="card-title">✓ Règle de vérification — Exécution obligatoire</div>
+      <p>Pour le code : outputs identiques sur un ensemble d'inputs de test = augmentation valide. Pour le texte : LLM juge vérifie la cohérence sémantique. Augmenter peu mais rigoureusement — pas d'augmentation massive avec vérification par échantillon.</p>
+    </div>
+  </div>
+
+  <!-- 7. RECOMMANDATION -->
+  <div class="section" id="recommandation">
+    <div class="section-header">
+      <span class="section-num">07</span>
+      <h2>Recommandation ciblée d'ajout de données</h2>
+    </div>
+
+    <p>Le système surveille les performances post-entraînement et recommande d'ajouter des données si nécessaire. La recommandation est <strong>ciblée par catégorie de faiblesse</strong> — pas générique.</p>
+
+    <div class="card decision">
+      <div class="card-title">✓ Option retenue — Advisor + Clustering</div>
+      <p>L'advisor définit à l'analyse du besoin les <strong>catégories de tâches attendues</strong> pour l'adapter. Après collecte et validation, un clustering vérifie quelles catégories sont effectivement couvertes. Les gaps = recommandations ciblées.</p>
+    </div>
+
+    <div class="code-block"><span class="comment"># Exemple de recommandation générée automatiquement</span>
+{
+  <span class="key">"adapter"</span>: <span class="str">"syntax_translator"</span>,
+  <span class="key">"evaluation_score"</span>: <span class="val">0.71</span>,          <span class="comment"># sous le seuil 0.85</span>
+  <span class="key">"weak_categories"</span>: [
+    {
+      <span class="key">"category"</span>: <span class="str">"gestion_exceptions"</span>,
+      <span class="key">"coverage"</span>: <span class="val">0.23</span>,             <span class="comment"># sous-représenté</span>
+      <span class="key">"recommended_additions"</span>: <span class="val">18</span>,
+      <span class="key">"suggested_sources"</span>: [<span class="str">"docs.oracle.com/exceptions"</span>]
+    }
+  ]
+}</div>
+
+    <h3 class="sub">Déclencheurs de recommandation</h3>
+    <table>
+      <tr>
+        <th>Signal</th>
+        <th>Interprétation</th>
+        <th>Action recommandée</th>
+      </tr>
+      <tr>
+        <td>Score global &lt; quality_thresholds</td>
+        <td>Performance insuffisante</td>
+        <td>Analyser les catégories faibles, cibler la collecte</td>
+      </tr>
+      <tr>
+        <td>Catégorie &lt; 20% de couverture</td>
+        <td>Angle mort dans les données</td>
+        <td>Collecte ciblée sur cette catégorie spécifique</td>
+      </tr>
+      <tr>
+        <td>Loss non saturée en fin d'entraînement</td>
+        <td>Modèle n'a pas convergé — volume insuffisant</td>
+        <td>Ajouter des données sur les catégories principales</td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- 8. VERIFIERS -->
+  <div class="section" id="verifiers">
+    <div class="section-header">
+      <span class="section-num">08</span>
+      <h2>Verifiers — outils de vérification via MCP</h2>
+    </div>
+
+    <p>Les verifiers sont des outils de vérification invoqués via MCP servers. Ils sont recommandés par l'advisor (Sonnet) à l'analyse du besoin, déclarés dans le YAML projet avec commentaires, validés par l'humain, puis gérés entièrement automatiquement.</p>
+
+    <div class="card decision">
+      <div class="card-title">✓ Architecture retenue</div>
+      <p>Un registre <code>config/verifiers/registry.yaml</code> liste les MCP servers disponibles. L'advisor consulte ce registre et recommande les verifiers selon la tâche de chaque adapter. Les YAMLs générés sont commentés et proposés avant persistance. Après validation humaine : 100% automatique.</p>
+    </div>
+
+    <div class="code-block"><span class="comment"># Exemple section verifiers dans un YAML projet</span>
+<span class="key">verifiers</span>:
+  <span class="comment"># Vérifie que le code Python est syntaxiquement valide et s'exécute</span>
+  <span class="comment"># Filtre ~30% des records bruts — coût nul</span>
+  - <span class="key">id</span>: <span class="str">python_exec</span>
+    <span class="key">type</span>: <span class="str">mcp_tool</span>
+    <span class="key">server</span>: <span class="str">code-executor</span>
+    <span class="key">validates</span>: [<span class="str">syntax_translator</span>]
+
+  <span class="comment"># Vérifie l'équivalence outputs Python/Java sur inputs de test</span>
+  <span class="comment"># Remplace un LLM juge pour les cas déterministes — coût nul</span>
+  - <span class="key">id</span>: <span class="str">semantic_diff</span>
+    <span class="key">type</span>: <span class="str">mcp_tool</span>
+    <span class="key">server</span>: <span class="str">code-executor</span>
+    <span class="key">validates</span>: [<span class="str">syntax_translator</span>]</div>
+
+    <div class="card info">
+      <div class="card-title">Critère MCP vs LLM</div>
+      <p>Un MCP server a du sens quand la tâche est <strong>déterministe + rapide + appelée très souvent</strong>. Sinon, un LLM est plus flexible. Les MCP servers créés pour mlOps seront génériques : "code-executor" reçoit un langage et du code en paramètre — jamais un "python-executor" dédié.</p>
+    </div>
+  </div>
+
+  <!-- 9. COUTS -->
+  <div class="section" id="couts">
+    <div class="section-header">
+      <span class="section-num">09</span>
+      <h2>Coûts computationnels et LLM</h2>
+    </div>
+
+    <p>Les coûts LLM sont le poste dominant, devant le compute. La stratégie "peu de données très qualitatives" réduit les coûts en limitant le volume à scorer et vérifier.</p>
+
+    <table>
+      <tr>
+        <th>Poste</th>
+        <th>Par adapter</th>
+        <th>Projet 5 adapters</th>
+        <th>Levier de réduction</th>
+      </tr>
+      <tr>
+        <td>Collecte / scraping</td>
+        <td>1 à 3€</td>
+        <td>5 à 15€</td>
+        <td>Sources ciblées, volume limité</td>
+      </tr>
+      <tr>
+        <td>Scoring qualité (Haiku)</td>
+        <td>~0.50€</td>
+        <td>~2.50€</td>
+        <td>Pré-filtres déterministes en amont</td>
+      </tr>
+      <tr>
+        <td>Vérification sémantique (Sonnet)</td>
+        <td>5 à 15€</td>
+        <td>25 à 75€</td>
+        <td>Software (MCP) traite les cas déterministes</td>
+      </tr>
+      <tr>
+        <td>Augmentation (Sonnet)</td>
+        <td>3 à 10€</td>
+        <td>15 à 50€</td>
+        <td>Uniquement sur data déjà validée</td>
+      </tr>
+      <tr>
+        <td>Entraînement LoRA (A10G cloud)</td>
+        <td>8 à 20€</td>
+        <td>40 à 100€</td>
+        <td>Local sur M4 Pro = quasi gratuit</td>
+      </tr>
+      <tr>
+        <td>Évaluation vs baseline</td>
+        <td>2 à 8€</td>
+        <td>10 à 40€</td>
+        <td>—</td>
+      </tr>
+    </table>
+
+    <div class="cost-total">
+      <div class="label">Coût total estimé — projet 5 adapters (client sans data)</div>
+      <div class="amount">100 à 280 €</div>
+    </div>
+
+    <div class="card info" style="margin-top:16px">
+      <div class="card-title">Réduction long terme — Nos propres adapters comme agents</div>
+      <p>Une fois entraînés, nos adapters de scoring et de vérification tournent en local via Ollama à coût nul. La plateforme devient progressivement son propre client — chaque projet améliore les outils qui servent aux projets suivants.</p>
+    </div>
+  </div>
+
+  <!-- 10. AGENTS -->
+  <div class="section" id="agents">
+    <div class="section-header">
+      <span class="section-num">10</span>
+      <h2>Agents et outils à construire</h2>
+    </div>
+
+    <p>Liste des agents et outils nécessaires au pipeline de données. <strong>Aucun n'est encore construit</strong> — ce document sert de feuille de route. Ils doivent tous être construits avant d'être utilisés.</p>
+
+    <h3 class="sub">Agents LLM</h3>
+    <div class="agents-grid">
+
+      <div class="agent-card">
+        <div class="agent-name">data-scorer</div>
+        <div class="agent-role">Score la pertinence de chaque enregistrement brut par rapport à la tâche d'un adapter. Route vers Haiku (cas simples) ou Sonnet (cas complexes) selon la difficulté détectée.</div>
+        <div class="agent-details">
+          <div class="agent-detail"><strong>Modèle :</strong> Haiku 4.5 (défaut) / Sonnet 4.6 (complexe)</div>
+          <div class="agent-detail"><strong>Input :</strong> record brut + description tâche adapter + méthode scoring</div>
+          <div class="agent-detail"><strong>Output :</strong> score 0-1 + motif + catégorie détectée</div>
+          <div class="agent-detail"><strong>Étape pipeline :</strong> 3 — Scoring de pertinence</div>
+        </div>
+      </div>
+
+      <div class="agent-card">
+        <div class="agent-name">semantic-judge</div>
+        <div class="agent-role">Vérifie l'équivalence sémantique entre deux implémentations (code ou texte) quand le software ne peut pas trancher. Juge si la relation entre les deux éléments est préservée.</div>
+        <div class="agent-details">
+          <div class="agent-detail"><strong>Modèle :</strong> Sonnet 4.6</div>
+          <div class="agent-detail"><strong>Input :</strong> deux implémentations + contexte de la tâche</div>
+          <div class="agent-detail"><strong>Output :</strong> équivalent/non-équivalent + explication</div>
+          <div class="agent-detail"><strong>Étape pipeline :</strong> 4 — Vérification sémantique</div>
+        </div>
+      </div>
+
+      <div class="agent-card">
+        <div class="agent-name">data-augmentor</div>
+        <div class="agent-role">Génère des variantes d'augmentation à partir de données validées. Applique les transformations autorisées (renommage, style, complexité) en préservant la relation sémantique.</div>
+        <div class="agent-details">
+          <div class="agent-detail"><strong>Modèle :</strong> Sonnet 4.6</div>
+          <div class="agent-detail"><strong>Input :</strong> donnée validée + type de transformation + contraintes adapter</div>
+          <div class="agent-detail"><strong>Output :</strong> N variantes + métadonnées de transformation</div>
+          <div class="agent-detail"><strong>Étape pipeline :</strong> 7 — Augmentation</div>
+        </div>
+      </div>
+
+      <div class="agent-card">
+        <div class="agent-name">coverage-analyst</div>
+        <div class="agent-role">Compare les catégories de tâches attendues (définies par l'advisor) avec les catégories effectivement couvertes par les données validées. Génère les recommandations ciblées d'ajout.</div>
+        <div class="agent-details">
+          <div class="agent-detail"><strong>Modèle :</strong> Haiku 4.5 + clustering local</div>
+          <div class="agent-detail"><strong>Input :</strong> données validées + catégories attendues YAML</div>
+          <div class="agent-detail"><strong>Output :</strong> rapport de couverture + recommandations ciblées</div>
+          <div class="agent-detail"><strong>Étape pipeline :</strong> 6 — Couverture des catégories</div>
+        </div>
+      </div>
+
+      <div class="agent-card">
+        <div class="agent-name">data-transformer</div>
+        <div class="agent-role">Transforme les données validées en paires {prompt, completion} selon le template déclaré dans le YAML de l'adapter. C'est la seule étape où le format d'entraînement est appliqué.</div>
+        <div class="agent-details">
+          <div class="agent-detail"><strong>Modèle :</strong> Haiku 4.5</div>
+          <div class="agent-detail"><strong>Input :</strong> données validées + template config/transforms/</div>
+          <div class="agent-detail"><strong>Output :</strong> paires {prompt, completion} formatées pour MLX-LM</div>
+          <div class="agent-detail"><strong>Étape pipeline :</strong> 8 — Transformation</div>
+        </div>
+      </div>
+
+      <div class="agent-card">
+        <div class="agent-name">verifier-recommender</div>
+        <div class="agent-role">Recommande les verifiers MCP appropriés lors de l'analyse du besoin. Consulte le registre config/verifiers/registry.yaml et sélectionne selon le domaine et les tâches de chaque adapter.</div>
+        <div class="agent-details">
+          <div class="agent-detail"><strong>Modèle :</strong> Sonnet 4.6 (intégré à l'advisor)</div>
+          <div class="agent-detail"><strong>Input :</strong> description adapter + registre verifiers disponibles</div>
+          <div class="agent-detail"><strong>Output :</strong> section verifiers du YAML projet, commentée</div>
+          <div class="agent-detail"><strong>Étape pipeline :</strong> Analyse du besoin (pré-collecte)</div>
+        </div>
+      </div>
+
+    </div>
+
+    <h3 class="sub">Outils MCP à créer</h3>
+    <div class="agents-grid">
+
+      <div class="agent-card mcp-card">
+        <div class="agent-name">mcp/code-executor</div>
+        <div class="agent-role">Exécution sandboxée de code dans n'importe quel langage. Reçoit langage + code + inputs de test, retourne outputs et erreurs. Générique — jamais spécifique à un langage.</div>
+        <div class="agent-details">
+          <div class="agent-detail"><strong>Tools exposés :</strong> execute(lang, code, inputs), lint(lang, code)</div>
+          <div class="agent-detail"><strong>Backend :</strong> Python natif + Docker pour les autres langages</div>
+          <div class="agent-detail"><strong>Utilisé par :</strong> semantic-judge, data-augmentor (vérification)</div>
+        </div>
+      </div>
+
+      <div class="agent-card mcp-card">
+        <div class="agent-name">mcp/data-quality</div>
+        <div class="agent-role">Outils déterministes de qualification des données brutes : détection de langue, validation de structure JSONL, détection de doublons, scoring de longueur et de densité.</div>
+        <div class="agent-details">
+          <div class="agent-detail"><strong>Tools exposés :</strong> detect_lang(text), dedup(records), validate_schema(record), length_score(text)</div>
+          <div class="agent-detail"><strong>Coût :</strong> 0 — entièrement local et déterministe</div>
+          <div class="agent-detail"><strong>Utilisé par :</strong> Étape 2 (filtrage structurel)</div>
+        </div>
+      </div>
+
+    </div>
+
+    <h3 class="sub">Outils pipeline (scripts Python)</h3>
+    <div class="agents-grid">
+
+      <div class="agent-card tool-card">
+        <div class="agent-name">pipeline/cluster.py</div>
+        <div class="agent-role">Clustering des données validées par adapter. Utilise les embeddings nomic-embed-text (Ollama local). Produit les clusters et les compare aux catégories attendues du YAML adapter.</div>
+        <div class="agent-details">
+          <div class="agent-detail"><strong>Input :</strong> datalake/.../validated/ + YAML adapter (catégories attendues)</div>
+          <div class="agent-detail"><strong>Output :</strong> rapport de couverture JSON + gaps identifiés</div>
+        </div>
+      </div>
+
+      <div class="agent-card tool-card">
+        <div class="agent-name">pipeline/deduplicate.py</div>
+        <div class="agent-role">Déduplication à deux niveaux : hash exact sur contenu normalisé, puis similarité sémantique via embedding pour détecter les quasi-doublons.</div>
+        <div class="agent-details">
+          <div class="agent-detail"><strong>Input :</strong> datalake/.../raw/consolidated.jsonl</div>
+          <div class="agent-detail"><strong>Output :</strong> fichier dédupliqué + rapport des rejets</div>
+        </div>
+      </div>
+
+      <div class="agent-card tool-card">
+        <div class="agent-name">pipeline/transform.py</div>
+        <div class="agent-role">Transformation des données validées en paires {prompt, completion} selon le template déclaré dans config/transforms/. Seule étape où le format d'entraînement est appliqué.</div>
+        <div class="agent-details">
+          <div class="agent-detail"><strong>Input :</strong> datalake/.../validated/ + config/transforms/{template}.yaml</div>
+          <div class="agent-detail"><strong>Output :</strong> datalake/.../ready/pairs.jsonl</div>
+        </div>
+      </div>
+
+      <div class="agent-card tool-card">
+        <div class="agent-name">pipeline/recommend.py</div>
+        <div class="agent-role">Analyse les métriques post-entraînement MLflow et les gaps de couverture pour produire des recommandations ciblées d'ajout de données par catégorie de faiblesse.</div>
+        <div class="agent-details">
+          <div class="agent-detail"><strong>Input :</strong> MLflow run_id + rapport couverture cluster.py</div>
+          <div class="agent-detail"><strong>Output :</strong> recommandations JSON + sources suggérées</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 11. ROADMAP -->
+  <div class="section" id="roadmap">
+    <div class="section-header">
+      <span class="section-num">11</span>
+      <h2>Ordre de construction recommandé</h2>
+    </div>
+
+    <p>Construire tous les outils avant de les utiliser. Cet ordre respecte les dépendances : chaque outil s'appuie sur les précédents.</p>
+
+    <div class="roadmap">
+      <div class="roadmap-item">
+        <div class="roadmap-num">1</div>
+        <div class="roadmap-content">
+          <div class="roadmap-title">config/verifiers/registry.yaml <span class="tag tag-green">Config</span></div>
+          <div class="roadmap-desc">Registre des MCP servers disponibles — le référentiel que tous les autres composants consultent. Définit le contrat d'interface.</div>
+        </div>
+      </div>
+      <div class="roadmap-item">
+        <div class="roadmap-num">2</div>
+        <div class="roadmap-content">
+          <div class="roadmap-title">mcp/data-quality <span class="tag tag-cyan">MCP</span></div>
+          <div class="roadmap-desc">Outils déterministes sans dépendances. Actif dès l'étape 2 du pipeline. Coût nul — à construire en priorité pour réduire le volume traité par les LLMs en aval.</div>
+        </div>
+      </div>
+      <div class="roadmap-item">
+        <div class="roadmap-num">3</div>
+        <div class="roadmap-content">
+          <div class="roadmap-title">mcp/code-executor <span class="tag tag-cyan">MCP</span></div>
+          <div class="roadmap-desc">Exécution sandboxée générique. Prérequis pour le TDV (scoring code) et pour la vérification des augmentations. Python natif d'abord, Docker pour les autres langages.</div>
+        </div>
+      </div>
+      <div class="roadmap-item">
+        <div class="roadmap-num">4</div>
+        <div class="roadmap-content">
+          <div class="roadmap-title">pipeline/deduplicate.py <span class="tag tag-orange">Script</span></div>
+          <div class="roadmap-desc">Dépend uniquement du datalake. Doit tourner avant tout scoring LLM pour ne pas payer pour scorer des doublons.</div>
+        </div>
+      </div>
+      <div class="roadmap-item">
+        <div class="roadmap-num">5</div>
+        <div class="roadmap-content">
+          <div class="roadmap-title">agents/data-scorer <span class="tag tag-purple">Agent LLM</span></div>
+          <div class="roadmap-desc">Dépend de mcp/data-quality (pré-filtre) et du registre verifiers. Premier agent LLM du pipeline — son routing Haiku/Sonnet doit être calibré sur des exemples réels.</div>
+        </div>
+      </div>
+      <div class="roadmap-item">
+        <div class="roadmap-num">6</div>
+        <div class="roadmap-content">
+          <div class="roadmap-title">agents/semantic-judge <span class="tag tag-purple">Agent LLM</span></div>
+          <div class="roadmap-desc">Dépend de mcp/code-executor. N'intervient qu'après que le software a traité les cas déterministes.</div>
+        </div>
+      </div>
+      <div class="roadmap-item">
+        <div class="roadmap-num">7</div>
+        <div class="roadmap-content">
+          <div class="roadmap-title">pipeline/cluster.py <span class="tag tag-orange">Script</span></div>
+          <div class="roadmap-desc">Dépend des données validées (étapes 2-4) et des embeddings Ollama. Prérequis pour coverage-analyst et recommend.py.</div>
+        </div>
+      </div>
+      <div class="roadmap-item">
+        <div class="roadmap-num">8</div>
+        <div class="roadmap-content">
+          <div class="roadmap-title">pipeline/transform.py <span class="tag tag-orange">Script</span></div>
+          <div class="roadmap-desc">Transformation finale en paires d'entraînement. Dépend des templates config/transforms/ (déjà partiellement existants).</div>
+        </div>
+      </div>
+      <div class="roadmap-item">
+        <div class="roadmap-num">9</div>
+        <div class="roadmap-content">
+          <div class="roadmap-title">agents/data-augmentor <span class="tag tag-purple">Agent LLM</span></div>
+          <div class="roadmap-desc">Dépend de mcp/code-executor (vérification) et de données déjà validées. Construit en dernier car optionnel — le pipeline fonctionne sans lui.</div>
+        </div>
+      </div>
+      <div class="roadmap-item">
+        <div class="roadmap-num">10</div>
+        <div class="roadmap-content">
+          <div class="roadmap-title">pipeline/recommend.py + agents/coverage-analyst <span class="tag tag-orange">Script</span> <span class="tag tag-purple">Agent LLM</span></div>
+          <div class="roadmap-desc">Dépend de MLflow (métriques entraînement) et de cluster.py. Construit après le premier cycle entraînement complet — nécessite des données réelles d'évaluation pour être calibré.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card decision" style="margin-top:24px">
+      <div class="card-title">✓ Principe — Construire avant d'utiliser</div>
+      <p>Aucun outil ne doit être invoqué dans un pipeline réel avant d'avoir été testé en isolation. L'ordre ci-dessus garantit que chaque outil est disponible et validé quand le suivant en a besoin.</p>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <div class="doc-footer">
+    <span>MLOps Platform — Capgemini</span>
+    <span>Dernière mise à jour : 2026-05-21</span>
+  </div>
+
+</div>
+</body>
+</html>

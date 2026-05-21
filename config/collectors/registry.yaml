@@ -1,0 +1,91 @@
+# Collector registry — single source of truth for all available collectors.
+# To add a new collector: add an entry here. No Python code change needed.
+#
+# Fields:
+#   module        : Python module path (python -m <module>)
+#   description   : Human-readable description shown in UI
+#   required_args : Keys that MUST be present in CollectRequest
+#   optional_args : Keys that MAY be present
+#   cli_mapping   : Maps request field names → CLI argument names
+#                   List value fields (e.g. langs) are space-joined automatically
+#   output_schema : Fields produced in each output record (neutral — no prompt/completion)
+#                   Empty [] means legacy collector that already produces prompt/completion
+
+collectors:
+
+  multilang_wiki:
+    module: agents.rosetta_collector
+    description: "Multi-language wiki pages (Rosetta Code and similar sites)"
+    required_args:
+      - langs         # list of language names, e.g. ["Python", "Java"] or ["C", "Rust"]
+    optional_args:
+      - topic         # keyword filter on task names, or "all"
+      - max_tasks     # max number of wiki tasks to process
+      - url           # override default Rosetta Code base URL
+      - adapter_name
+    cli_mapping:
+      langs:       "--langs"        # list → space-separated string
+      topic:       "--topic"
+      max_tasks:   "--max-tasks"
+      url:         "--url"
+      adapter_name: "--adapter-name"
+    output_schema:
+      - task_name
+      - lang
+      - code
+      - source_url
+      - collected_at
+
+  doc_crawl:
+    module: agents.doc_collector
+    description: "Technical documentation with annotated code blocks (BFS crawler)"
+    required_args:
+      - url           # seed URL to start crawling from
+      - lang          # target language hint for code extraction
+    optional_args:
+      - max_pages
+      - max_depth
+      - custom_tags   # list of custom HTML tags whose comment content is extracted as code
+      - adapter_name
+    cli_mapping:
+      url:         "--url"
+      lang:        "--lang"
+      max_pages:   "--max-pages"
+      max_depth:   "--max-depth"
+      custom_tags: "--custom-tags"  # list → space-separated string
+      adapter_name: "--adapter-name"
+    output_schema:
+      - description
+      - code
+      - lang
+      - source_url
+      - collected_at
+
+  web_crawl:
+    module: agents.web_collector
+    description: "Generic web crawl — uses config/sources/<domain>.yaml registry"
+    required_args:
+      - topic
+    optional_args:
+      - domain
+      - task_type
+      - max_pages
+      - project
+      - adapter_name
+    cli_mapping:
+      topic:       "--topic"
+      domain:      "--domain"
+      task_type:   "--task-type"
+      max_pages:   "--max-pages"
+      project:     "--project"
+      adapter_name: "--adapter-name"
+    # Legacy: web_collector already produces {prompt, completion} directly
+    output_schema: []
+
+  manual:
+    module: null
+    description: "Manually provided JSONL file — loaded as-is, no subprocess launched"
+    required_args: []
+    optional_args: []
+    cli_mapping: {}
+    output_schema: []

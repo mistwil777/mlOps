@@ -1,8 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { getProjects, searchDatalakePairs, indexProjectPairs, browsePairs } from '$lib/api';
-  import type { DatalakePair } from '$lib/api';
   import type { Project } from '$lib/types';
+
+  type RawRecord = Record<string, unknown>;
 
   const PAGE_SIZE = 20;
 
@@ -12,16 +13,35 @@
   let filterStage    = $state('raw');
   let filterAdapter  = $state('');
   let page           = $state(0);
-  let items: DatalakePair[] = $state([]);
+  let items: RawRecord[] = $state([]);
   let total          = $state(0);
   let loading        = $state(false);
   let error          = $state('');
   let indexing       = $state(false);
   let indexMsg       = $state('');
+
+  // Detect primary content columns for a record
+  function displayCols(r: RawRecord): [string, string, string, string] {
+    if (r.task_name && r.code)   return ['Tâche', String(r.task_name ?? ''), 'Code', String(r.code ?? '')];
+    if (r.description && r.code) return ['Description', String(r.description ?? ''), 'Code', String(r.code ?? '')];
+    return ['Prompt', String(r.prompt ?? ''), 'Completion', String(r.completion ?? '')];
+  }
+
+  function schemaLabel(r: RawRecord): string {
+    if (r.task_name && r.code && r.lang) return 'multilang_wiki';
+    if (r.description && r.code)         return 'doc_crawl';
+    if (r.prompt && r.completion)        return 'web_crawl';
+    return 'brut';
+  }
+
+  function langBadge(r: RawRecord): string {
+    const l = String(r.lang ?? '');
+    return l && !l.startsWith('http') ? l : '';
+  }
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Modal
-  let modalPair: DatalakePair | null = $state(null);
+  let modalPair: RawRecord | null = $state(null);
 
   // Adapters available for selected project
   const selectedProjectObj = $derived(projects.find(p => p.id === filterProject) ?? null);
@@ -233,47 +253,40 @@
 
       {:else}
         <div class="results-list">
-          {#each items as pair}
+          {#each items as rec}
+            {@const [lLabel, lVal, rLabel, rVal] = displayCols(rec)}
+            {@const schema = schemaLabel(rec)}
+            {@const lang = langBadge(rec)}
             <div class="result-card card">
-              <!-- L1 : header — badges + actions -->
               <div class="rc-header">
                 <div class="rc-badges">
-                  {#if pair.adapter_name}
-                    <span class="badge badge-adapter">{pair.adapter_name}</span>
-                  {/if}
-                  <span class="badge badge-stage">{pair.stage}</span>
-                  {#if pair.quality_score != null}
-                    <span class="badge" style="background:rgba(0,0,0,.1); color:{scoreColor(pair.quality_score)}">
-                      ◉ {(pair.quality_score * 20).toFixed(0)}/20
-                    </span>
-                  {/if}
-                  {#if pair.collected_at}
-                    <span class="badge" style="color:{freshnessColor(pair.collected_at)}">
-                      ◷ {formatDate(pair.collected_at)}
+                  {#if rec.adapter_name}<span class="badge badge-adapter">{String(rec.adapter_name)}</span>{/if}
+                  <span class="badge schema-badge schema-{schema}">{schema}</span>
+                  {#if lang}<span class="badge" style="background:rgba(99,179,237,.12);color:#63b3ed">{lang}</span>{/if}
+                  {#if rec.collected_at}
+                    <span class="badge" style="color:{freshnessColor(String(rec.collected_at))}">
+                      ◷ {formatDate(String(rec.collected_at))}
                     </span>
                   {/if}
                 </div>
-                <button class="btn btn-ghost btn-xs" onclick={() => modalPair = pair}>
-                  Voir complet →
-                </button>
+                <button class="btn btn-ghost btn-xs" onclick={() => modalPair = rec}>Voir complet →</button>
               </div>
 
-              <!-- L1 : aperçu prompt + completion -->
               <div class="rc-cols">
                 <div class="rc-col">
-                  <div class="col-label">Prompt</div>
-                  <pre class="rc-text">{pair.prompt.slice(0, 200)}{pair.prompt.length > 200 ? '…' : ''}</pre>
+                  <div class="col-label">{lLabel}</div>
+                  <pre class="rc-text">{lVal.slice(0, 200)}{lVal.length > 200 ? '…' : ''}</pre>
                 </div>
                 <div class="rc-col">
-                  <div class="col-label">Completion</div>
-                  <pre class="rc-text">{pair.completion.slice(0, 200)}{pair.completion.length > 200 ? '…' : ''}</pre>
+                  <div class="col-label">{rLabel}</div>
+                  <pre class="rc-text">{rVal.slice(0, 200)}{rVal.length > 200 ? '…' : ''}</pre>
                 </div>
               </div>
 
-              {#if pair.source_url}
+              {#if rec.source_url}
                 <div class="rc-footer">
-                  <a href={pair.source_url} target="_blank" rel="noopener noreferrer" class="rc-source">
-                    {pair.source_url.slice(0, 80)}{pair.source_url.length > 80 ? '…' : ''} ↗
+                  <a href={String(rec.source_url)} target="_blank" rel="noopener noreferrer" class="rc-source">
+                    {String(rec.source_url).slice(0, 80)}{String(rec.source_url).length > 80 ? '…' : ''} ↗
                   </a>
                 </div>
               {/if}
@@ -297,17 +310,18 @@
 
 <!-- Modal détail L2 -->
 {#if modalPair}
+  {@const [lLabel, lVal, rLabel, rVal] = displayCols(modalPair)}
+  {@const modalLang = langBadge(modalPair)}
+  {@const modalSchema = schemaLabel(modalPair)}
   <div class="modal-backdrop" role="presentation" onclick={() => modalPair = null}>
     <div class="modal" role="dialog" aria-modal="true" onclick={(e) => e.stopPropagation()}>
       <div class="modal-header">
         <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">
-          <span class="badge badge-project">{modalPair.project_id}</span>
-          <span class="badge badge-stage">{modalPair.stage}</span>
-          {#if modalPair.quality_score != null}
-            <span class="badge" style="color:{scoreColor(modalPair.quality_score)}">◉ {(modalPair.quality_score * 20).toFixed(0)}/20</span>
-          {/if}
+          {#if modalPair.adapter_name}<span class="badge badge-adapter">{String(modalPair.adapter_name)}</span>{/if}
+          <span class="badge schema-badge schema-{modalSchema}">{modalSchema}</span>
+          {#if modalLang}<span class="badge" style="background:rgba(99,179,237,.12);color:#63b3ed">{modalLang}</span>{/if}
           {#if modalPair.collected_at}
-            <span class="badge" style="color:{freshnessColor(modalPair.collected_at)}">◷ {formatDate(modalPair.collected_at)}</span>
+            <span class="badge" style="color:{freshnessColor(String(modalPair.collected_at))}">◷ {formatDate(String(modalPair.collected_at))}</span>
           {/if}
         </div>
         <button class="icon-btn" onclick={() => modalPair = null}>✕</button>
@@ -315,19 +329,19 @@
 
       <div class="modal-cols">
         <div class="modal-col">
-          <div class="col-label mb-6">Prompt</div>
-          <pre class="modal-text">{modalPair.prompt}</pre>
+          <div class="col-label mb-6">{lLabel}</div>
+          <pre class="modal-text">{lVal}</pre>
         </div>
         <div class="modal-col">
-          <div class="col-label mb-6">Completion</div>
-          <pre class="modal-text">{modalPair.completion}</pre>
+          <div class="col-label mb-6">{rLabel}</div>
+          <pre class="modal-text">{rVal}</pre>
         </div>
       </div>
 
       {#if modalPair.source_url}
         <div class="modal-footer">
-          <a href={modalPair.source_url} target="_blank" rel="noopener noreferrer" class="rc-source">
-            Source : {modalPair.source_url} ↗
+          <a href={String(modalPair.source_url)} target="_blank" rel="noopener noreferrer" class="rc-source">
+            Source : {String(modalPair.source_url)} ↗
           </a>
         </div>
       {/if}
@@ -393,6 +407,10 @@
   .badge-project { background: var(--accent-dim); color: var(--accent); }
   .badge-stage   { background: var(--surface-3, var(--border)); color: var(--text-dim); }
   .badge-adapter { background: rgba(168,85,247,.15); color: #a855f7; }
+  .schema-badge           { text-transform: uppercase; letter-spacing: .04em; }
+  .schema-doc_crawl       { background: rgba(74,222,128,.12) !important; color: var(--green) !important; }
+  .schema-multilang_wiki  { background: rgba(99,179,237,.12) !important; color: #63b3ed !important; }
+  .schema-web_crawl       { background: rgba(251,146,60,.12) !important; color: #fb923c !important; }
 
   .rc-cols {
     display: grid; grid-template-columns: 1fr 1fr; gap: 10px;

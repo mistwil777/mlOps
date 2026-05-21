@@ -18,6 +18,63 @@ router = APIRouter(prefix="/api/advisor", tags=["advisor"])
 
 _client = anthropic.AnthropicBedrock()
 _DEFAULT_MODEL = "us.anthropic.claude-sonnet-4-6"
+
+_SOURCES_DIR   = Path("config/sources")
+_LANGUAGES_CFG = Path("config/languages.yaml")
+
+
+def _build_source_catalogue() -> str:
+    """Build a compact source catalogue string from config/sources/*.yaml and config/languages.yaml.
+
+    Injected into the advisor prompt so the LLM picks validated sources
+    instead of hallucinating URLs.
+    """
+    lines: list[str] = []
+
+    # ── domain source registries ──────────────────────────────────────────────
+    if _SOURCES_DIR.exists():
+        for src_file in sorted(_SOURCES_DIR.glob("*.yaml")):
+            domain = src_file.stem
+            try:
+                data = yaml.safe_load(src_file.read_text()) or {}
+            except Exception:
+                continue
+            topics = data.get("topics", {})
+            if not topics:
+                continue
+            lines.append(f"=== Domain: {domain} ===")
+            for topic, buckets in topics.items():
+                lines.append(f"  Topic: {topic}")
+                for priority in ("official_docs", "official_repo", "quality_repos", "github_search"):
+                    urls = buckets.get(priority, [])
+                    if urls:
+                        tag = {"official_docs": "doc_crawl", "official_repo": "web_crawl",
+                               "quality_repos": "web_crawl", "github_search": "web_crawl"}[priority]
+                        for u in urls[:3]:  # cap to keep prompt size reasonable
+                            lines.append(f"    [{tag}] [{priority}] {u}")
+
+    # ── fusible language pairs ────────────────────────────────────────────────
+    if _LANGUAGES_CFG.exists():
+        try:
+            lang_data = yaml.safe_load(_LANGUAGES_CFG.read_text()) or {}
+        except Exception:
+            lang_data = {}
+        pairs = lang_data.get("pairs", {})
+        if pairs:
+            lines.append("=== Fusible language pairs (doc_crawl + pair_fuser) ===")
+            for key, cfg in pairs.items():
+                src = cfg.get("source_lang", "")
+                tgt = cfg.get("target_lang", "")
+                desc = cfg.get("description", "")
+                lines.append(f"  Pair key: {key} ({src} → {tgt}) — {desc}")
+                lines.append(f"    fusible=true  lang_pair_key={key}")
+                for lang, sources in cfg.get("doc_sources", {}).items():
+                    for s in sources:
+                        lines.append(
+                            f"    [doc_crawl] lang_hint={lang}  url={s['url']}"
+                        )
+
+    return "\n".join(lines) if lines else "(no source catalogue available)"
 _HAIKU_MODEL   = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 _MAX_DOC_CHARS = 40_000   # au-delà on résume via Haiku avant envoi
 
@@ -153,12 +210,23 @@ Step 2 — For each adapter score it:
 - team_note: one sentence
 
 For each adapter also include "source_configs": a list of typed data sources.
+
+MANDATORY: use the Source Catalogue below — do NOT invent URLs.
 Rules for collector_type:
-  - domain=code AND task_type contains "migration" or "translation" → use "rosetta_code" first
-  - web documentation, tutorials, articles, legal texts → use "crawl4ai"
-  - proprietary or internal data only → use "manual"
-For rosetta_code: set value to the Rosetta Code topic keyword (e.g. "sorting", "string manipulation", "file io")
-For crawl4ai: set value to the target URL
+  - domain=code AND task_type contains "migration" or "translation" → "multilang_wiki" first, then "doc_crawl" for official language docs
+  - official documentation site listed as [doc_crawl] in the catalogue → use "doc_crawl" (NOT "crawl4ai"), add "lang_hint" field matching the language
+  - other crawlable web pages (repos, articles) → "web_crawl"
+  - proprietary or internal data only → "manual"
+
+For multilang_wiki: set value to the topic keyword used by the wiki source (e.g. "sort", "string", "fibonacci" for Rosetta Code)
+For doc_crawl: set value to the exact URL from the catalogue, add "lang_hint": "<language>" (e.g. "python", "java", "typescript")
+For web_crawl: set value to the target URL
+
+FUSION: if two adapters use doc_crawl for a language pair that appears in the Fusible pairs section,
+add "fusible": true and "lang_pair_key": "<key>" (e.g. "python-java") to EACH of those source_configs entries.
+This signals that the pair_fuser can generate aligned migration pairs from those two doc sets.
+
+{source_catalogue}
 
 Return ONLY a raw JSON object (no markdown, no prose, start immediately with {{):
 {{
@@ -170,8 +238,9 @@ Return ONLY a raw JSON object (no markdown, no prose, start immediately with {{)
       "data_types": ["type1", "type2"],
       "data_sources": ["source1", "source2"],
       "source_configs": [
-        {{"label": "Rosetta Code — Python/Java", "collector_type": "rosetta_code", "value": "sorting", "estimated_pairs": 200}},
-        {{"label": "Documentation officielle Python", "collector_type": "crawl4ai", "value": "https://docs.python.org/3/", "estimated_pairs": 100}}
+        {{"label": "Rosetta Code — tri", "collector_type": "multilang_wiki", "value": "sort", "estimated_pairs": 80}},
+        {{"label": "Docs Python — tutorial", "collector_type": "doc_crawl", "value": "https://docs.python.org/fr/3/tutorial/", "lang_hint": "python", "estimated_pairs": 80, "fusible": true, "lang_pair_key": "python-java"}},
+        {{"label": "Docs Java — language basics", "collector_type": "doc_crawl", "value": "https://dev.java/learn/language-basics/", "lang_hint": "java", "estimated_pairs": 60, "fusible": true, "lang_pair_key": "python-java"}}
       ],
       "rag_recommended": true,
       "estimated_pairs": 800,
@@ -213,7 +282,8 @@ class AdvisorRequest(BaseModel):
 
 
 def _call_claude(model: str, need: str, doc_contexts: list[str] | None = None) -> str:
-    user_content = _USER_TEMPLATE.format(need=need)
+    catalogue = _build_source_catalogue()
+    user_content = _USER_TEMPLATE.format(need=need, source_catalogue=catalogue)
     if doc_contexts:
         ctx_block = "\n\n".join(
             f"[CONTEXTE TECHNIQUE — Document {i+1}]\n{ctx}"
@@ -250,35 +320,56 @@ def _parse_recommendation(raw: str) -> dict[str, Any]:
     return json.loads(clean)
 
 
-def _update_project_config(project: str, recommendation: dict[str, Any]) -> None:
+def _update_project_config(project: str, recommendation: dict[str, Any], need: str = "") -> None:
     path = Path("config/projects") / f"{project}.yaml"
     if not path.exists():
         raise FileNotFoundError(f"Project config not found: {path}")
 
     cfg = yaml.safe_load(path.read_text())
 
-    adapter_entries = []
-    for a in recommendation.get("adapters", []):
-        adapter_entries.append({
-            "name": a["name"],
-            "role": a["role"],
-            "status": "pending",
-            "rag": a.get("rag_recommended", False),
-            "estimated_pairs": a.get("estimated_pairs", 500),
-        })
+    existing_by_name: dict[str, dict] = {
+        a["name"]: a for a in cfg.get("adapters", []) if isinstance(a, dict)
+    }
 
+    adapter_entries = []
+    all_adapters = list(recommendation.get("adapters", []))
     orch = recommendation.get("orchestrator", {})
     if orch:
-        adapter_entries.append({
-            "name": orch["name"],
-            "role": "orchestrator",
-            "status": "pending",
-            "rag": False,
-            "estimated_pairs": orch.get("estimated_pairs", 200),
-        })
+        all_adapters.append(orch)
+
+    for a in all_adapters:
+        existing = existing_by_name.get(a["name"], {})
+        entry: dict[str, Any] = {
+            "name":            a["name"],
+            "role":            a["role"],
+            "description":     a.get("description", existing.get("description", "")),
+            "estimated_pairs": a.get("estimated_pairs", existing.get("estimated_pairs", 200)),
+            "rag_recommended": a.get("rag_recommended", existing.get("rag_recommended", False)),
+            "data_sources":    a.get("data_sources", existing.get("data_sources", [])),
+        }
+        # Persist LLM-generated evaluation fields so they survive page reload
+        for field in ("data_types", "score", "team_score", "pros", "cons", "team_note"):
+            val = a.get(field) if a.get(field) is not None else existing.get(field)
+            if val is not None:
+                entry[field] = val
+
+        src_cfgs = a.get("source_configs") or existing.get("source_configs") or []
+        if src_cfgs:
+            entry["source_configs"] = src_cfgs
+        adapter_entries.append(entry)
 
     cfg["multi_adapter"] = True
     cfg["adapters"] = adapter_entries
+
+    # Persist top-level recommendation context
+    if recommendation.get("notes"):
+        cfg["advisor_notes"] = recommendation["notes"]
+    if recommendation.get("software_components"):
+        cfg["software_components"] = recommendation["software_components"]
+    if recommendation.get("rag_global") is not None:
+        cfg["rag_global"] = recommendation["rag_global"]
+    if need:
+        cfg["advisor_need"] = need
 
     if cfg.get("classification") in ("confidentiel", "secret"):
         cfg["isolation_level"] = "sovereign"
@@ -351,6 +442,8 @@ because their input/output contracts are IDENTICAL in practice — not just sema
 Two adapters that share a domain but have clearly different scopes (e.g. one handles source \
 files, the other handles test files) are NOT overlapping. Maximum 2 overlaps. \
 If routing is unambiguous, return [].
+Each overlap MUST be a two-element array of adapter NAMES (exact strings from the selection), \
+e.g. ["syntax_translator", "type_system_adapter"]. NOT a description string.
 
 Also provide:
 - overall: weighted average (coverage*0.4 + cohesion*0.3 + balance*0.15 + orchestrability*0.15)
@@ -363,11 +456,13 @@ Respond with JSON matching exactly:
   "balance": 12,
   "orchestrability": 18,
   "overall": 15.0,
-  "gaps": [],
-  "overlaps": [],
-  "recommendation": "one sentence"
+  "gaps": ["lacune 1 en français", "lacune 2 en français"],
+  "overlaps": [["adapter_name_a", "adapter_name_b"]],
+  "recommendation": "one sentence in French"
 }}
-All text fields (gaps, recommendation) MUST be in French.
+gaps: strings in French describing the missing sub-domain.
+overlaps: arrays of exactly TWO adapter names (exact strings from the selection above).
+recommendation: one sentence in French.
 Output ONLY valid JSON, no markdown, no explanation.
 """
 
@@ -437,6 +532,12 @@ Also evaluate:
 - score (0-20): standalone quality as a specialist
 - team_score (0-20): fit within the CURRENT selection — does it fill the gap without overlap?
 
+Rules for collector_type in source_configs:
+- multi-language code wiki (e.g. Rosetta Code) → "multilang_wiki"
+- official documentation sites → "doc_crawl" (add "lang_hint")
+- other crawlable web pages, repos, articles → "web_crawl" (NOT "crawl4ai")
+- proprietary or internal data → "manual"
+
 Respond with a single JSON object (no markdown, no prose):
 {{
   "name": "kebab-case-name",
@@ -444,6 +545,10 @@ Respond with a single JSON object (no markdown, no prose):
   "description": "one sentence",
   "data_types": ["type1"],
   "data_sources": ["source1"],
+  "source_configs": [
+    {{"label": "Rosetta Code — topic", "collector_type": "multilang_wiki", "value": "topic", "estimated_pairs": 200}},
+    {{"label": "Docs officielle", "collector_type": "doc_crawl", "value": "https://...", "lang_hint": "python", "estimated_pairs": 100}}
+  ],
   "rag_recommended": false,
   "estimated_pairs": 600,
   "score": 16,
@@ -832,6 +937,66 @@ async def cross_project_matches(adapter_desc: str, k: int = 10) -> dict[str, Any
     }
 
 
+class PatchAdapterSourcesRequest(BaseModel):
+    adapter_name: str
+    source_configs: list[dict[str, Any]]
+
+
+@router.patch("/adapter-sources/{project_id}")
+def patch_adapter_sources(project_id: str, body: PatchAdapterSourcesRequest) -> dict[str, Any]:
+    """Replace the source_configs of one adapter in the project YAML."""
+    path = Path("config/projects") / f"{project_id}.yaml"
+    if not path.exists():
+        raise HTTPException(404, f"Project '{project_id}' not found")
+
+    cfg = yaml.safe_load(path.read_text()) or {}
+    adapters: list[dict] = cfg.get("adapters", [])
+    found = False
+    for a in adapters:
+        if isinstance(a, dict) and a.get("name") == body.adapter_name:
+            a["source_configs"] = body.source_configs
+            # keep data_sources in sync with label list
+            a["data_sources"] = [s.get("label", s.get("value", "")) for s in body.source_configs]
+            found = True
+            break
+    if not found:
+        raise HTTPException(404, f"Adapter '{body.adapter_name}' not found in project '{project_id}'")
+
+    cfg["adapters"] = adapters
+    path.write_text(yaml.dump(cfg, default_flow_style=False, allow_unicode=True))
+    return {"ok": True, "adapter_name": body.adapter_name, "n_sources": len(body.source_configs)}
+
+
+@router.get("/recommendation/{project_id}")
+def get_recommendation(project_id: str) -> dict[str, Any]:
+    """Return the saved adapter recommendation for an existing project."""
+    path = Path("config/projects") / f"{project_id}.yaml"
+    if not path.exists():
+        raise HTTPException(404, f"Project '{project_id}' not found")
+    cfg = yaml.safe_load(path.read_text()) or {}
+
+    all_adapters: list[dict[str, Any]] = cfg.get("adapters", [])
+    specialists   = [a for a in all_adapters if a.get("role") != "orchestrator"]
+    orchestrators = [a for a in all_adapters if a.get("role") == "orchestrator"]
+    orchestrator  = orchestrators[0] if orchestrators else {}
+
+    total_pairs = sum(a.get("estimated_pairs", 0) for a in all_adapters)
+    return {
+        "project":               project_id,
+        "n_specialists":         len(specialists),
+        "total_estimated_pairs": total_pairs,
+        "config_updated":        None,
+        "advisor_need":          cfg.get("advisor_need", ""),
+        "recommendation": {
+            "adapters":            specialists,
+            "orchestrator":        orchestrator,
+            "rag_global":          cfg.get("rag_global", False),
+            "notes":               cfg.get("advisor_notes") or cfg.get("description", ""),
+            "software_components": cfg.get("software_components", []),
+        },
+    }
+
+
 @router.post("/recommend")
 def recommend(body: AdvisorRequest) -> dict[str, Any]:
     try:
@@ -849,7 +1014,7 @@ def recommend(body: AdvisorRequest) -> dict[str, Any]:
     config_updated = None
     if body.project:
         try:
-            _update_project_config(body.project, recommendation)  # type: ignore[arg-type]
+            _update_project_config(body.project, recommendation, need=body.need)  # type: ignore[arg-type]
             config_updated = f"config/projects/{body.project}.yaml"
         except FileNotFoundError:
             pass

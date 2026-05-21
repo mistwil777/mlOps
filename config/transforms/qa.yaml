@@ -1,0 +1,20 @@
+# Transform template: qa
+# Turns (question, answer) pairs into training pairs.
+# Suitable for: support bots, HR FAQ, legal Q&A, technical documentation.
+#
+# Compatible collectors: web_crawl, doc_crawl, manual
+# Required project params: domain (optional, for instruction wording)
+
+id: qa
+description: Turn (question, answer) pairs into training pairs
+
+input_schema:
+  input_field: question
+  output_field: answer
+
+instruction_template: |
+  {{input}}
+
+params_required: []
+params_optional:
+  - domain

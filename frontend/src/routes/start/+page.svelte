@@ -115,7 +115,7 @@
   );
 
   // Étape 2.5 — sources + collecte + pipeline
-  interface SourceEntry { source: string; adapter: string; selected: boolean; collector_type: string; source_value: string; }
+  interface SourceEntry { source: string; adapter: string; selected: boolean; collector_type: string; source_value: string; langs?: string[]; lang_hint?: string; }
   let sourceEntries = $state<SourceEntry[]>([]);
   let collectMaxPairs = $state(50);
   let collectTopic    = $state('');
@@ -140,20 +140,31 @@
     const entries: SourceEntry[] = [];
     for (const a of wizardSelection) {
       if (a.source_configs && a.source_configs.length > 0) {
-        // Structured sources from Advisor — preferred
-        for (const sc of a.source_configs) {
+        // Derive langs for multilang_wiki from fusible doc_crawl sources in the same adapter
+        const fusibleLangs = (a.source_configs as Array<{ fusible?: boolean; lang_hint?: string }>)
+          .filter(s => s.fusible && s.lang_hint)
+          .map(s => s.lang_hint as string);
+        const adapterLangs = [...new Set(fusibleLangs)];
+
+        for (const sc of (a.source_configs as Array<{ collector_type: string; value: string; label: string; lang_hint?: string }>)) {
           const key = `${sc.collector_type}:${sc.value}`;
           if (!seen.has(key)) {
             seen.add(key);
-            entries.push({ source: sc.label, adapter: a.name, selected: true, collector_type: sc.collector_type, source_value: sc.value });
+            const entry: SourceEntry = { source: sc.label, adapter: a.name, selected: true, collector_type: sc.collector_type, source_value: sc.value };
+            if (sc.collector_type === 'multilang_wiki' && adapterLangs.length >= 2) {
+              entry.langs = adapterLangs;
+            } else if (sc.lang_hint) {
+              entry.lang_hint = sc.lang_hint;
+            }
+            entries.push(entry);
           }
         }
       } else {
-        // Fallback: legacy string data_sources → crawl4ai
+        // Fallback: legacy string data_sources → web_crawl
         for (const s of (a.data_sources ?? [])) {
           if (!seen.has(s)) {
             seen.add(s);
-            entries.push({ source: s, adapter: a.name, selected: true, collector_type: 'crawl4ai', source_value: s });
+            entries.push({ source: s, adapter: a.name, selected: true, collector_type: 'web_crawl', source_value: s });
           }
         }
       }
@@ -188,6 +199,9 @@
         task_type: 'generation',
         collector_type: firstSrc.collector_type,
         source_value: firstSrc.source_value,
+        adapter_name: firstSrc.adapter,
+        ...(firstSrc.langs ? { langs: firstSrc.langs } : {}),
+        ...(firstSrc.lang_hint ? { lang: firstSrc.lang_hint } : {}),
       });
       collectJobId = res.job_id;
       collectEs = new EventSource(`/api/data/collect/${collectJobId}/stream`);
@@ -298,6 +312,9 @@
   let creating   = $state(false);
   let projectId  = $state('');
   let createErr  = $state('');
+
+  // Nom de session précédent — permet de supprimer l'ancienne clé si le nom change
+  let _prevSavedName = $state('');
 
   // Étape 4 — données
   let dataReady  = $state(false);
@@ -599,6 +616,25 @@
     return `https://www.google.com/search?q=${encodeURIComponent(src)}`;
   }
 
+  function _deriveTransform(): Record<string, unknown> {
+    // Detect code migration projects from fusible source_configs.
+    // Collects all {lang_hint, lang_pair_key} pairs across all adapters,
+    // then builds transform.params with src_lang/tgt_lang so _run_collect()
+    // can auto-derive --langs for multilang_wiki collectors.
+    if (projDomain !== 'code') return {};
+    const fusible = wizardSelection.flatMap(a =>
+      (a.source_configs ?? []).filter((s: { fusible?: boolean }) => s.fusible)
+    ) as Array<{ lang_hint?: string; lang_pair_key?: string }>;
+    if (!fusible.length) return {};
+    const pairKey = fusible.find(s => s.lang_pair_key)?.lang_pair_key ?? '';
+    const langs = [...new Set(fusible.map(s => s.lang_hint).filter(Boolean))] as string[];
+    if (langs.length < 2) return {};
+    return {
+      template: 'code_migration',
+      params: { src_lang: langs[0], tgt_lang: langs[1], lang_pair_key: pairKey || undefined },
+    };
+  }
+
   async function createProj() {
     if (!projName.trim()) return;
     creating = true; createErr = '';
@@ -618,7 +654,19 @@
           rag_recommended: a.rag_recommended ?? false,
           source_configs: a.source_configs ?? [],
           data_sources: a.data_sources ?? [],
+          // Persist LLM-scored fields
+          ...(a.score       !== undefined ? { score:      a.score }      : {}),
+          ...(a.team_score  !== undefined ? { team_score: a.team_score } : {}),
+          ...(a.pros?.length             ? { pros:        a.pros }        : {}),
+          ...(a.cons?.length             ? { cons:        a.cons }        : {}),
+          ...(a.team_note                ? { team_note:   a.team_note }   : {}),
+          ...(a.data_types?.length       ? { data_types:  a.data_types }  : {}),
         })),
+        advisor_need:         need.trim(),
+        advisor_notes:        recommendation?.recommendation.notes ?? '',
+        rag_global:           recommendation?.recommendation.rag_global ?? false,
+        software_components:  recommendation?.recommendation.software_components ?? [],
+        transform:            _deriveTransform(),
       });
       projectId = (proj as { id: string }).id;
       step = 4;
@@ -672,9 +720,18 @@
 
   function saveAnalysis() {
     if (!projName.trim() && adapters.length === 0) return;
-    const key = STORAGE_PREFIX + (projName.trim() || 'sans-nom');
+    const currentName = projName.trim() || 'sans-nom';
+    const key = STORAGE_PREFIX + currentName;
     const savedAt = new Date().toISOString();
     try {
+      // Si le nom a changé depuis la dernière sauvegarde, supprimer l'ancienne clé
+      if (_prevSavedName && _prevSavedName !== currentName) {
+        const oldKey = STORAGE_PREFIX + _prevSavedName;
+        localStorage.removeItem(oldKey);
+        _saveIndex(_loadIndex().filter(e => e.key !== oldKey));
+      }
+      _prevSavedName = currentName;
+
       localStorage.setItem(key, JSON.stringify({
         need, aiModel, adapters, orchestrator,
         selEval, recommendation,
@@ -686,18 +743,27 @@
       }));
       analysisSavedAt = savedAt;
 
-      // Mettre à jour l'index
       const entry: AnalysisEntry = {
         key,
-        projName: projName.trim() || 'sans-nom',
+        projName: currentName,
         needExcerpt: need.trim().slice(0, 80),
         adaptersCount: adapters.length + (orchestrator ? 1 : 0),
         savedAt,
       };
       const idx = _loadIndex().filter(e => e.key !== key);
-      _saveIndex([entry, ...idx]); // plus récent en premier
+      _saveIndex([entry, ...idx]);
       savedAnalyses = _loadIndex();
     } catch { /* localStorage indisponible */ }
+  }
+
+  function clearAllSessions() {
+    try {
+      const idx = _loadIndex();
+      idx.forEach(e => localStorage.removeItem(e.key));
+      _saveIndex([]);
+      savedAnalyses = [];
+      _prevSavedName = '';
+    } catch { /* indisponible */ }
   }
 
   function clearSession() {
@@ -869,7 +935,10 @@
         <div class="saved-analyses">
           <div class="sa-header">
             <span class="sa-title">Analyses sauvegardées</span>
-            <span class="hint">{savedAnalyses.length} analyse{savedAnalyses.length > 1 ? 's' : ''}</span>
+            <div style="display:flex;align-items:center;gap:10px">
+              <span class="hint">{savedAnalyses.length} analyse{savedAnalyses.length > 1 ? 's' : ''}</span>
+              <button class="btn btn-ghost btn-sm sa-delete" onclick={clearAllSessions} title="Supprimer toutes les sessions">Tout effacer</button>
+            </div>
           </div>
           <div class="sa-list">
             {#each savedAnalyses as entry}
@@ -1429,12 +1498,12 @@
                     <label class="source-row">
                       <input type="checkbox" bind:checked={entry.selected} class="source-checkbox" />
                       <span class="collector-badge collector-badge--{entry.collector_type}">
-                        {entry.collector_type === 'rosetta_code' ? 'Rosetta' : entry.collector_type === 'crawl4ai' ? 'Web' : entry.collector_type === 'manual' ? 'Manuel' : 'GitHub'}
+                        {entry.collector_type === 'multilang_wiki' ? 'Wiki' : entry.collector_type === 'web_crawl' ? 'Web' : entry.collector_type === 'manual' ? 'Manuel' : entry.collector_type === 'doc_crawl' ? 'Docs' : 'GitHub'}
                       </span>
                       <span class="source-name">{entry.source}</span>
-                      {#if entry.collector_type === 'crawl4ai' && entry.source_value?.startsWith('http')}
+                      {#if (entry.collector_type === 'web_crawl' || entry.collector_type === 'doc_crawl') && entry.source_value?.startsWith('http')}
                         <a href={entry.source_value} target="_blank" rel="noopener noreferrer" class="source-ext" title="Ouvrir">↗</a>
-                      {:else if entry.collector_type === 'rosetta_code'}
+                      {:else if entry.collector_type === 'multilang_wiki'}
                         <a href="https://rosettacode.org/wiki/Category:Programming_Tasks" target="_blank" rel="noopener noreferrer" class="source-ext" title="Rosetta Code">↗</a>
                       {/if}
                     </label>
@@ -2386,8 +2455,8 @@
     font-size: 10px; font-weight: 700; flex-shrink: 0;
     letter-spacing: .04em; text-transform: uppercase;
   }
-  .collector-badge--rosetta_code { background: rgba(34,197,94,.15); color: #22c55e; }
-  .collector-badge--crawl4ai     { background: rgba(91,152,248,.15); color: var(--accent); }
+  .collector-badge--multilang_wiki { background: rgba(34,197,94,.15); color: #22c55e; }
+  .collector-badge--web_crawl    { background: rgba(91,152,248,.15); color: var(--accent); }
   .collector-badge--manual       { background: rgba(251,146,60,.15); color: #fb923c; }
   .collector-badge--github_repo  { background: rgba(168,85,247,.15); color: #a855f7; }
 

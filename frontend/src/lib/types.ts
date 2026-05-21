@@ -134,22 +134,38 @@ export interface JobStatus {
   lines: number;
 }
 
-export interface ReviewItem {
-  prompt: string;
-  completion: string;
-  rag_context?: string;
-  quality_score?: number;
-  review_status?: 'validate' | 'reject' | 'correct';
-  meta?: Record<string, unknown>;
+// Raw collector record — schema varies by collector type
+export type RawRecord = Record<string, unknown> & {
+  task_name?: string; lang?: string; code?: string;   // multilang_wiki
+  description?: string;                               // doc_crawl
+  prompt?: string; completion?: string;               // web_crawl (legacy)
+  source_url?: string; collected_at?: string; adapter_name?: string;
+  _rejected_step?: string; _relevance_score?: number;
+  _human_flag?: boolean; _human_note?: string;
+  _rescued_from_step?: string;
+};
+
+export interface QualitySummary {
+  project_id: string;
+  raw_total: number;
+  auto_rejected: number;
+  qualified: number;
+  flagged_by_human: number;
+  rescued: number;
+  rejection_by_step: Record<string, number>;
+  pipeline_ran: boolean;
 }
 
-export interface ReviewPage {
-  total: number;
-  page: number;
-  page_size: number;
-  items: ReviewItem[];
+export interface RejectedPage {
+  total: number; page: number; page_size: number;
+  step: string; items: RawRecord[];
 }
 
+export interface SamplePage {
+  total: number; sample_size: number; sample: RawRecord[];
+}
+
+// Legacy — kept for backwards compat until all callers migrated
 export interface ReviewStats {
   total: number;
   validated: number;
@@ -172,9 +188,12 @@ export interface DataHealth {
 
 export interface SourceSuggestion {
   label: string;
-  collector_type: 'rosetta_code' | 'crawl4ai' | 'manual' | 'github_repo';
+  collector_type: 'multilang_wiki' | 'web_crawl' | 'manual' | 'github_repo' | 'doc_crawl';
   value: string;
+  lang_hint?: string;        // for doc_crawl: "python" | "java" | "typescript" …
   estimated_pairs?: number;
+  fusible?: boolean;         // true when a pair_fuser can combine this with another doc_crawl source
+  lang_pair_key?: string;    // e.g. "python-java" — matches a key in config/languages.yaml
 }
 
 export interface AdvisorAdapter {

@@ -120,6 +120,10 @@
 
         <!-- Quick links -->
         <div class="quick-links">
+          <a href="/advisor?project={project.id}" class="quick-link">
+            <span class="ql-icon">◈</span>
+            <span>Analyse du besoin</span>
+          </a>
           <a href="/data?project={project.id}" class="quick-link">
             <span class="ql-icon">◧</span>
             <span>Gérer les données</span>
@@ -286,7 +290,7 @@
 
   .quick-links {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: 10px;
   }
 

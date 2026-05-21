@@ -1,10 +1,15 @@
-"""Rosetta Code collector: extracts aligned Python/Java training pairs.
+"""Rosetta Code collector: extracts neutral per-language records from wiki tasks.
 
 Strategy: use MediaWiki API to fetch raw wikitext — no crawl4ai, no browser.
 Rosetta Code encodes code blocks as:
   =={{header|Python}}==
   <syntaxhighlight lang="python">...code...</syntaxhighlight>
-The wikitext API returns this verbatim, making extraction deterministic.
+
+Output format: one record per (task, language) — neutral, no prompt/completion.
+  {"task_name": str, "lang": str, "code": str, "source_url": str, "collected_at": str}
+
+The transform step (pipeline/transform.py + config/transforms/code_migration.yaml)
+is responsible for joining records into training pairs.
 """
 
 from __future__ import annotations
@@ -117,10 +122,19 @@ def _extract_lang_from_wikitext(wikitext: str, lang: str) -> str | None:
 
 
 class RosettaCollector:
-    TARGET_LANGS = ("Python", "Java")
+
+    def __init__(self, langs: list[str]) -> None:
+        """
+        Args:
+            langs: language names to extract, e.g. ["Python", "Java"] or ["C", "Rust"].
+                   At least one entry required. All matching records are emitted.
+        """
+        if not langs:
+            raise ValueError("langs must contain at least one language name")
+        self.langs = langs
 
     def collect(self, topic: str = "all", max_tasks: int = 100) -> list[dict[str, Any]]:
-        """Synchronous collection using MediaWiki API — no crawl4ai required."""
+        """Return neutral per-language records — one record per (task, language) found."""
         with httpx.Client(
             timeout=_HTTP_TIMEOUT,
             headers={"User-Agent": "mlops-rosetta-collector/1.0 (training data)"},
@@ -142,75 +156,90 @@ class RosettaCollector:
                 filtered = all_tasks
 
             tasks_to_process = filtered[:max_tasks]
-            logger.info("Processing %d tasks…", len(tasks_to_process))
+            logger.info("Processing %d tasks for langs %s…", len(tasks_to_process), self.langs)
 
-            pairs: list[dict[str, Any]] = []
+            records: list[dict[str, Any]] = []
             for i, task_name in enumerate(tasks_to_process):
                 wikitext = _fetch_wikitext(client, task_name)
                 if not wikitext:
                     logger.debug("[%d/%d] ✗ %s — no wikitext",
                                  i + 1, len(tasks_to_process), task_name)
+                    time.sleep(_RATE_LIMIT_S)
                     continue
 
-                py_code   = _extract_lang_from_wikitext(wikitext, "Python")
-                java_code = _extract_lang_from_wikitext(wikitext, "Java")
+                found: list[str] = []
+                for lang in self.langs:
+                    code = _extract_lang_from_wikitext(wikitext, lang)
+                    if code:
+                        records.append({
+                            "task_name":    task_name,
+                            "lang":         lang,
+                            "code":         code,
+                            "source_url":   _ROSETTA_BASE + task_name.replace(" ", "_"),
+                            "collected_at": datetime.now(timezone.utc).isoformat(),
+                        })
+                        found.append(lang)
 
-                if py_code and java_code:
-                    pairs.append({
-                        "prompt":         py_code,
-                        "completion":     java_code,
-                        "source_url":     _ROSETTA_BASE + task_name.replace(" ", "_"),
-                        "task_name":      task_name,
-                        "domain":         "code",
-                        "task_type":      "migration",
-                        "collector_type": "rosetta_code",
-                        "collected_at":   datetime.now(timezone.utc).isoformat(),
-                    })
-                    logger.info("[%d/%d] ✓ %s (%d / %d chars)",
-                                i + 1, len(tasks_to_process), task_name,
-                                len(py_code), len(java_code))
+                if found:
+                    logger.info("[%d/%d] ✓ %s — found: %s",
+                                i + 1, len(tasks_to_process), task_name, found)
                 else:
-                    missing = [lng for lng, c in (("Python", py_code), ("Java", java_code)) if not c]
-                    logger.debug("[%d/%d] ✗ %s — missing: %s",
-                                 i + 1, len(tasks_to_process), task_name, missing)
+                    logger.debug("[%d/%d] ✗ %s — no code for %s",
+                                 i + 1, len(tasks_to_process), task_name, self.langs)
 
                 time.sleep(_RATE_LIMIT_S)
 
-            logger.info("Collected %d aligned Python/Java pairs", len(pairs))
-            return pairs
+            logger.info("Collected %d records (%d langs × tasks)", len(records), len(self.langs))
+            return records
 
-    def run(self, topic: str, max_tasks: int, output: Path, adapter_name: str | None = None) -> int:
+    def run(
+        self,
+        topic: str,
+        max_tasks: int,
+        output: Path,
+        adapter_name: str | None = None,
+    ) -> int:
         output.parent.mkdir(parents=True, exist_ok=True)
-        pairs = self.collect(topic, max_tasks)
+        records = self.collect(topic, max_tasks)
         if adapter_name:
-            for p in pairs:
-                p["adapter_name"] = adapter_name
-        if pairs:
-            existing = []
+            for r in records:
+                r["adapter_name"] = adapter_name
+        if records:
+            existing: list[dict[str, Any]] = []
             if output.exists():
                 from pipeline.utils.jsonl import read_jsonl  # noqa: PLC0415
                 existing = read_jsonl(output)
-            seen = {(r.get("prompt", ""), r.get("completion", "")) for r in existing}
-            new_unique = [p for p in pairs if (p.get("prompt", ""), p.get("completion", "")) not in seen]
-            dupes = len(pairs) - len(new_unique)
+            seen = {(r.get("task_name", ""), r.get("lang", "")) for r in existing}
+            new_unique = [r for r in records if (r["task_name"], r["lang"]) not in seen]
+            dupes = len(records) - len(new_unique)
             if dupes:
-                logger.info("Deduplicated %d pairs already in file", dupes)
+                logger.info("Deduplicated %d records already in file", dupes)
             write_jsonl(output, existing + new_unique)
-            logger.info("Written %d pairs → %s (total: %d)", len(new_unique), output, len(existing) + len(new_unique))
-        return len(pairs)
+            logger.info("Written %d records → %s (total: %d)",
+                        len(new_unique), output, len(existing) + len(new_unique))
+        return len(records)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Collect Python/Java pairs from Rosetta Code")
-    parser.add_argument("--topic",        default="all", help="Keyword filter on task names, or 'all'")
-    parser.add_argument("--max-tasks",    type=int, default=100, dest="max_tasks")
-    parser.add_argument("--output",       required=True, help="Output JSONL file path")
+    parser = argparse.ArgumentParser(
+        description="Collect per-language records from Rosetta Code (neutral output)")
+    parser.add_argument("--langs",       required=True, nargs="+",
+                        help="Language names to extract, e.g. --langs Python Java")
+    parser.add_argument("--topic",       default="all",
+                        help="Keyword filter on task names, or 'all'")
+    parser.add_argument("--max-tasks",   type=int, default=100, dest="max_tasks")
+    parser.add_argument("--output",      required=True, help="Output JSONL file path")
     parser.add_argument("--adapter-name", default=None, dest="adapter_name")
     args = parser.parse_args()
 
-    collector = RosettaCollector()
-    n = collector.run(topic=args.topic, max_tasks=args.max_tasks, output=Path(args.output), adapter_name=args.adapter_name)
-    print(f"Collected {n} pairs → {args.output}")
+    collector = RosettaCollector(langs=args.langs)
+    n = collector.run(
+        topic=args.topic,
+        max_tasks=args.max_tasks,
+        output=Path(args.output),
+        adapter_name=args.adapter_name,
+    )
+    print(f"Collected {n} records → {args.output}")
 
 
 if __name__ == "__main__":

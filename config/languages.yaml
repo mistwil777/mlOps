@@ -1,0 +1,160 @@
+# Language-pair catalogue — drives doc_collector and pair_fuser for any migration adapter.
+# Add a new block here to support a new language pair without touching Python code.
+
+# ── Collector defaults ────────────────────────────────────────────────────────
+# Read by doc_collector.py and pipeline/extract.py — previously hardcoded there.
+collector_defaults:
+  # Code fences to skip (non-programming content)
+  skip_langs:
+    - bash
+    - shell
+    - sh
+    - console
+    - text
+    - output
+    - xml
+    - json
+    - yaml
+    - toml
+    - ini
+    - css
+    - html
+    - diff
+    - makefile
+    - dockerfile
+    - sql
+    - plaintext
+
+  # Recognised programming languages (fence annotations → include as code)
+  real_langs:
+    - python
+    - java
+    - javascript
+    - typescript
+    - go
+    - rust
+    - cpp
+    - c
+    - kotlin
+    - scala
+    - ruby
+    - swift
+    - cs
+    - php
+    - r
+    - julia
+    - lua
+    - haskell
+    - elixir
+    - clojure
+
+  # File extensions per language — used by pipeline/extract.py for repo-based extraction
+  lang_extensions:
+    python:     .py
+    java:       .java
+    javascript: .js
+    typescript: .ts
+    go:         .go
+    rust:       .rs
+    csharp:     .cs
+    cpp:        .cpp
+    php:        .php
+    kotlin:     .kt
+    swift:      .swift
+    ruby:       .rb
+    c:          .c
+    r:          .r
+    julia:      .jl
+    lua:        .lua
+    haskell:    .hs
+    elixir:     .ex
+    clojure:    .clj
+
+pairs:
+  python-java:
+    source_lang: python
+    target_lang: java
+    description: Python to Java migration
+    doc_sources:
+      python:
+        - url: https://docs.python.org/fr/3/tutorial/
+          max_pages: 40
+          lang_hint: python
+        - url: https://docs.python.org/fr/3/library/stdtypes.html
+          max_pages: 5
+          lang_hint: python
+        - url: https://docs.python.org/fr/3/library/functions.html
+          max_pages: 3
+          lang_hint: python
+      java:
+        - url: https://dev.java/learn/language-basics/
+          max_pages: 30
+          lang_hint: java
+        - url: https://dev.java/learn/oop/
+          max_pages: 20
+          lang_hint: java
+        - url: https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/package-summary.html
+          max_pages: 5
+          lang_hint: java
+    # Concept keywords used to boost semantic matching between docs
+    concept_keywords:
+      - loop
+      - function
+      - class
+      - exception
+      - list
+      - map
+      - string
+      - type
+      - interface
+      - inheritance
+
+  python-typescript:
+    source_lang: python
+    target_lang: typescript
+    description: Python to TypeScript migration
+    doc_sources:
+      python:
+        - url: https://docs.python.org/fr/3/tutorial/
+          max_pages: 40
+          lang_hint: python
+      typescript:
+        - url: https://www.typescriptlang.org/docs/handbook/intro.html
+          max_pages: 30
+          lang_hint: typescript
+        - url: https://www.typescriptlang.org/docs/handbook/2/types-from-types.html
+          max_pages: 10
+          lang_hint: typescript
+    concept_keywords:
+      - function
+      - class
+      - type
+      - interface
+      - generics
+      - async
+      - decorator
+
+  python-go:
+    source_lang: python
+    target_lang: go
+    description: Python to Go migration
+    doc_sources:
+      python:
+        - url: https://docs.python.org/fr/3/tutorial/
+          max_pages: 40
+          lang_hint: python
+      go:
+        - url: https://go.dev/tour/
+          max_pages: 20
+          lang_hint: go
+        - url: https://go.dev/doc/effective_go
+          max_pages: 10
+          lang_hint: go
+    concept_keywords:
+      - goroutine
+      - channel
+      - struct
+      - interface
+      - error
+      - slice
+      - map

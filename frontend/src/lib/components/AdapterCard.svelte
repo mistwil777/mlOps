@@ -74,6 +74,10 @@
     <div class="l2">
       <p class="adapter-desc">{adapter.description}</p>
 
+      {#if adapter.rag_recommended}
+        <p class="rag-note mt-6">◈ RAG recommandé pour cet adapter</p>
+      {/if}
+
       {#if hasScores}
         <div class="scores-row mt-10">
           <div class="score-item">
@@ -90,10 +94,6 @@
         {#if adapter.team_note}
           <p class="team-note mt-6">{adapter.team_note}</p>
         {/if}
-        {#if adapter.rag_recommended}
-          <p class="rag-note mt-6">◈ RAG recommandé pour cet adapter</p>
-        {/if}
-
         {#if adapter.pros?.length || adapter.cons?.length}
           <div class="pros-cons mt-10">
             {#if adapter.pros?.length}
@@ -110,7 +110,8 @@
             {/if}
           </div>
         {/if}
-
+      {:else}
+        <p class="no-score-hint mt-8">Score non calculé — lancez "↺ Réévaluer" dans le panneau Score équipe.</p>
       {/if}
 
       <!-- L3 toggle -->
@@ -196,7 +197,8 @@
   .score-fill  { height: 100%; border-radius: 3px; transition: width 300ms ease; }
   .score-val   { font-size: 11px; font-weight: 600; width: 36px; text-align: right; flex-shrink: 0; }
   .team-note   { font-size: 11px; color: var(--text-muted); font-style: italic; line-height: 1.4; margin: 0; }
-  .rag-note    { font-size: 11px; color: var(--accent); margin: 0; }
+  .rag-note      { font-size: 11px; color: var(--accent); margin: 0; }
+  .no-score-hint { font-size: 11px; color: var(--text-muted); font-style: italic; margin: 0; }
 
   .pros-cons     { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .pros-cons-col { display: flex; flex-direction: column; gap: 4px; }

@@ -1,110 +1,164 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { getProjects, getReview, postReview, getReviewStats } from '$lib/api';
-  import type { Project, ReviewItem, ReviewStats } from '$lib/types';
+  import { getProjects, getQualitySummary, getRejected, getSample, flagRecord, rescueRecord, startPipeline } from '$lib/api';
+  import type { Project, QualitySummary, RawRecord } from '$lib/types';
 
+  // ── State ──────────────────────────────────────────────────────────────────
   let projects: Project[] = $state([]);
   let selectedProject = $state('');
-  let filterStatus = $state<string>('pending');
-  let page = $state(0);
-  const PAGE_SIZE = 10;
-
-  let items: ReviewItem[] = $state([]);
-  let total = $state(0);
-  let stats: ReviewStats | null = $state(null);
+  let summary: QualitySummary | null = $state(null);
   let loading = $state(false);
   let error = $state('');
 
-  // Correction modal state
-  let editIdx = $state<number | null>(null);
-  let editPrompt = $state('');
-  let editCompletion = $state('');
+  // Tabs: 'rejected' | 'sample'
+  let activeTab = $state<'rejected' | 'sample'>('rejected');
+
+  // Rejected panel
+  let rejectedStep = $state<string>('all');
+  let rejectedPage = $state(0);
+  const PAGE_SIZE = 15;
+  let rejectedItems: RawRecord[] = $state([]);
+  let rejectedTotal = $state(0);
+  let rejectedLoading = $state(false);
+
+  // Sample panel
+  let sampleItems: RawRecord[] = $state([]);
+  let sampleTotal = $state(0);
+  let sampleLoading = $state(false);
+  let sampleN = $state(20);
+
+  // Detail modal
+  let detailRecord: RawRecord | null = $state(null);
+  let detailGlobalIdx: number | null = $state(null);
+  let detailMode: 'flag' | 'rescue' = $state('flag');
+  let detailNote = $state('');
+  let detailCorrections: Record<string, string> = $state({});
+
+  // Pipeline launch
+  let pipelineLoading = $state(false);
+
+  const STEPS = ['all', 'schema', 'syntax', 'text_quality', 'dedup', 'relevance'] as const;
+  const STEP_LABELS: Record<string, string> = {
+    all: 'Tous',
+    schema: 'Schéma',
+    syntax: 'Syntaxe',
+    text_quality: 'Qualité texte',
+    dedup: 'Déduplication',
+    relevance: 'Pertinence',
+  };
 
   onMount(async () => {
     projects = await getProjects().catch(() => []);
-    if (projects.length > 0) {
-      selectedProject = projects[0].id;
-      await load();
-    }
+    if (projects.length > 0) { selectedProject = projects[0].id; await loadSummary(); }
   });
 
-  async function load() {
+  async function loadSummary() {
     if (!selectedProject) return;
-    loading = true;
-    error = '';
+    loading = true; error = '';
     try {
-      const [rev, st] = await Promise.all([
-        getReview(selectedProject, page, PAGE_SIZE, filterStatus || undefined),
-        getReviewStats(selectedProject),
-      ]);
-      items = rev.items;
-      total = rev.total;
-      stats = st;
-    } catch (e) {
-      error = (e as Error).message;
-    } finally {
-      loading = false;
-    }
+      summary = await getQualitySummary(selectedProject);
+    } catch (e) { error = (e as Error).message; }
+    finally { loading = false; }
   }
 
-  async function act(globalIdx: number, action: 'validate' | 'reject') {
+  async function loadRejected() {
+    if (!selectedProject) return;
+    rejectedLoading = true;
     try {
-      await postReview(selectedProject, { index: globalIdx, action });
-      await load();
-    } catch (e) {
-      error = (e as Error).message;
-    }
+      const r = await getRejected(selectedProject, rejectedStep === 'all' ? undefined : rejectedStep, rejectedPage, PAGE_SIZE);
+      rejectedItems = r.items as RawRecord[];
+      rejectedTotal = r.total;
+    } catch (e) { error = (e as Error).message; }
+    finally { rejectedLoading = false; }
   }
 
-  function openEdit(item: ReviewItem, globalIdx: number) {
-    editIdx = globalIdx;
-    editPrompt = item.prompt;
-    editCompletion = item.completion;
-  }
-
-  async function saveEdit() {
-    if (editIdx === null) return;
+  async function loadSample() {
+    if (!selectedProject) return;
+    sampleLoading = true;
     try {
-      await postReview(selectedProject, {
-        index: editIdx,
-        action: 'correct',
-        corrected_prompt: editPrompt,
-        corrected_completion: editCompletion,
-      });
-      editIdx = null;
-      await load();
-    } catch (e) {
-      error = (e as Error).message;
+      const r = await getSample(selectedProject, sampleN);
+      sampleItems = r.sample as RawRecord[];
+      sampleTotal = r.total;
+    } catch (e) { error = (e as Error).message; }
+    finally { sampleLoading = false; }
+  }
+
+  async function launchPipeline() {
+    if (!selectedProject) return;
+    pipelineLoading = true;
+    try {
+      await startPipeline({ project_id: selectedProject });
+      await loadSummary();
+    } catch (e) { error = (e as Error).message; }
+    finally { pipelineLoading = false; }
+  }
+
+  function openDetail(item: RawRecord, idx: number, mode: 'flag' | 'rescue') {
+    detailRecord = item;
+    detailGlobalIdx = idx;
+    detailMode = mode;
+    detailNote = '';
+    // Pre-fill corrections with editable text fields
+    detailCorrections = Object.fromEntries(
+      Object.entries(item)
+        .filter(([k, v]) => typeof v === 'string' && !k.startsWith('_') && !['source_url', 'collected_at', 'adapter_name'].includes(k))
+        .map(([k, v]) => [k, v as string])
+    );
+  }
+
+  async function submitDetail() {
+    if (detailGlobalIdx === null || !selectedProject) return;
+    try {
+      if (detailMode === 'flag') {
+        await flagRecord(selectedProject, { index: detailGlobalIdx, action: 'flag', note: detailNote || undefined });
+        sampleItems = sampleItems.filter((_, i) => i !== sampleItems.indexOf(detailRecord!));
+      } else {
+        await rescueRecord(selectedProject, { index: detailGlobalIdx, action: 'rescue', corrections: Object.keys(detailCorrections).length ? detailCorrections : undefined, note: detailNote || undefined });
+        rejectedItems = rejectedItems.filter((_, i) => i !== rejectedItems.indexOf(detailRecord!));
+        rejectedTotal--;
+      }
+      await loadSummary();
+      detailRecord = null;
+    } catch (e) { error = (e as Error).message; }
+  }
+
+  // Field display helpers
+  function displayCols(r: RawRecord): [string, string, string, string] {
+    if (r.task_name && r.code)
+      return ['Tâche', String(r.task_name ?? ''), 'Code', String(r.code ?? '')];
+    if (r.description && r.code)
+      return ['Description', String(r.description ?? ''), 'Code', String(r.code ?? '')];
+    return ['Prompt', String(r.prompt ?? ''), 'Completion', String(r.completion ?? '')];
+  }
+
+  function schemaLabel(r: RawRecord): string {
+    if (r.task_name && r.code && r.lang) return 'multilang_wiki';
+    if (r.description && r.code)         return 'doc_crawl';
+    if (r.prompt && r.completion)        return 'web_crawl';
+    return 'unknown';
+  }
+
+  function langBadge(r: RawRecord): string {
+    const l = String(r.lang ?? '');
+    return l && !l.startsWith('http') ? l : '';
+  }
+
+  function rejectReason(r: RawRecord): string {
+    for (const k of Object.keys(r)) {
+      if (k.startsWith('_') && k.includes('reject') || k.includes('reason')) return String(r[k]);
     }
+    return String(r._rejected_step ?? '');
   }
 
-  function globalIndex(localIdx: number) {
-    return page * PAGE_SIZE + localIdx;
-  }
-
-  function statusColor(status?: string) {
-    if (status === 'validate') return 'var(--green)';
-    if (status === 'reject')   return 'var(--red)';
-    if (status === 'correct')  return 'var(--accent)';
-    return 'var(--text-muted)';
-  }
-
-  $effect(() => { load(); });
+  $effect(() => { if (activeTab === 'rejected' && selectedProject) loadRejected(); });
+  $effect(() => { if (activeTab === 'sample' && selectedProject) loadSample(); });
 </script>
 
 <div class="topbar">
   <span class="topbar-title">Revue humaine</span>
   <div style="display:flex; gap:10px; align-items:center">
-    <select bind:value={selectedProject} class="input">
-      {#each projects as p}
-        <option value={p.id}>{p.name}</option>
-      {/each}
-    </select>
-    <select bind:value={filterStatus} class="input">
-      <option value="">Tous</option>
-      <option value="pending">En attente</option>
-      <option value="validated">Validés</option>
-      <option value="rejected">Rejetés</option>
+    <select bind:value={selectedProject} onchange={loadSummary} class="input">
+      {#each projects as p}<option value={p.id}>{p.name ?? p.id}</option>{/each}
     </select>
   </div>
 </div>
@@ -114,103 +168,323 @@
     <div class="banner-error" style="margin-bottom:16px">{error}</div>
   {/if}
 
-  {#if stats}
-    <div class="stats-bar card" style="margin-bottom:16px; padding:12px 20px">
-      <div class="stat-item"><span class="stat-label">Total</span><span class="mono">{stats.total}</span></div>
-      <div class="stat-item"><span class="stat-label">En attente</span><span class="mono text-muted">{stats.pending}</span></div>
-      <div class="stat-item"><span class="stat-label">Validés</span><span class="mono" style="color:var(--green)">{stats.validated}</span></div>
-      <div class="stat-item"><span class="stat-label">Rejetés</span><span class="mono" style="color:var(--red)">{stats.rejected}</span></div>
-      <div class="stat-item"><span class="stat-label">Corrigés</span><span class="mono" style="color:var(--accent)">{stats.corrected}</span></div>
-    </div>
-  {/if}
-
+  <!-- ── Pipeline status ───────────────────────────────────────────────────── -->
   {#if loading}
     <p class="text-muted">Chargement…</p>
-  {:else if items.length === 0}
-    <p class="text-muted">Aucune paire à réviser pour ce filtre.</p>
+  {:else if !summary || !summary.pipeline_ran}
+    <div class="card info" style="margin-bottom:20px; padding:20px">
+      <div class="card-title">Pipeline qualité non encore exécuté</div>
+      <p style="color:var(--text-dim); font-size:13px; margin-bottom:16px">
+        Le pipeline qualité analyse automatiquement toutes les données collectées : validation du schéma,
+        syntaxe du code, qualité textuelle, déduplication et scoring de pertinence LLM.
+        Seules les données <strong>qualifiées</strong> seront utilisées pour le fine-tuning.
+      </p>
+      <button class="btn btn-primary" disabled={pipelineLoading} onclick={launchPipeline}>
+        {pipelineLoading ? 'Lancement…' : '▶ Lancer le pipeline qualité'}
+      </button>
+    </div>
   {:else}
-    <div class="pairs-list">
-      {#each items as item, i}
-        {@const gi = globalIndex(i)}
-        <div class="pair-card card" style="border-left: 3px solid {statusColor(item.review_status)}">
-          <div class="pair-header">
-            <span class="mono text-muted" style="font-size:11px">#{gi}</span>
-            {#if item.quality_score !== undefined}
-              <span class="badge badge-completed" style="font-size:11px">score: {(item.quality_score * 100).toFixed(0)}%</span>
-            {/if}
-            {#if item.review_status}
-              <span class="review-badge" style="color:{statusColor(item.review_status)}">{item.review_status}</span>
-            {/if}
-          </div>
+    <!-- ── Summary cards ─────────────────────────────────────────────────── -->
+    <div class="summary-grid" style="margin-bottom:20px">
+      <div class="summary-card">
+        <div class="sc-value">{summary.raw_total}</div>
+        <div class="sc-label">Brutes collectées</div>
+      </div>
+      <div class="summary-card" style="border-color:var(--red)">
+        <div class="sc-value" style="color:var(--red)">{summary.auto_rejected}</div>
+        <div class="sc-label">Rejetées auto</div>
+        <div class="sc-pct">{summary.raw_total > 0 ? Math.round(summary.auto_rejected / summary.raw_total * 100) : 0}%</div>
+      </div>
+      <div class="summary-card" style="border-color:var(--green)">
+        <div class="sc-value" style="color:var(--green)">{summary.qualified}</div>
+        <div class="sc-label">Qualifiées</div>
+        <div class="sc-pct">{summary.raw_total > 0 ? Math.round(summary.qualified / summary.raw_total * 100) : 0}%</div>
+      </div>
+      <div class="summary-card" style="border-color:var(--accent)">
+        <div class="sc-value" style="color:var(--accent)">{summary.rescued}</div>
+        <div class="sc-label">Rescapées</div>
+      </div>
+      <div class="summary-card" style="border-color:var(--yellow)">
+        <div class="sc-value" style="color:var(--yellow)">{summary.flagged_by_human}</div>
+        <div class="sc-label">Signalées</div>
+      </div>
+    </div>
 
-          <div class="pair-cols">
-            <div class="pair-col">
-              <div class="col-label">Prompt</div>
-              <pre class="pair-text">{item.prompt.slice(0, 600)}{item.prompt.length > 600 ? '…' : ''}</pre>
+    <!-- Rejection breakdown per step -->
+    <div class="card" style="margin-bottom:20px; padding:16px">
+      <div class="card-title" style="margin-bottom:12px">Détail rejets par étape</div>
+      <div class="step-bars">
+        {#each Object.entries(summary.rejection_by_step) as [step, count]}
+          {@const pct = summary.raw_total > 0 ? count / summary.raw_total * 100 : 0}
+          <div class="step-bar-row">
+            <span class="step-name">{STEP_LABELS[step] ?? step}</span>
+            <div class="step-bar-track">
+              <div class="step-bar-fill" style="width:{Math.min(100, pct)}%"></div>
             </div>
-            <div class="pair-col">
-              <div class="col-label">Completion</div>
-              <pre class="pair-text">{item.completion.slice(0, 600)}{item.completion.length > 600 ? '…' : ''}</pre>
-            </div>
+            <span class="step-count mono">{count}</span>
           </div>
+        {/each}
+      </div>
+    </div>
 
-          <div class="pair-actions">
-            <button class="btn btn-ghost" style="color:var(--green)" onclick={() => act(gi, 'validate')}>✓ Valider</button>
-            <button class="btn btn-ghost" style="color:var(--red)" onclick={() => act(gi, 'reject')}>✗ Rejeter</button>
-            <button class="btn btn-ghost" onclick={() => openEdit(item, gi)}>✎ Corriger</button>
-          </div>
+    <!-- ── Tabs ──────────────────────────────────────────────────────────── -->
+    <div class="tab-bar" style="margin-bottom:16px">
+      <button class="tab-btn" class:active={activeTab === 'rejected'} onclick={() => activeTab = 'rejected'}>
+        ✕ Rejetées auto
+        {#if summary.auto_rejected > 0}<span class="tab-badge red">{summary.auto_rejected}</span>{/if}
+      </button>
+      <button class="tab-btn" class:active={activeTab === 'sample'} onclick={() => activeTab = 'sample'}>
+        ✓ Spot-check qualifiées
+        <span class="tab-badge green">{summary.qualified}</span>
+      </button>
+    </div>
+
+    <!-- ── Rejected tab ──────────────────────────────────────────────────── -->
+    {#if activeTab === 'rejected'}
+      <div style="display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap">
+        <span class="text-muted" style="font-size:12px">Filtrer par étape :</span>
+        {#each STEPS as s}
+          <button class="step-filter-btn" class:active={rejectedStep === s}
+            onclick={() => { rejectedStep = s; rejectedPage = 0; }}>
+            {STEP_LABELS[s]}
+            {#if s !== 'all' && summary.rejection_by_step[s]}
+              <span class="mini-count">{summary.rejection_by_step[s]}</span>
+            {/if}
+          </button>
+        {/each}
+      </div>
+
+      {#if rejectedLoading}
+        <p class="text-muted">Chargement…</p>
+      {:else if rejectedItems.length === 0}
+        <p class="text-muted">Aucun enregistrement rejeté pour ce filtre.</p>
+      {:else}
+        <p class="text-muted" style="font-size:12px; margin-bottom:8px">
+          {rejectedTotal} rejeté{rejectedTotal > 1 ? 's' : ''} — vous pouvez en rescaper si le rejet est un faux positif.
+        </p>
+        <div class="record-list">
+          {#each rejectedItems as item, i}
+            {@const gi = rejectedPage * PAGE_SIZE + i}
+            {@const [lLabel, lVal, rLabel, rVal] = displayCols(item)}
+            {@const lang = langBadge(item)}
+            {@const schema = schemaLabel(item)}
+            {@const reason = rejectReason(item)}
+            <div class="record-card card">
+              <div class="record-header">
+                <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap">
+                  <span class="mono text-muted" style="font-size:11px">#{gi}</span>
+                  <span class="schema-badge schema-{schema}">{schema}</span>
+                  {#if lang}<span class="schema-badge lang-badge">{lang}</span>{/if}
+                  {#if item.adapter_name}<span class="schema-badge adapter-badge">{item.adapter_name}</span>{/if}
+                  {#if reason}<span class="reject-reason">⊗ {reason}</span>{/if}
+                </div>
+                {#if item.source_url}
+                  <a href={String(item.source_url)} target="_blank" rel="noopener noreferrer" class="source-link">↗ source</a>
+                {/if}
+              </div>
+              <div class="record-cols">
+                <div class="record-col">
+                  <div class="col-label">{lLabel}</div>
+                  <pre class="record-text">{lVal.slice(0, 400)}{lVal.length > 400 ? '…' : ''}</pre>
+                </div>
+                <div class="record-col">
+                  <div class="col-label">{rLabel}</div>
+                  <pre class="record-text">{rVal.slice(0, 400)}{rVal.length > 400 ? '…' : ''}</pre>
+                </div>
+              </div>
+              <div class="record-actions">
+                <button class="btn btn-ghost" style="color:var(--accent); font-size:12px"
+                  onclick={() => openDetail(item, gi, 'rescue')}>
+                  ↩ Rescaper (faux positif)
+                </button>
+              </div>
+            </div>
+          {/each}
         </div>
-      {/each}
-    </div>
+        <div class="pagination">
+          <button class="btn btn-ghost" disabled={rejectedPage === 0} onclick={() => { rejectedPage--; }}>← Préc.</button>
+          <span class="text-muted" style="font-size:13px">Page {rejectedPage + 1} / {Math.max(1, Math.ceil(rejectedTotal / PAGE_SIZE))}</span>
+          <button class="btn btn-ghost" disabled={(rejectedPage + 1) * PAGE_SIZE >= rejectedTotal} onclick={() => { rejectedPage++; }}>Suiv. →</button>
+        </div>
+      {/if}
+    {/if}
 
-    <div class="pagination">
-      <button class="btn btn-ghost" disabled={page === 0} onclick={() => { page--; }}>← Préc.</button>
-      <span class="text-muted" style="font-size:13px">Page {page + 1} / {Math.ceil(total / PAGE_SIZE)}</span>
-      <button class="btn btn-ghost" disabled={(page + 1) * PAGE_SIZE >= total} onclick={() => { page++; }}>Suiv. →</button>
-    </div>
+    <!-- ── Sample tab ────────────────────────────────────────────────────── -->
+    {#if activeTab === 'sample'}
+      <div style="display:flex; gap:10px; align-items:center; margin-bottom:12px">
+        <span class="text-muted" style="font-size:12px">Taille de l'échantillon :</span>
+        <select bind:value={sampleN} onchange={loadSample} class="input" style="width:80px">
+          <option value={10}>10</option>
+          <option value={20}>20</option>
+          <option value={50}>50</option>
+        </select>
+        <button class="btn btn-ghost" style="font-size:12px" onclick={loadSample}>↻ Nouvel échantillon</button>
+        <span class="text-muted" style="font-size:12px">{sampleTotal} données qualifiées au total</span>
+      </div>
+
+      {#if sampleLoading}
+        <p class="text-muted">Chargement…</p>
+      {:else if sampleItems.length === 0}
+        {#if !summary.pipeline_ran}
+          <p class="text-muted">Pipeline qualité non exécuté.</p>
+        {:else}
+          <p class="text-muted">Aucune donnée qualifiée disponible.</p>
+        {/if}
+      {:else}
+        <p class="text-muted" style="font-size:12px; margin-bottom:8px">
+          Cet échantillon aléatoire permet de vérifier visuellement que les données qualifiées
+          sont correctes. Signalez celles qui vous semblent erronées.
+        </p>
+        <div class="record-list">
+          {#each sampleItems as item, i}
+            {@const [lLabel, lVal, rLabel, rVal] = displayCols(item)}
+            {@const lang = langBadge(item)}
+            {@const schema = schemaLabel(item)}
+            {@const score = item._relevance_score}
+            <div class="record-card card">
+              <div class="record-header">
+                <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap">
+                  <span class="mono text-muted" style="font-size:11px">#{i}</span>
+                  <span class="schema-badge schema-{schema}">{schema}</span>
+                  {#if lang}<span class="schema-badge lang-badge">{lang}</span>{/if}
+                  {#if item.adapter_name}<span class="schema-badge adapter-badge">{item.adapter_name}</span>{/if}
+                  {#if score != null}<span class="quality-badge" style="color:{score >= 0.8 ? 'var(--green)' : score >= 0.7 ? 'var(--yellow)' : 'var(--red)'}">
+                    ⬤ {(score * 100).toFixed(0)}%
+                  </span>{/if}
+                </div>
+                {#if item.source_url}
+                  <a href={String(item.source_url)} target="_blank" rel="noopener noreferrer" class="source-link">↗ source</a>
+                {/if}
+              </div>
+              <div class="record-cols">
+                <div class="record-col">
+                  <div class="col-label">{lLabel}</div>
+                  <pre class="record-text">{lVal.slice(0, 400)}{lVal.length > 400 ? '…' : ''}</pre>
+                </div>
+                <div class="record-col">
+                  <div class="col-label">{rLabel}</div>
+                  <pre class="record-text">{rVal.slice(0, 400)}{rVal.length > 400 ? '…' : ''}</pre>
+                </div>
+              </div>
+              <div class="record-actions">
+                <button class="btn btn-ghost" style="color:var(--yellow); font-size:12px"
+                  onclick={() => openDetail(item, i, 'flag')}>
+                  ⚑ Signaler comme erroné
+                </button>
+              </div>
+            </div>
+          {/each}
+        </div>
+      {/if}
+    {/if}
   {/if}
 </div>
 
-<!-- Correction modal -->
-{#if editIdx !== null}
-  <div class="modal-backdrop" onclick={() => editIdx = null}>
-    <div class="modal" onclick={(e) => e.stopPropagation()}>
-      <div class="modal-title">Corriger la paire #{editIdx}</div>
-      <label class="form-field">
-        <span class="field-label">Prompt</span>
-        <textarea bind:value={editPrompt} class="textarea" rows="6"></textarea>
-      </label>
+<!-- ── Detail modal ───────────────────────────────────────────────────────── -->
+{#if detailRecord !== null}
+  <div class="modal-backdrop" onclick={() => detailRecord = null} role="presentation">
+    <div class="modal" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+      <div class="modal-title">
+        {detailMode === 'rescue' ? '↩ Rescaper l\'enregistrement' : '⚑ Signaler l\'enregistrement'}
+        {#if detailGlobalIdx !== null}<span class="mono text-muted" style="font-size:13px; margin-left:8px">#{detailGlobalIdx}</span>{/if}
+      </div>
+
+      {#if detailMode === 'rescue'}
+        <p style="font-size:12px; color:var(--text-dim); margin-bottom:16px">
+          Cet enregistrement a été rejeté automatiquement par le pipeline. Si vous pensez que c'est un faux positif,
+          vous pouvez le corriger et le réintégrer dans les données qualifiées.
+        </p>
+        {#each Object.entries(detailCorrections) as [field, val]}
+          <label class="form-field" style="margin-top:12px">
+            <span class="field-label">{field}</span>
+            <textarea bind:value={detailCorrections[field]} class="textarea"
+              rows={['code','completion'].includes(field) ? 8 : 3}></textarea>
+          </label>
+        {/each}
+      {:else}
+        <p style="font-size:12px; color:var(--text-dim); margin-bottom:16px">
+          Cet enregistrement semble incorrect mais a passé le pipeline automatique.
+          Le signaler l'exclut des données qualifiées et aide à améliorer les seuils.
+        </p>
+      {/if}
+
       <label class="form-field" style="margin-top:12px">
-        <span class="field-label">Completion</span>
-        <textarea bind:value={editCompletion} class="textarea" rows="6"></textarea>
+        <span class="field-label">Note (optionnelle)</span>
+        <input bind:value={detailNote} class="input-text" placeholder="Ex: code invalide, hors sujet, truncated…" />
       </label>
-      <div style="display:flex; gap:8px; margin-top:16px; justify-content:flex-end">
-        <button class="btn btn-ghost" onclick={() => editIdx = null}>Annuler</button>
-        <button class="btn btn-primary" onclick={saveEdit}>Sauvegarder</button>
+
+      <div style="display:flex; gap:8px; margin-top:20px; justify-content:flex-end">
+        <button class="btn btn-ghost" onclick={() => detailRecord = null}>Annuler</button>
+        <button class="btn btn-primary" onclick={submitDetail}>
+          {detailMode === 'rescue' ? '↩ Confirmer la récupération' : '⚑ Confirmer le signalement'}
+        </button>
       </div>
     </div>
   </div>
 {/if}
 
 <style>
-  .input { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); padding: 4px 10px; font-size: 13px; }
-  .stats-bar { display: flex; gap: 24px; flex-wrap: wrap; }
-  .stat-item { display: flex; flex-direction: column; gap: 2px; }
-  .stat-label { font-size: 11px; color: var(--text-muted); }
-  .pairs-list { display: flex; flex-direction: column; gap: 12px; }
-  .pair-card { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
-  .pair-header { display: flex; align-items: center; gap: 8px; }
-  .review-badge { font-size: 11px; font-weight: 600; text-transform: uppercase; }
-  .pair-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  .pair-col { display: flex; flex-direction: column; gap: 6px; }
-  .col-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
-  .pair-text { font-family: var(--font-mono); font-size: 11px; background: var(--surface-2); padding: 8px; border-radius: 4px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; margin: 0; max-height: 160px; overflow-y: auto; }
-  .pair-actions { display: flex; gap: 8px; }
-  .pagination { display: flex; align-items: center; gap: 12px; margin-top: 16px; justify-content: center; }
-  .form-field { display: flex; flex-direction: column; gap: 6px; }
-  .field-label { font-size: 12px; color: var(--text-muted); }
-  .textarea { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; font-family: var(--font-mono); font-size: 12px; resize: vertical; width: 100%; }
-  .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 100; }
-  .modal { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; width: 700px; max-width: 95vw; }
-  .modal-title { font-size: 16px; font-weight: 700; margin-bottom: 16px; }
+  .input { background:var(--surface-2); color:var(--text); border:1px solid var(--border); border-radius:var(--radius); padding:4px 10px; font-size:13px; }
+  .input-text { background:var(--surface-2); color:var(--text); border:1px solid var(--border); border-radius:var(--radius); padding:6px 10px; font-size:13px; width:100%; }
+
+  /* Summary grid */
+  .summary-grid { display:flex; gap:12px; flex-wrap:wrap; }
+  .summary-card { background:var(--surface-1); border:1px solid var(--border); border-radius:var(--radius); padding:14px 18px; min-width:110px; display:flex; flex-direction:column; gap:2px; }
+  .sc-value { font-size:22px; font-weight:700; font-family:var(--font-mono); }
+  .sc-label { font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.04em; }
+  .sc-pct { font-size:11px; color:var(--text-dim); }
+
+  /* Step bars */
+  .step-bars { display:flex; flex-direction:column; gap:6px; }
+  .step-bar-row { display:flex; align-items:center; gap:10px; }
+  .step-name { font-size:12px; color:var(--text-dim); width:100px; flex-shrink:0; }
+  .step-bar-track { flex:1; height:6px; background:var(--surface-2); border-radius:3px; overflow:hidden; }
+  .step-bar-fill { height:100%; background:var(--red); border-radius:3px; transition:width .3s; }
+  .step-count { font-size:12px; color:var(--text-muted); width:40px; text-align:right; }
+
+  /* Tabs */
+  .tab-bar { display:flex; gap:4px; border-bottom:1px solid var(--border); padding-bottom:1px; }
+  .tab-btn { background:none; border:none; padding:8px 14px; font-size:13px; color:var(--text-dim); cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px; display:flex; align-items:center; gap:6px; }
+  .tab-btn.active { color:var(--text); border-bottom-color:var(--accent); }
+  .tab-badge { font-size:10px; font-weight:700; padding:1px 5px; border-radius:999px; }
+  .tab-badge.red   { background:rgba(248,81,73,.15); color:var(--red); }
+  .tab-badge.green { background:rgba(63,185,80,.15); color:var(--green); }
+
+  /* Step filter */
+  .step-filter-btn { background:var(--surface-2); border:1px solid var(--border); border-radius:var(--radius); padding:3px 10px; font-size:12px; color:var(--text-dim); cursor:pointer; display:flex; align-items:center; gap:5px; }
+  .step-filter-btn.active { background:rgba(31,111,235,.15); color:var(--accent); border-color:var(--accent); }
+  .mini-count { font-size:10px; background:var(--surface-1); padding:0 4px; border-radius:3px; }
+
+  /* Records */
+  .record-list { display:flex; flex-direction:column; gap:10px; }
+  .record-card { padding:12px 14px; display:flex; flex-direction:column; gap:8px; }
+  .record-header { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+  .schema-badge { font-size:10px; font-weight:700; padding:2px 7px; border-radius:999px; background:var(--surface-2); color:var(--text-dim); text-transform:uppercase; letter-spacing:.04em; }
+  .schema-doc_crawl      { background:rgba(74,222,128,.12); color:var(--green); }
+  .schema-multilang_wiki { background:rgba(99,179,237,.12); color:#63b3ed; }
+  .schema-web_crawl      { background:rgba(251,146,60,.12); color:#fb923c; }
+  .lang-badge    { background:rgba(99,179,237,.12); color:#63b3ed; }
+  .adapter-badge { background:rgba(168,85,247,.12); color:#a855f7; }
+  .reject-reason { font-size:11px; color:var(--red); font-family:var(--font-mono); }
+  .quality-badge { font-size:11px; font-weight:600; }
+  .source-link { font-size:11px; color:var(--text-dim); text-decoration:none; flex-shrink:0; }
+  .source-link:hover { color:var(--accent); }
+  .record-cols { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .record-col { display:flex; flex-direction:column; gap:4px; }
+  .col-label { font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.05em; }
+  .record-text { font-family:var(--font-mono); font-size:11px; background:var(--surface-2); padding:6px 8px; border-radius:4px; white-space:pre-wrap; word-break:break-all; margin:0; max-height:160px; overflow-y:auto; }
+  .record-actions { display:flex; gap:8px; }
+  .pagination { display:flex; align-items:center; gap:12px; margin-top:14px; justify-content:center; }
+
+  /* Modal */
+  .modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:100; }
+  .modal { background:var(--surface-1); border:1px solid var(--border); border-radius:var(--radius); padding:24px; width:680px; max-width:95vw; max-height:85vh; overflow-y:auto; }
+  .modal-title { font-size:16px; font-weight:700; margin-bottom:4px; }
+  .form-field { display:flex; flex-direction:column; gap:5px; }
+  .field-label { font-size:11px; color:var(--text-muted); font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
+  .textarea { background:var(--surface-2); color:var(--text); border:1px solid var(--border); border-radius:var(--radius); padding:7px; font-family:var(--font-mono); font-size:12px; resize:vertical; width:100%; }
+  .banner-error { background:var(--red-dim); border:1px solid rgba(247,84,84,.3); border-radius:var(--radius); padding:10px 14px; font-size:13px; color:var(--red); }
+
+  /* Card types from global CSS */
+  .card.info { border-left:3px solid var(--accent); }
 </style>

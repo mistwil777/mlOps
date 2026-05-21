@@ -1,0 +1,58 @@
+# Source library — curated sources validated across projects.
+# Grows automatically after each successful collection run.
+# Do not edit quality_score or avg_records manually — updated by the platform.
+#
+# top_source: true once a source has been validated on 2+ different projects
+#             with quality_score >= 0.75
+
+sources:
+
+  - id: rosettacode
+    base_url: rosettacode.org
+    collector: multilang_wiki
+    domains:
+      - code
+      - algorithmique
+    languages: all    # natively multi-language — specify --langs at collection time
+    quality_score: null
+    avg_records_per_task: null
+    used_by_projects: []
+    top_source: false
+    notes: >
+      MediaWiki API. Covers ~1000 algorithmic tasks each with implementations in 100+ languages.
+      Use --langs to target specific language pairs.
+      Produces neutral records {task_name, lang, code} — requires code_migration transform.
+
+  - id: dev_java
+    base_url: dev.java
+    collector: doc_crawl
+    domains:
+      - code
+      - java
+    languages:
+      - java
+    quality_score: null
+    avg_records_per_task: null
+    used_by_projects: []
+    top_source: false
+    notes: >
+      Official Java developer portal. Code blocks are in <java-playground> custom tags
+      whose content is in HTML comments. Use --custom-tags java-playground at collection time.
+      Produces {description, code, lang} — requires doc_to_code transform.
+
+  - id: docs_python_fr
+    base_url: docs.python.org
+    collector: doc_crawl
+    domains:
+      - code
+      - python
+    languages:
+      - python
+    quality_score: null
+    avg_records_per_task: null
+    used_by_projects: []
+    top_source: false
+    notes: >
+      Official Python documentation (French version available).
+      Sphinx-generated HTML with Pygments syntax highlighting.
+      Produces {description, code, lang} — requires doc_to_code transform.

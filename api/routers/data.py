@@ -74,12 +74,90 @@ def _validate_project_id(project_id: str) -> None:
         raise HTTPException(400, f"Invalid project_id '{project_id}' — only [a-z0-9_-] allowed")
 
 
+def _all_raw_records(project_id: str, stage: str = "raw") -> list[dict]:
+    """Aggregate records from all JSONL files in a stage directory."""
+    stage_dir = Path(f"datalake/projects/{project_id}/{stage}")
+    if not stage_dir.exists():
+        return []
+    records: list[dict] = []
+    pairs_raw = stage_dir / "pairs_raw.jsonl"
+    for f in sorted(stage_dir.glob("*.jsonl")):
+        if f.is_file() and f != pairs_raw:
+            records.extend(_list_jsonl(f))
+    return records
+
+
 def _pair_path(project_id: str, stage: str) -> Path:
     _validate_project_id(project_id)
     return Path(f"datalake/projects/{project_id}/{stage}/pairs_raw.jsonl")
 
 
+def _record_key(r: dict[str, Any]) -> tuple:
+    """Stable dedup key for a raw collector record."""
+    return (
+        r.get("source_url", ""),
+        r.get("task_name", ""),
+        r.get("lang", ""),
+        r.get("description", "")[:80],
+        r.get("code", "")[:80],
+        r.get("prompt", "")[:80],
+    )
+
+
+def _ensure_raw_consolidated(project_id: str, stage: str = "raw") -> Path:
+    """Return consolidated.jsonl path, merging all collector *.jsonl into it as-is.
+
+    Records are stored in their native schema (description/code, task_name/code, prompt/completion).
+    No transformation to prompt/completion at this stage — that happens in pipeline/transform.py.
+    """
+    stage_dir = Path(f"datalake/projects/{project_id}/{stage}")
+    _validate_project_id(project_id)
+    if not stage_dir.exists():
+        stage_dir.mkdir(parents=True, exist_ok=True)
+
+    consolidated = stage_dir / "consolidated.jsonl"
+    source_files = sorted(f for f in stage_dir.glob("*.jsonl") if f != consolidated and f.is_file())
+    if not source_files:
+        return consolidated
+
+    existing = _list_jsonl(consolidated)
+    existing_keys: set[tuple] = {_record_key(r) for r in existing}
+
+    new_records: list[dict] = []
+    for f in source_files:
+        for r in _list_jsonl(f):
+            k = _record_key(r)
+            if k not in existing_keys:
+                new_records.append(r)
+                existing_keys.add(k)
+
+    if new_records:
+        _write_jsonl(consolidated, existing + new_records)
+
+    return consolidated
+
+
+# Keep old name as alias for review write-back compatibility
+def _ensure_pairs_raw(project_id: str, stage: str = "raw") -> Path:
+    return _ensure_raw_consolidated(project_id, stage)
+
+
 # ── AWA Collect ───────────────────────────────────────────────────────────────
+
+_COLLECTOR_REGISTRY: dict[str, Any] | None = None
+
+
+def _load_collector_registry() -> dict[str, Any]:
+    global _COLLECTOR_REGISTRY
+    if _COLLECTOR_REGISTRY is None:
+        path = Path("config/collectors/registry.yaml")
+        if not path.exists():
+            raise HTTPException(500, "config/collectors/registry.yaml not found")
+        with path.open() as fh:
+            data = yaml.safe_load(fh) or {}
+        _COLLECTOR_REGISTRY = data.get("collectors", {})
+    return _COLLECTOR_REGISTRY
+
 
 class CollectRequest(BaseModel):
     project_id: str
@@ -87,13 +165,25 @@ class CollectRequest(BaseModel):
     max_pairs: int = 50
     domain: Optional[str] = None
     task_type: Optional[str] = None
-    collector_type: str = "crawl4ai"   # "crawl4ai" | "rosetta_code"
-    source_value: Optional[str] = None # collector-specific param (e.g. rosetta topic)
-    adapter_name: Optional[str] = None # which adapter these pairs belong to
+    collector_type: str = "web_crawl"   # must match an entry in config/collectors/registry.yaml
+    source_value: Optional[str] = None  # collector-specific param (e.g. seed URL or topic)
+    adapter_name: Optional[str] = None  # which adapter these pairs belong to
+    langs: Optional[list[str]] = None   # for multilang_wiki: e.g. ["Python", "Java"]
+    lang: Optional[str] = None          # for doc_crawl: "python" | "java" | …
+    custom_tags: Optional[list[str]] = None  # for doc_crawl: custom HTML tags
 
 
 @router.post("/collect")
 async def start_collect(req: CollectRequest) -> dict[str, str]:
+    registry = _load_collector_registry()
+    if req.collector_type not in registry:
+        known = sorted(registry.keys())
+        raise HTTPException(
+            400,
+            f"Unknown collector_type '{req.collector_type}'. "
+            f"Known types: {known}. Add a new entry in config/collectors/registry.yaml."
+        )
+
     try:
         config = _load_project_config(req.project_id)
     except HTTPException:
@@ -102,17 +192,23 @@ async def start_collect(req: CollectRequest) -> dict[str, str]:
         config.setdefault("domain", req.domain)
     if req.task_type:
         config.setdefault("task_type", req.task_type)
+
     job_id = str(uuid.uuid4())[:8]
-    _JOBS[job_id] = {"status": "running", "lines": [], "project_id": req.project_id}
+    _JOBS[job_id] = {
+        "status":     "running",
+        "lines":      [],
+        "project_id": req.project_id,
+    }
 
     asyncio.create_task(_run_collect(
         job_id, req.project_id, req.topic, req.max_pairs, config,
         req.collector_type, req.source_value, req.adapter_name,
+        req.langs, req.lang, req.custom_tags,
     ))
     return {"job_id": job_id}
 
 
-_COLLECT_TIMEOUT_S = 300  # 5 min hard cap on entire collect subprocess
+_COLLECT_TIMEOUT_S = 300
 
 
 async def _run_collect(
@@ -121,37 +217,91 @@ async def _run_collect(
     topic: str,
     max_pairs: int,
     config: dict[str, Any],
-    collector_type: str = "crawl4ai",
+    collector_type: str = "web_crawl",
     source_value: str | None = None,
     adapter_name: str | None = None,
+    langs: list[str] | None = None,
+    lang: str | None = None,
+    custom_tags: list[str] | None = None,
 ) -> None:
-    output = Path(f"datalake/projects/{project_id}/raw/pairs_raw.jsonl")
-    output.parent.mkdir(parents=True, exist_ok=True)
+    registry  = _load_collector_registry()
+    collector = registry[collector_type]
+    module    = collector.get("module")
+
+    # Output path: timestamped per-collector file — never overwrite a previous run
+    raw_dir = Path(f"datalake/projects/{project_id}/raw")
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+    output = raw_dir / f"{collector_type}_{ts}.jsonl"
 
     adapter_args = ["--adapter-name", adapter_name] if adapter_name else []
 
-    if collector_type == "rosetta_code":
-        rosetta_topic = source_value or topic
-        cmd = [
-            sys.executable, "-m", "agents.rosetta_collector",
-            "--topic",     rosetta_topic,
-            "--max-tasks", str(max_pairs),
-            "--output",    str(output),
-            *adapter_args,
-        ]
-    else:
-        domain    = config.get("domain", "code")
-        task_type = config.get("task_type", "generation")
-        cmd = [
-            sys.executable, "-m", "agents.web_collector",
-            "--project",   project_id,
-            "--topic",     topic,
-            "--domain",    domain,
-            "--task-type", task_type,
-            "--max-pages", str(max_pairs),
-            "--output",    str(output),
-            *adapter_args,
-        ]
+    # Build args from CLI mapping + request values
+    cli_map: dict[str, str] = collector.get("cli_mapping", {})
+    extra_args: list[str] = []
+
+    # Auto-derive langs for multilang_wiki if not explicitly provided
+    effective_langs = langs
+    if effective_langs is None and collector_type == "multilang_wiki":
+        transform = config.get("transform", {})
+        params = transform.get("params", {})
+        src = params.get("src_lang") or params.get("source_lang")
+        tgt = params.get("tgt_lang") or params.get("target_lang")
+        if src and tgt:
+            effective_langs = [src, tgt]
+        else:
+            # Fallback 1: fusible doc_crawl lang_hints across all adapters
+            hints: list[str] = []
+            for adapter_cfg in config.get("adapters", []):
+                for sc in adapter_cfg.get("source_configs", []):
+                    if sc.get("fusible") and sc.get("lang_hint"):
+                        h = sc["lang_hint"]
+                        if h not in hints:
+                            hints.append(h)
+            # Fallback 2: any lang_hint across source_configs if no fusible found
+            if not hints:
+                for adapter_cfg in config.get("adapters", []):
+                    for sc in adapter_cfg.get("source_configs", []):
+                        h = sc.get("lang_hint", "")
+                        if h and h not in hints:
+                            hints.append(h)
+            if hints:
+                effective_langs = hints
+
+    # Map known request fields to their CLI arg names
+    field_values: dict[str, Any] = {
+        "topic":       source_value or topic,
+        "url":         source_value or topic,
+        "max_tasks":   max_pairs,
+        "max_pages":   max_pairs,
+        "lang":        lang or topic,
+        "langs":       effective_langs,
+        "custom_tags": custom_tags,
+        "domain":      config.get("domain", "code"),
+        "task_type":   config.get("task_type", "generation"),
+        "project":     project_id,
+    }
+
+    for field, cli_arg in cli_map.items():
+        if field == "adapter_name":
+            continue  # handled via adapter_args
+        val = field_values.get(field)
+        if val is None:
+            continue
+        if isinstance(val, list):
+            if val:
+                extra_args += [cli_arg] + [str(v) for v in val]
+        else:
+            extra_args += [cli_arg, str(val)]
+
+    if module is None:
+        # manual collector — no subprocess, nothing to launch
+        _JOBS[job_id]["status"] = "completed"
+        _JOBS[job_id]["lines"].append("Manual collector: no subprocess launched.")
+        _JOBS[job_id]["finished_at"] = datetime.now(timezone.utc).timestamp()
+        return
+
+    cmd = [sys.executable, "-m", module, "--output", str(output), *extra_args, *adapter_args]
 
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -214,90 +364,309 @@ async def collect_status(job_id: str) -> dict[str, Any]:
     return {"status": j["status"], "lines": len(j["lines"])}
 
 
+# ── Pair Fusion ───────────────────────────────────────────────────────────────
+
+class FuseRequest(BaseModel):
+    project_id: str
+    lang_pair: str          # key from config/languages.yaml, e.g. "python-java"
+    adapter_name: Optional[str] = None
+    max_fused: int = 200
+    llm_model: str = "qwen2.5-coder:7b"
+
+
+@router.post("/fuse")
+async def start_fuse(req: FuseRequest) -> dict[str, str]:
+    _load_project_config(req.project_id)
+    job_id = str(uuid.uuid4())[:8]
+    _JOBS[job_id] = {"status": "running", "lines": [], "project_id": req.project_id}
+    asyncio.create_task(_run_fuse(job_id, req))
+    return {"job_id": job_id}
+
+
+async def _run_fuse(job_id: str, req: FuseRequest) -> None:
+    raw_dir = Path(f"datalake/projects/{req.project_id}/raw")
+
+    # Load language pair config
+    try:
+        import yaml as _yaml  # noqa: PLC0415
+        with open("config/languages.yaml") as fh:
+            langs_cfg = _yaml.safe_load(fh) or {}
+        pcfg = langs_cfg.get("pairs", {}).get(req.lang_pair)
+        if not pcfg:
+            _JOBS[job_id]["status"] = "failed"
+            _JOBS[job_id]["lines"].append(f"ERROR: unknown lang_pair '{req.lang_pair}'")
+            return
+    except Exception as exc:
+        _JOBS[job_id]["status"] = "failed"
+        _JOBS[job_id]["lines"].append(f"ERROR loading languages.yaml: {exc}")
+        return
+
+    source_lang = pcfg["source_lang"]
+    target_lang = pcfg["target_lang"]
+
+    # Source/target JSONL: pairs tagged with lang=source_lang / lang=target_lang
+    source_jsonl = raw_dir / f"doc_{source_lang}.jsonl"
+    target_jsonl = raw_dir / f"doc_{target_lang}.jsonl"
+    output       = raw_dir / "pairs_raw.jsonl"
+
+    cmd = [
+        sys.executable, "-m", "agents.pair_fuser",
+        "--pair",         req.lang_pair,
+        "--source-jsonl", str(source_jsonl),
+        "--target-jsonl", str(target_jsonl),
+        "--output",       str(output),
+        "--max-fused",    str(req.max_fused),
+        "--model",        req.llm_model,
+        *(["--adapter-name", req.adapter_name] if req.adapter_name else []),
+    ]
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+
+        async def _read() -> None:
+            async for raw in proc.stdout:
+                _JOBS[job_id]["lines"].append(raw.decode(errors="replace").rstrip())
+            await proc.wait()
+
+        await asyncio.wait_for(_read(), timeout=1800)  # 30 min max
+        _JOBS[job_id]["status"] = "completed" if proc.returncode == 0 else "failed"
+    except asyncio.TimeoutError:
+        _JOBS[job_id]["status"] = "failed"
+        _JOBS[job_id]["lines"].append("ERROR: fuse timed out after 30 min")
+        proc.kill()
+        await proc.wait()
+    except Exception as exc:
+        _JOBS[job_id]["status"] = "failed"
+        _JOBS[job_id]["lines"].append(f"ERROR: {exc}")
+    finally:
+        _JOBS[job_id]["finished_at"] = datetime.now(timezone.utc).timestamp()
+        _purge_old_jobs()
+
+
 # ── Human Review ──────────────────────────────────────────────────────────────
 
 class ReviewAction(BaseModel):
     index: int
-    action: str        # "validate" | "reject" | "correct"
-    corrected_prompt: str | None = None
-    corrected_completion: str | None = None
+    action: str                              # "flag" | "rescue"
+    corrections: dict[str, str] | None = None  # field → corrected value (any native schema field)
+    note: str | None = None                  # human note attached to the flag
 
 
-@router.get("/review/{project_id}")
-async def list_pairs_for_review(
-    project_id: str,
-    stage: str = "raw",
-    page: int = 0,
-    page_size: int = 20,
-    status: str | None = None,
-) -> dict[str, Any]:
+# ── Human Review — pipeline-aware ────────────────────────────────────────────
+# Philosophy: humans do NOT validate every record. They:
+#   1. Spot-check a sample of qualified records (sanity check)
+#   2. Review auto-rejected records to rescue false positives
+#   3. Flag records that slipped through but are clearly wrong
+
+def _processed_dir(project_id: str) -> Path:
+    return Path(f"datalake/projects/{project_id}/processed")
+
+
+@router.get("/review/{project_id}/quality-summary")
+async def review_quality_summary(project_id: str) -> dict[str, Any]:
+    """Pipeline quality stats: how many records at each stage, rejection breakdown per step."""
     try:
         _load_project_config(project_id)
     except HTTPException:
-        # Allow data access before project config is created (wizard flow)
         pass
-    raw_path = _pair_path(project_id, stage)
-    records  = _list_jsonl(raw_path)
 
-    if status == "pending":
-        records = [r for r in records if r.get("review_status") not in ("validate", "reject", "correct")]
-    elif status in ("validate", "reject", "correct"):
-        records = [r for r in records if r.get("review_status") == status]
+    proc = _processed_dir(project_id)
+    qualified_path = proc / "qualified.jsonl"
+    qualified = _list_jsonl(qualified_path) if qualified_path.exists() else []
 
-    total  = len(records)
-    sliced = records[page * page_size : (page + 1) * page_size]
+    # Per-step rejection files
+    step_names = ["schema", "syntax", "text_quality", "dedup", "relevance"]
+    rejection_counts: dict[str, int] = {}
+    for step in step_names:
+        p = proc / f"rejected_{step}.jsonl"
+        rejection_counts[step] = len(_list_jsonl(p)) if p.exists() else 0
+
+    # Flagged by human
+    flagged_path = proc / "flagged.jsonl"
+    flagged = len(_list_jsonl(flagged_path)) if flagged_path.exists() else 0
+
+    # Rescued false positives
+    rescued_path = proc / "rescued.jsonl"
+    rescued = len(_list_jsonl(rescued_path)) if rescued_path.exists() else 0
+
+    # Raw total
+    raw_path = _ensure_pairs_raw(project_id, "raw")
+    raw_total = len(_list_jsonl(raw_path))
+
+    total_rejected = sum(rejection_counts.values())
 
     return {
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-        "items": sliced,
+        "project_id":      project_id,
+        "raw_total":       raw_total,
+        "auto_rejected":   total_rejected,
+        "qualified":       len(qualified),
+        "flagged_by_human": flagged,
+        "rescued":         rescued,
+        "rejection_by_step": rejection_counts,
+        "pipeline_ran":    qualified_path.exists(),
     }
 
 
-@router.post("/review/{project_id}")
-async def apply_review(project_id: str, action: ReviewAction) -> dict[str, Any]:
-    _load_project_config(project_id)
-    raw_path = _pair_path(project_id, "raw")
-    records  = _list_jsonl(raw_path)
+@router.get("/review/{project_id}/rejected")
+async def list_rejected(
+    project_id: str,
+    step: str | None = None,     # schema | syntax | text_quality | dedup | relevance | all
+    page: int = 0,
+    page_size: int = 20,
+) -> dict[str, Any]:
+    """Browse auto-rejected records. Humans look here to rescue false positives."""
+    try:
+        _load_project_config(project_id)
+    except HTTPException:
+        pass
 
+    proc = _processed_dir(project_id)
+    step_names = ["schema", "syntax", "text_quality", "dedup", "relevance"]
+
+    if step and step != "all" and step not in step_names:
+        raise HTTPException(400, f"Unknown step '{step}'. Valid: {step_names + ['all']}")
+
+    target_steps = step_names if (not step or step == "all") else [step]
+    records: list[dict] = []
+    for s in target_steps:
+        p = proc / f"rejected_{s}.jsonl"
+        if p.exists():
+            for r in _list_jsonl(p):
+                records.append({**r, "_rejected_step": s})
+
+    total  = len(records)
+    sliced = records[page * page_size: (page + 1) * page_size]
+    return {
+        "total": total, "page": page, "page_size": page_size,
+        "step": step or "all", "items": sliced,
+    }
+
+
+@router.get("/review/{project_id}/sample")
+async def review_sample(
+    project_id: str,
+    n: int = 20,
+    adapter_name: str | None = None,
+) -> dict[str, Any]:
+    """Random sample of qualified records for human spot-check."""
+    import random  # noqa: PLC0415
+    try:
+        _load_project_config(project_id)
+    except HTTPException:
+        pass
+
+    qualified_path = _processed_dir(project_id) / "qualified.jsonl"
+    if not qualified_path.exists():
+        return {"total": 0, "sample": [], "note": "Quality pipeline not yet run."}
+
+    records = _list_jsonl(qualified_path)
+    if adapter_name:
+        records = [r for r in records if r.get("adapter_name") == adapter_name]
+
+    sample = random.sample(records, min(n, len(records)))
+    return {"total": len(records), "sample_size": len(sample), "sample": sample}
+
+
+@router.post("/review/{project_id}/flag")
+async def flag_record(project_id: str, action: ReviewAction) -> dict[str, Any]:
+    """Human flags a qualified record as wrong (false positive that slipped through)."""
+    try:
+        _load_project_config(project_id)
+    except HTTPException:
+        pass
+
+    qualified_path = _processed_dir(project_id) / "qualified.jsonl"
+    if not qualified_path.exists():
+        raise HTTPException(404, "No qualified records found. Run the quality pipeline first.")
+
+    records = _list_jsonl(qualified_path)
     if action.index < 0 or action.index >= len(records):
         raise HTTPException(400, f"Index {action.index} out of range (total={len(records)})")
 
     r = dict(records[action.index])
-    r["review_status"] = action.action
+    r["_human_flag"] = True
+    r["_human_note"] = action.note or ""
+    r["_flagged_at"]  = datetime.now(timezone.utc).isoformat()
 
-    if action.action == "correct":
-        if action.corrected_prompt is not None:
-            r["prompt"] = action.corrected_prompt
-        if action.corrected_completion is not None:
-            r["completion"] = action.corrected_completion
+    # Remove from qualified, add to flagged
+    records.pop(action.index)
+    _write_jsonl(qualified_path, records)
 
-    records[action.index] = r
-    _write_jsonl(raw_path, records)
+    flagged_path = _processed_dir(project_id) / "flagged.jsonl"
+    existing_flagged = _list_jsonl(flagged_path)
+    _write_jsonl(flagged_path, existing_flagged + [r])
 
-    return {"ok": True, "index": action.index, "status": action.action}
+    return {"ok": True, "index": action.index, "flagged_total": len(existing_flagged) + 1}
+
+
+@router.post("/review/{project_id}/rescue")
+async def rescue_record(project_id: str, action: ReviewAction) -> dict[str, Any]:
+    """Human rescues a false-positive auto-rejected record, optionally correcting fields."""
+    try:
+        _load_project_config(project_id)
+    except HTTPException:
+        pass
+
+    proc = _processed_dir(project_id)
+    step_names = ["schema", "syntax", "text_quality", "dedup", "relevance"]
+
+    # Find the record across all rejection files
+    target_step: str | None = None
+    target_local_idx: int | None = None
+    cumulative = 0
+    for step in step_names:
+        p = proc / f"rejected_{step}.jsonl"
+        if not p.exists():
+            continue
+        recs = _list_jsonl(p)
+        end = cumulative + len(recs)
+        if cumulative <= action.index < end:
+            target_step = step
+            target_local_idx = action.index - cumulative
+            break
+        cumulative = end
+
+    if target_step is None or target_local_idx is None:
+        raise HTTPException(400, f"Index {action.index} not found across rejection files")
+
+    p = proc / f"rejected_{target_step}.jsonl"
+    recs = _list_jsonl(p)
+    r = dict(recs[target_local_idx])
+
+    # Apply corrections (any native field)
+    if action.corrections:
+        for field, value in action.corrections.items():
+            r[field] = value
+    r["_rescued_from_step"] = target_step
+    r["_rescued_at"]        = datetime.now(timezone.utc).isoformat()
+    r["_human_note"]        = action.note or ""
+    # Remove internal rejection markers
+    for k in list(r.keys()):
+        if k.startswith("_") and "reject" in k:
+            del r[k]
+
+    # Remove from rejection file
+    recs.pop(target_local_idx)
+    _write_jsonl(p, recs)
+
+    # Add to rescued + qualified
+    rescued_path = proc / "rescued.jsonl"
+    _write_jsonl(rescued_path, _list_jsonl(rescued_path) + [r])
+
+    qualified_path = proc / "qualified.jsonl"
+    _write_jsonl(qualified_path, _list_jsonl(qualified_path) + [r])
+
+    return {"ok": True, "rescued_from": target_step, "record": r}
 
 
 @router.get("/review/{project_id}/stats")
 async def review_stats(project_id: str) -> dict[str, Any]:
-    _load_project_config(project_id)
-    raw_path = _pair_path(project_id, "raw")
-    records  = _list_jsonl(raw_path)
-
-    total     = len(records)
-    validated = sum(1 for r in records if r.get("review_status") == "validate")
-    rejected  = sum(1 for r in records if r.get("review_status") == "reject")
-    corrected = sum(1 for r in records if r.get("review_status") == "correct")
-    pending   = total - validated - rejected - corrected
-
-    return {
-        "total": total,
-        "validated": validated,
-        "rejected": rejected,
-        "corrected": corrected,
-        "pending": pending,
-    }
+    """Legacy stats endpoint — redirects to quality-summary for backwards compat."""
+    return await review_quality_summary(project_id)
 
 
 # ── Cleaning Pipeline ─────────────────────────────────────────────────────────
@@ -397,12 +766,22 @@ async def data_health(project_id: str) -> dict[str, Any]:
     _load_project_config(project_id)
     base = Path(f"datalake/projects/{project_id}")
 
-    def _stage_info(stage: str, filename: str = "pairs_raw.jsonl") -> dict[str, Any]:
-        p = base / stage / filename
-        if not p.exists():
-            return {"exists": False, "count": 0, "size_mb": 0}
-        records = _list_jsonl(p)
-        size_mb = round(p.stat().st_size / 1e6, 2)
+    def _stage_info(stage: str) -> dict[str, Any]:
+        stage_dir = base / stage
+        if not stage_dir.exists():
+            return {"exists": False, "count": 0, "size_mb": 0,
+                    "avg_quality": None, "scored_count": 0, "reviewed_count": 0}
+        # Aggregate all JSONL files in the stage directory (agnostic — no hardcoded filename)
+        jsonl_files = [f for f in stage_dir.glob("*.jsonl") if f.is_file()]
+        records: list[dict] = []
+        total_bytes = 0
+        for f in jsonl_files:
+            records.extend(_list_jsonl(f))
+            total_bytes += f.stat().st_size
+        if not records:
+            return {"exists": False, "count": 0, "size_mb": 0,
+                    "avg_quality": None, "scored_count": 0, "reviewed_count": 0}
+        size_mb = round(total_bytes / 1e6, 2)
         scores  = [r.get("quality_score") for r in records if r.get("quality_score") is not None]
         reviewed_statuses = [r.get("review_status") for r in records if r.get("review_status")]
         return {
@@ -424,7 +803,7 @@ async def data_health(project_id: str) -> dict[str, Any]:
 
     raw       = _stage_info("raw")
     processed = _stage_info("processed")
-    ftr       = _stage_info("fine-tuning-ready")
+    ftr       = _stage_info("fine-tuning-ready")  # counts from pipeline output files only
     splits    = _split_info("fine-tuning-ready")
 
     funnel = {
@@ -472,8 +851,7 @@ async def adapter_coverage(project_id: str) -> dict[str, Any]:
     cfg = _load_project_config(project_id)
     adapters: list[dict[str, Any]] = cfg.get("adapters", [])
 
-    raw_path = _pair_path(project_id, "raw")
-    records = _list_jsonl(raw_path)
+    records = _all_raw_records(project_id, "raw")
 
     # Count by adapter_name from JSONL records
     counts: dict[str, int] = {}
@@ -567,16 +945,14 @@ async def ingest_file(
     if not records_new:
         raise HTTPException(400, "No valid JSONL records found in uploaded file")
 
-    # Validate minimal structure
-    for r in records_new:
-        if "prompt" not in r or "completion" not in r:
-            raise HTTPException(400, "Each record must have 'prompt' and 'completion' fields")
-
-    # Append to raw file
+    # Accept any native schema — no prompt/completion requirement at raw stage
+    # Append to a timestamped file to avoid overwriting previous ingests
+    ingest_ts = datetime.now(timezone.utc)
+    ingest_file = raw_dir / f"manual_{ingest_ts.strftime('%Y%m%dT%H%M%S')}.jsonl"
+    ts_iso = ingest_ts.isoformat()
+    tagged = [{**r, "meta": {**r.get("meta", {}), "source": source_description, "ingested_at": ts_iso}} for r in records_new]
+    _write_jsonl(ingest_file, tagged)
     existing = _list_jsonl(raw_path)
-    ts = datetime.now(timezone.utc).isoformat()
-    tagged = [{**r, "meta": {**r.get("meta", {}), "source": source_description, "ingested_at": ts}} for r in records_new]
-    _write_jsonl(raw_path, existing + tagged)
 
     # Track lineage
     for r in tagged:
@@ -584,7 +960,7 @@ async def ingest_file(
 
     return {
         "ingested": len(tagged),
-        "total_raw": len(existing) + len(tagged),
+        "file": ingest_file.name,
         "source": source_description,
     }
 
@@ -702,7 +1078,7 @@ async def browse_pairs(
 ) -> dict[str, Any]:
     """Browse raw JSONL pairs directly — no Qdrant needed. Supports adapter_name filter."""
     _load_project_config(project_id)
-    raw_path = _pair_path(project_id, stage)
+    raw_path = _ensure_pairs_raw(project_id, stage)
     records = _list_jsonl(raw_path)
 
     if adapter_name:

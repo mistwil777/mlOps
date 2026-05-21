@@ -1,0 +1,25 @@
+# Transform template: doc_to_code
+# Turns (description, code snippet) pairs from documentation into training pairs.
+# Used by pipeline/transform.py — params injected from project config.
+#
+# Compatible collectors: doc_crawl (doc_collector output)
+# Required project params: lang
+
+id: doc_to_code
+description: Turn (description, code snippet) pairs from documentation into training pairs
+
+input_schema:
+  # Direct field mapping — no join needed, one record = one pair
+  input_field: description
+  output_field: code
+  # Optional: carry lang metadata through
+  lang_field: lang
+
+# Instruction prepended to the prompt — {{input}} is replaced by the description text
+instruction_template: |
+  Write {{lang}} code that does the following:
+
+  {{input}}
+
+params_required:
+  - lang

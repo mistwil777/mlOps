@@ -1,0 +1,199 @@
+# Verifier registry — single source of truth for all available data-quality MCP servers.
+#
+# IMPORTANT: This file is human-reviewed before any verifier is activated.
+# New verifiers are proposed automatically by the advisor agent when a new adapter is
+# scoped, then commented out (enabled: false) pending human validation.
+#
+# Philosophy:
+#   - Every verifier is GENERIC — identified by capability, never by project language.
+#     Use "code-executor" with lang: python, not "python-executor".
+#   - Verifiers are optional per adapter — enable only what the domain needs.
+#   - MCP servers are auto-managed AFTER human approval: install, config, lifecycle.
+#   - Deterministic checks (syntax, format) run before LLM checks to minimize cost.
+#
+# Fields:
+#   type          : "mcp" (external MCP server) | "internal" (pipeline module)
+#   mcp_server    : npm package or pip package that provides the MCP server
+#   description   : Human-readable description of what this verifier checks
+#   capability    : Machine-readable capability tag (used by advisor to select verifiers)
+#   domain        : List of domains this verifier is relevant for
+#   params        : Runtime parameters injected per-call (adapter-specific values come from project YAML)
+#   cost_tier     : "free" (deterministic) | "llm-haiku" | "llm-sonnet"
+#   enabled       : false = proposed but not yet human-validated — platform will NOT use it
+#   notes         : Why this verifier was added, edge cases, known limitations
+#
+# To activate a verifier: set enabled: true after reviewing its params and scope.
+# The platform reads this file at startup — no code change needed.
+
+verifiers:
+
+  # ─── CODE QUALITY ────────────────────────────────────────────────────────────
+
+  code_syntax:
+    type: internal
+    module: pipeline.checks.syntax
+    description: "Static syntax check — parses code without executing it"
+    capability: syntax_check
+    domain: [code, migration, documentation]
+    params:
+      lang: null          # injected from record.lang at runtime
+    cost_tier: free
+    enabled: true
+    notes: >
+      Uses tree-sitter parsers for all supported languages. Zero execution cost.
+      Must run before any LLM verifier to filter unparseable code early (GIGO).
+
+  code_executor:
+    type: mcp
+    mcp_server: "@modelcontextprotocol/server-sandbox"
+    description: "Sandboxed code execution — runs a snippet and verifies output matches expected"
+    capability: code_execution
+    domain: [code, migration]
+    params:
+      lang: null          # injected from record.lang — e.g. "python", "java", "rust"
+      timeout_ms: 5000    # max execution time per snippet
+      memory_mb: 128      # sandbox memory cap
+    cost_tier: free
+    enabled: false
+    notes: >
+      PROPOSED — requires human validation before activation.
+      Generic: receives lang + code as params. Never hardcode a language in the server name.
+      Useful for migration adapters: verify that translated code produces the same output
+      as the source snippet on shared test inputs.
+      Security: runs in isolated sandbox — no network, no filesystem writes.
+
+  code_similarity:
+    type: internal
+    module: pipeline.checks.similarity
+    description: "Cosine + Euclidean similarity between two code embeddings"
+    capability: semantic_similarity
+    domain: [code, migration]
+    params:
+      model: nomic-embed-text   # embedding model (Ollama, port 11434)
+      threshold_cosine: 0.85    # below → flagged as structurally divergent
+      threshold_euclidean: null # optional secondary filter
+    cost_tier: free
+    enabled: true
+    notes: >
+      Used to detect near-duplicate records (deduplication step) and to verify
+      that a migrated code pair is semantically aligned (same algorithm, different lang).
+      Threshold values are domain-specific — adjust per adapter in project YAML.
+
+  # ─── NATURAL LANGUAGE QUALITY ────────────────────────────────────────────────
+
+  text_quality:
+    type: internal
+    module: pipeline.checks.text_quality
+    description: "Heuristic text quality — length, entropy, boilerplate detection"
+    capability: text_quality
+    domain: [qa, documentation, hr, legal, sales]
+    params:
+      min_chars: 80       # below → likely truncated or boilerplate
+      max_chars: 8000     # above → may be too long for fine-tuning context window
+      min_entropy: 3.0    # below → repetitive / low-information content
+    cost_tier: free
+    enabled: true
+    notes: >
+      Fast deterministic filter. Catches: empty fields, Lorem Ipsum-style noise,
+      copy-pasted navigation text scraped from doc sidebars.
+
+  semantic_relevance:
+    type: internal
+    module: pipeline.checks.relevance
+    description: "LLM scoring — rates how relevant a record is for the adapter's task"
+    capability: relevance_scoring
+    domain: [code, qa, documentation, hr, legal, sales]
+    params:
+      model: haiku          # haiku for bulk, sonnet for edge cases flagged by haiku
+      score_threshold: 0.7  # below → rejected
+      prompt_template: null # loaded from config/scoring/<adapter>.yaml if present
+    cost_tier: llm-haiku
+    enabled: true
+    notes: >
+      Main LLM cost center in the pipeline. Route to haiku first; only escalate
+      records in [0.6, 0.7] range to sonnet for a second opinion.
+      Scoring prompt is adapter-specific — defined in config/scoring/<adapter_id>.yaml.
+
+  semantic_judge:
+    type: internal
+    module: agents.semantic_judge
+    description: "LLM judge — verifies that input and output of a pair are semantically equivalent"
+    capability: pair_equivalence
+    domain: [migration, qa]
+    params:
+      model: haiku
+      confidence_threshold: 0.8
+    cost_tier: llm-haiku
+    enabled: false
+    notes: >
+      PROPOSED — implement after code_executor is validated.
+      For migration adapters: confirms that the Java and Python snippets implement
+      the same algorithm (not just syntactically similar). Uses chain-of-thought scoring.
+      Only runs on records that passed code_syntax and code_similarity.
+
+  # ─── DOMAIN-SPECIFIC ─────────────────────────────────────────────────────────
+
+  legal_citation:
+    type: mcp
+    mcp_server: null    # TBD — no production-grade legal citation MCP exists yet
+    description: "Verifies that legal text references valid article/clause identifiers"
+    capability: legal_citation_check
+    domain: [legal]
+    params:
+      jurisdiction: null  # injected from project YAML — e.g. "FR", "EU"
+    cost_tier: free
+    enabled: false
+    notes: >
+      PROPOSED — requires a legal corpus MCP. Block until a validated server exists.
+      Advisor will propose this verifier automatically for any adapter in the legal domain.
+
+  hr_compliance:
+    type: mcp
+    mcp_server: null    # TBD
+    description: "Checks that HR-related text respects employment law constraints"
+    capability: hr_compliance_check
+    domain: [hr]
+    params:
+      locale: null      # injected from project YAML
+    cost_tier: free
+    enabled: false
+    notes: >
+      PROPOSED — placeholder. Locale-specific (FR labor law ≠ DE labor law).
+      Human must validate the specific MCP server and its jurisdiction coverage
+      before enabling.
+
+  # ─── STRUCTURAL ──────────────────────────────────────────────────────────────
+
+  deduplication:
+    type: internal
+    module: pipeline.deduplicate
+    description: "Two-level deduplication: exact hash match then near-duplicate embedding distance"
+    capability: deduplication
+    domain: [code, qa, documentation, hr, legal, sales]
+    params:
+      exact_field: code         # field used for exact-hash dedup (or null to hash full record)
+      embed_model: nomic-embed-text
+      near_dup_threshold: 0.97  # cosine ≥ this → considered duplicate
+    cost_tier: free
+    enabled: true
+    notes: >
+      Always runs first in the quality pipeline — before any LLM verifier.
+      Two levels: (1) SHA-256 of normalized field → instant exact match.
+                  (2) embedding cosine distance → near-duplicate detection.
+      Threshold 0.97 is conservative by design; tighten to 0.95 if adapter shows
+      too many near-duplicates passing through.
+
+  schema_validation:
+    type: internal
+    module: pipeline.checks.schema
+    description: "Validates that a record conforms to its collector's output_schema"
+    capability: schema_check
+    domain: [code, qa, documentation, hr, legal, sales]
+    params:
+      collector_type: null  # injected from record metadata
+    cost_tier: free
+    enabled: true
+    notes: >
+      Reads expected schema from config/collectors/registry.yaml.
+      Rejects records missing required fields or carrying unexpected prompt/completion
+      at the raw stage (architecture invariant: {prompt,completion} only at transform step).

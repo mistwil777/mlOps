@@ -36,6 +36,7 @@ tiktoken==0.8.0
 
 # ── Embeddings ───────────────────────────────────────────────────────────────
 sentence-transformers==3.3.1
+einops==0.8.2
 
 # ── AWS Bedrock (baseline measurements only) ─────────────────────────────────
 boto3==1.35.99

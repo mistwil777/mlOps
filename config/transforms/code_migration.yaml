@@ -1,0 +1,37 @@
+# Transform template: code_migration
+# Aligns two implementations of the same algorithm in two different languages.
+# Used by pipeline/transform.py — params injected from project config.
+#
+# Compatible collectors: multilang_wiki (rosetta_collector output)
+# Required project params: src_lang, tgt_lang
+
+id: code_migration
+description: Align two implementations of the same algorithm across two languages
+
+input_schema:
+  # Field used to group records and join input/output sides
+  match_by: task_name
+  # Which field holds the source code
+  input_field: code
+  # Filter: only records where lang == {{src_lang}} are the input side
+  input_filter:
+    field: lang
+    value: "{{src_lang}}"
+  # Which field holds the target code (completion side)
+  output_field: code
+  # Filter: only records where lang == {{tgt_lang}} are the output side
+  output_filter:
+    field: lang
+    value: "{{tgt_lang}}"
+
+# Instruction prepended to the prompt — {{input}} is replaced by the source code
+instruction_template: |
+  Migrate the following {{src_lang}} code to {{tgt_lang}}.
+
+  ```{{src_lang}}
+  {{input}}
+  ```
+
+params_required:
+  - src_lang
+  - tgt_lang

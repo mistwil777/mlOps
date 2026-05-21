@@ -42,6 +42,12 @@ class ProjectCreate(BaseModel):
         "min_quality": 0.85,
     }
     adapters: list[dict[str, Any]] = []
+    # Advisor-generated fields — persisted as-is in the YAML
+    advisor_need: str = ""
+    advisor_notes: str = ""
+    rag_global: bool = False
+    software_components: list[str] = []
+    transform: dict[str, Any] = {}
 
 
 class ProjectPatch(BaseModel):
@@ -121,6 +127,21 @@ def create_project(body: ProjectCreate):
         },
         "adapters": body.adapters,
     }
+
+    # Advisor context — only written when provided
+    if body.advisor_need:
+        cfg["advisor_need"] = body.advisor_need
+    if body.advisor_notes:
+        cfg["advisor_notes"] = body.advisor_notes
+    if body.rag_global:
+        cfg["rag_global"] = body.rag_global
+    if body.software_components:
+        cfg["software_components"] = body.software_components
+    if body.transform:
+        cfg["transform"] = body.transform
+    if body.classification in ("confidentiel", "secret"):
+        cfg["isolation_level"] = "sovereign"
+
     save_project_config(project_id, cfg)
 
     # Create datalake directories

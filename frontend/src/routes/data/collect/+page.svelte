@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { getProjects, startCollect, getCollectStatus, getAdapterCoverage } from '$lib/api';
+  import { getProjects, startCollect, startFuse, getCollectStatus, getAdapterCoverage } from '$lib/api';
   import type { Project, ProjectAdapter, SourceSuggestion, AdapterCoverageResult } from '$lib/types';
 
   let projects: Project[] = $state([]);
@@ -26,6 +26,43 @@
   let queueIdx = $state(-1);   // -1 = not running
   let batchRunning = $state(false);
 
+  // ── source history (localStorage) ────────────────────────────────────────
+  type SourceHistoryEntry = { status: 'completed' | 'failed'; ts: string; pairs?: number };
+  let sourceHistory = $state<Record<string, SourceHistoryEntry>>({});
+
+  function sourceKey(projectId: string, adapterName: string, sourceValue: string) {
+    return `${projectId}__${adapterName}__${sourceValue}`;
+  }
+
+  function loadHistory(projectId: string) {
+    try {
+      const raw = localStorage.getItem(`collect_history__${projectId}`);
+      sourceHistory = raw ? JSON.parse(raw) : {};
+    } catch { sourceHistory = {}; }
+  }
+
+  function saveHistory(projectId: string) {
+    try {
+      localStorage.setItem(`collect_history__${projectId}`, JSON.stringify(sourceHistory));
+    } catch {}
+  }
+
+  function markSourceDone(projectId: string, adapterName: string, sourceValue: string, status: 'completed' | 'failed') {
+    const k = sourceKey(projectId, adapterName, sourceValue);
+    sourceHistory = { ...sourceHistory, [k]: { status, ts: new Date().toISOString() } };
+    saveHistory(projectId);
+  }
+
+  function getSourceStatus(adapterName: string, sourceValue: string): SourceHistoryEntry | null {
+    if (!selectedProject) return null;
+    return sourceHistory[sourceKey(selectedProject.id, adapterName, sourceValue)] ?? null;
+  }
+
+  // ── fusion panel ─────────────────────────────────────────────────────────
+  let fuseRunning = $state(false);
+  let fuseStatus = $state<'idle' | 'running' | 'completed' | 'failed'>('idle');
+  let fuseJobId = $state<string | null>(null);
+
   // ── shared logs ──────────────────────────────────────────────────────────
   let logs: string[] = $state([]);
 
@@ -37,12 +74,38 @@
   );
 
   const hasAdapters = $derived((selectedProject?.adapters ?? []).length > 0);
-  const running = $derived(singleRunning || batchRunning);
+  const running = $derived(singleRunning || batchRunning || fuseRunning);
+
+  // collect unique lang_pair_keys declared as fusible in source_configs
+  const fusiblePairKeys = $derived((() => {
+    if (!selectedProject) return [] as string[];
+    const keys = new Set<string>();
+    for (const adapter of selectedProject.adapters ?? []) {
+      for (const sc of adapter.source_configs ?? []) {
+        if (sc.fusible && sc.lang_pair_key) keys.add(sc.lang_pair_key);
+      }
+    }
+    return [...keys];
+  })());
+
+  // fallback: infer fusion candidates from doc_crawl lang_hints when no lang_pair_key set
+  const docLangPairs = $derived((() => {
+    if (!selectedProject) return [] as string[];
+    if (fusiblePairKeys.length > 0) return [] as string[]; // prefer explicit keys
+    const langs = new Set<string>();
+    for (const adapter of selectedProject.adapters ?? []) {
+      for (const sc of adapter.source_configs ?? []) {
+        if (sc.collector_type === 'doc_crawl' && sc.lang_hint) langs.add(sc.lang_hint);
+      }
+    }
+    return [...langs];
+  })());
 
   onMount(async () => {
     projects = await getProjects().catch(() => []);
     if (projects.length > 0) {
       selectedProject = projects[0];
+      loadHistory(projects[0].id);
       await loadCoverage();
     }
   });
@@ -58,6 +121,7 @@
     queueStatuses = [];
     queueIdx = -1;
     coverage = null;
+    if (selectedProject) loadHistory(selectedProject.id);
     await loadCoverage();
   }
 
@@ -77,6 +141,15 @@
     return coverage?.adapters.find(a => a.adapter_name === name) ?? null;
   }
 
+  // Derive langs for multilang_wiki from fusible doc_crawl sources in the same adapter.
+  function getLangsForSource(adapter: { source_configs?: Array<{ collector_type: string; fusible?: boolean; lang_hint?: string }> }): string[] | undefined {
+    const langs = (adapter.source_configs ?? [])
+      .filter(s => s.fusible && s.lang_hint)
+      .map(s => s.lang_hint as string);
+    const unique = [...new Set(langs)];
+    return unique.length >= 2 ? unique : undefined;
+  }
+
   // ── single source ─────────────────────────────────────────────────────────
   async function handleStart() {
     if (!selectedProject || !selectedSource) return;
@@ -86,6 +159,8 @@
     singleStatus = 'running';
 
     try {
+      const wikiLangs = selectedSource.source.collector_type === 'multilang_wiki'
+        ? getLangsForSource(selectedSource.adapter) : undefined;
       const res = await startCollect({
         project_id: selectedProject.id,
         topic: selectedSource.source.value,
@@ -95,23 +170,33 @@
         collector_type: selectedSource.source.collector_type,
         source_value: selectedSource.source.value,
         adapter_name: selectedSource.adapter.name,
+        lang: selectedSource.source.lang_hint,
+        ...(wikiLangs ? { langs: wikiLangs } : {}),
       });
-      openSSE(res.job_id, () => {
+      openSSE(res.job_id, (finalStatus) => {
         singleRunning = false;
+        singleStatus = finalStatus as typeof singleStatus;
+        markSourceDone(selectedProject!.id, selectedSource!.adapter.name, selectedSource!.source.value, finalStatus === 'completed' ? 'completed' : 'failed');
         loadCoverage();
       }, (s) => { singleStatus = s as typeof singleStatus; });
     } catch (e) {
       error = (e as Error).message;
       singleRunning = false;
       singleStatus = 'failed';
+      markSourceDone(selectedProject.id, selectedSource.adapter.name, selectedSource.source.value, 'failed');
     }
   }
 
   // ── batch (tout lancer) ────────────────────────────────────────────────────
-  function startBatch() {
+  function startBatch(forceAll = false) {
     if (!selectedProject || allSources.length === 0 || batchRunning) return;
-    queue = [...allSources];
-    queueStatuses = allSources.map(() => 'pending' as QueueStatus);
+    // By default skip sources already marked completed — only queue pending/failed ones
+    const toRun = forceAll
+      ? allSources
+      : allSources.filter(s => getSourceStatus(s.adapter.name, s.source.value)?.status !== 'completed');
+    if (toRun.length === 0) return;
+    queue = toRun;
+    queueStatuses = toRun.map(() => 'pending' as QueueStatus);
     queueIdx = 0;
     batchRunning = true;
     logs = [];
@@ -133,6 +218,8 @@
     logs = [...logs, `\n── [${queueIdx + 1}/${queue.length}] ${item.adapter.name} / ${item.source.label} ──`];
 
     try {
+      const wikiLangs = item.source.collector_type === 'multilang_wiki'
+        ? getLangsForSource(item.adapter) : undefined;
       const res = await startCollect({
         project_id: selectedProject.id,
         topic: item.source.value,
@@ -142,16 +229,21 @@
         collector_type: item.source.collector_type,
         source_value: item.source.value,
         adapter_name: item.adapter.name,
+        lang: item.source.lang_hint,
+        ...(wikiLangs ? { langs: wikiLangs } : {}),
       });
 
       openSSE(res.job_id, (finalStatus) => {
-        queueStatuses = queueStatuses.map((s, i) => i === queueIdx ? (finalStatus as QueueStatus) : s);
+        const st = finalStatus as QueueStatus;
+        queueStatuses = queueStatuses.map((s, i) => i === queueIdx ? st : s);
+        markSourceDone(selectedProject!.id, item.adapter.name, item.source.value, st === 'completed' ? 'completed' : 'failed');
         queueIdx++;
         runNextInQueue();
       }, () => {});
     } catch (e) {
       logs = [...logs, `ERROR: ${(e as Error).message}`];
       queueStatuses = queueStatuses.map((s, i) => i === queueIdx ? 'failed' : s);
+      markSourceDone(selectedProject.id, item.adapter.name, item.source.value, 'failed');
       queueIdx++;
       runNextInQueue();
     }
@@ -199,11 +291,49 @@
   }
 
   const COLLECTOR_LABELS: Record<string, string> = {
-    rosetta_code: 'Rosetta',
-    crawl4ai:     'Web',
+    multilang_wiki: 'Wiki',
+    web_crawl:    'Web',
     manual:       'Manuel',
     github_repo:  'GitHub',
+    doc_crawl:    'Docs',
   };
+
+  function getFusionPairs(langs: string[]): { key: string; label: string }[] {
+    // Build unidirectional pairs only (first lang is source, second is target).
+    // Does not generate the reverse — the fuser is directional and languages.yaml
+    // defines exactly one direction per pair.
+    const pairs: { key: string; label: string }[] = [];
+    for (let i = 0; i < langs.length - 1; i++) {
+      for (let j = i + 1; j < langs.length; j++) {
+        pairs.push({ key: `${langs[i]}-${langs[j]}`, label: `${langs[i]} → ${langs[j]}` });
+      }
+    }
+    return pairs;
+  }
+
+  async function handleFuse(langPair: string) {
+    if (!selectedProject || fuseRunning) return;
+    fuseRunning = true;
+    fuseStatus = 'running';
+    logs = [...logs, `\n── Fusion ${langPair} ──`];
+    try {
+      const res = await startFuse({
+        project_id: selectedProject.id,
+        lang_pair: langPair,
+      });
+      fuseJobId = res.job_id;
+      openSSE(res.job_id, (s) => {
+        fuseRunning = false;
+        fuseStatus = s === 'completed' ? 'completed' : 'failed';
+        fuseJobId = null;
+        loadCoverage();
+      }, () => {});
+    } catch (e) {
+      logs = [...logs, `ERROR fusion: ${(e as Error).message}`];
+      fuseRunning = false;
+      fuseStatus = 'failed';
+    }
+  }
 
   const QUEUE_STATUS_ICONS: Record<QueueStatus, string> = {
     pending:   '○',
@@ -309,9 +439,18 @@
           {#if batchRunning}
             <button class="btn btn-danger btn-sm" onclick={stopBatch}>⏹ Arrêter</button>
           {:else}
-            <button class="btn btn-primary btn-sm" onclick={startBatch} disabled={running}>
-              ▶▶ Tout lancer ({allSources.length})
-            </button>
+            {@const pendingCount = allSources.filter(s => getSourceStatus(s.adapter.name, s.source.value)?.status !== 'completed').length}
+            {@const doneCount = allSources.length - pendingCount}
+            {#if pendingCount > 0}
+              <button class="btn btn-primary btn-sm" onclick={() => startBatch(false)} disabled={running}>
+                ▶▶ {doneCount > 0 ? `Continuer (${pendingCount} restantes)` : `Tout lancer (${pendingCount})`}
+              </button>
+            {/if}
+            {#if doneCount > 0}
+              <button class="btn btn-ghost btn-sm" onclick={() => startBatch(true)} disabled={running} title="Relancer même les sources déjà collectées">
+                ↺ Tout relancer
+              </button>
+            {/if}
           {/if}
         </div>
       </div>
@@ -349,15 +488,26 @@
             <div class="sources-list">
               {#each adapter.source_configs as sc}
                 {@const isSelected = selectedSource?.source === sc}
+                {@const hist = getSourceStatus(adapter.name, sc.value)}
                 <button
                   class="source-row"
                   class:source-row--selected={isSelected}
+                  class:source-row--done={hist?.status === 'completed'}
+                  class:source-row--failed={hist?.status === 'failed'}
                   onclick={() => selectedSource = isSelected ? null : { adapter, source: sc }}
                 >
                   <span class="collector-badge collector-badge--{sc.collector_type}">
                     {COLLECTOR_LABELS[sc.collector_type] ?? sc.collector_type}
                   </span>
                   <span class="source-label">{sc.label}</span>
+                  {#if sc.fusible}
+                    <span class="fusible-badge" title="Fusionnable — paire {sc.lang_pair_key}">⚡</span>
+                  {/if}
+                  {#if hist}
+                    <span class="source-hist source-hist--{hist.status}" title="Dernière collecte : {new Date(hist.ts).toLocaleString('fr')}">
+                      {hist.status === 'completed' ? '✓' : '✗'}
+                    </span>
+                  {/if}
                   {#if sc.estimated_pairs}
                     <span class="source-pairs">~{sc.estimated_pairs} paires</span>
                   {/if}
@@ -384,12 +534,24 @@
           <span class="hint">→ {selectedSource.adapter.name}</span>
         </div>
         <div style="display:flex; gap:10px; align-items:center">
-          <button class="btn btn-primary" onclick={handleStart} disabled={running}>
-            {singleRunning ? '⟳ Collecte en cours…' : '▶ Lancer'}
+          <button
+            class="btn"
+            class:btn-primary={singleStatus !== 'completed'}
+            class:btn-ghost={singleStatus === 'completed'}
+            onclick={handleStart}
+            disabled={running}
+          >
+            {#if singleRunning}
+              ⟳ Collecte en cours…
+            {:else if singleStatus === 'completed'}
+              ↺ Relancer
+            {:else if singleStatus === 'failed'}
+              ↺ Réessayer
+            {:else}
+              ▶ Lancer
+            {/if}
           </button>
-          {#if singleStatus === 'completed'}
-            <span class="badge badge-completed">✓ Terminé</span>
-          {:else if singleStatus === 'failed'}
+          {#if singleStatus === 'failed' && !singleRunning}
             <span class="badge badge-failed">✗ Échoué</span>
           {/if}
         </div>
@@ -398,6 +560,40 @@
         {/if}
       </div>
     {/if}
+  {/if}
+
+  <!-- Fusion doc pairs -->
+  {#if selectedProject && (fusiblePairKeys.length > 0 || docLangPairs.length >= 2)}
+    {@const fusionTargets = fusiblePairKeys.length > 0
+      ? fusiblePairKeys.map(k => { const [src, ...rest] = k.split('-'); return { key: k, label: `${src} → ${rest.join('-')}` }; })
+      : getFusionPairs(docLangPairs)}
+    <div class="card mb-16">
+      <div class="card-header mb-8">
+        <div class="card-title">Fusion sémantique</div>
+        <span class="hint">Génère des paires de migration à partir des docs collectées</span>
+      </div>
+      <p class="hint mb-10">
+        Collectez d'abord les sources <span class="collector-badge collector-badge--doc_crawl">Docs</span>
+        pour chaque langue, puis lancez la fusion — le moteur aligne sémantiquement les paires
+        source/cible et génère des exemples de migration via LLM.
+      </p>
+      <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+        {#each fusionTargets as fp}
+          <button
+            class="btn btn-primary btn-sm"
+            onclick={() => handleFuse(fp.key)}
+            disabled={running}
+          >
+            {fuseRunning ? '⟳ Fusion en cours…' : `⚡ Fusionner ${fp.label}`}
+          </button>
+        {/each}
+        {#if fuseStatus === 'completed'}
+          <span class="ok-badge">✓ Fusion terminée</span>
+        {:else if fuseStatus === 'failed'}
+          <span class="missing-badge">✗ Fusion échouée</span>
+        {/if}
+      </div>
+    </div>
   {/if}
 
   <!-- Logs -->
@@ -500,23 +696,45 @@
   }
   .source-row:hover     { border-color:var(--accent); background:var(--surface-3); }
   .source-row--selected { border-color:var(--accent); background:rgba(91,152,248,.08); }
+  .source-row--done  {
+    border-color:rgba(34,197,94,.3);
+    background:rgba(34,197,94,.04);
+  }
+  .source-row--done:hover { border-color:rgba(34,197,94,.6); background:rgba(34,197,94,.08); }
+  .source-row--failed {
+    border-color:rgba(255,80,80,.25);
+    background:rgba(255,80,80,.03);
+  }
   .source-label  { flex:1; font-size:12px; color:var(--text); }
   .source-pairs  { font-size:11px; color:var(--text-dim); white-space:nowrap; }
   .source-value  { font-size:10px; color:var(--text-dim); max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .source-hist {
+    font-size:10px; font-weight:700; padding:1px 5px;
+    border-radius:999px; white-space:nowrap; flex-shrink:0;
+  }
+  .source-hist--completed { background:rgba(34,197,94,.15); color:#22c55e; }
+  .source-hist--failed    { background:rgba(255,80,80,.15);  color:var(--red); }
+  .fusible-badge {
+    font-size:10px; color:#f59e0b; opacity:.8; cursor:help; flex-shrink:0;
+  }
 
   .collector-badge {
     font-size:9px; font-weight:700; padding:2px 6px; border-radius:999px;
     text-transform:uppercase; letter-spacing:.05em; white-space:nowrap; flex-shrink:0;
   }
-  .collector-badge--rosetta_code { background:rgba(34,197,94,.15);  color:#22c55e; }
-  .collector-badge--crawl4ai     { background:rgba(91,152,248,.15);  color:var(--accent); }
+  .collector-badge--multilang_wiki { background:rgba(34,197,94,.15);  color:#22c55e; }
+  .collector-badge--web_crawl    { background:rgba(91,152,248,.15);  color:var(--accent); }
   .collector-badge--manual       { background:rgba(251,146,60,.15);  color:#fb923c; }
   .collector-badge--github_repo  { background:rgba(168,85,247,.15);  color:#a855f7; }
+  .collector-badge--doc_crawl    { background:rgba(20,184,166,.15);  color:#14b8a6; }
+  .mb-10 { margin-bottom:10px; }
 
   .launch-summary { display:flex; align-items:center; gap:10px; }
   .btn-sm { padding:4px 10px; font-size:11px; }
   .btn-danger { background:rgba(255,80,80,.15); color:var(--red); border:1px solid rgba(255,80,80,.3); border-radius:var(--radius); cursor:pointer; }
   .btn-danger:hover { background:rgba(255,80,80,.25); }
+  .btn-ghost { background:transparent; color:var(--text-muted); border:1px solid var(--border); border-radius:var(--radius); cursor:pointer; }
+  .btn-ghost:hover { color:var(--text); border-color:var(--text-muted); }
 
   .section-title { font-size:12px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:10px; }
   .log-box {
