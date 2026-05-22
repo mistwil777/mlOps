@@ -132,7 +132,7 @@ export const advisorAnalyzePairs = (body: {
 }) => req<PairAnalysisResult>('/advisor/analyze-pairs', { method: 'POST', body: JSON.stringify(body) });
 
 // Data
-export const startCollect      = (body: { project_id: string; topic: string; max_pairs?: number; domain?: string; task_type?: string; collector_type?: string; source_value?: string; adapter_name?: string; lang?: string; langs?: string[] }) =>
+export const startCollect      = (body: { project_id: string; topic?: string; max_pairs?: number; domain?: string; task_type?: string; collector_type?: string; source_value?: string; adapter_name?: string; lang?: string; langs?: string[]; max_depth?: number }) =>
   req<CollectJob>('/data/collect', { method: 'POST', body: JSON.stringify(body) });
 export const startFuse         = (body: { project_id: string; lang_pair: string; adapter_name?: string; max_fused?: number; llm_model?: string }) =>
   req<CollectJob>('/data/fuse', { method: 'POST', body: JSON.stringify(body) });
@@ -196,6 +196,21 @@ export const advisorPatchAdapterSources = (projectId: string, adapterName: strin
     method: 'PATCH',
     body: JSON.stringify({ adapter_name: adapterName, source_configs: sourceConfigs }),
   });
+
+export const advisorRecommendSources = (body: {
+  adapter_name: string;
+  adapter_description: string;
+  domain?: string;
+  task_type?: string;
+  existing_source_values?: string[];
+}) => req<Array<{
+  label: string;
+  collector_type: string;
+  value: string;
+  estimated_pairs: number;
+  lang_hint?: string;
+  reason?: string;
+}>>('/advisor/recommend-sources', { method: 'POST', body: JSON.stringify(body) });
 
 // Project next-actions
 export const getNextActions    = (projectId: string) => req<import('./types').NextActions>(`/projects/${projectId}/next-actions`);

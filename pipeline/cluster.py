@@ -30,26 +30,18 @@ from pipeline.utils.logger import get_logger
 
 logger = get_logger("mlops.cluster")
 
-_OLLAMA_URL  = "http://localhost:11434"
-_EMBED_MODEL = "nomic-embed-text"
 _PROJECTS_DIR = Path("config/projects")
+
+from pipeline.utils.embeddings import embed as _embed_texts  # noqa: E402
 
 
 # ── Embedding ──────────────────────────────────────────────────────────────────
 
 def _embed(texts: list[str]) -> list[list[float]] | None:
     try:
-        import httpx  # noqa: PLC0415
-
-        resp = httpx.post(
-            f"{_OLLAMA_URL}/api/embed",
-            json={"model": _EMBED_MODEL, "input": texts},
-            timeout=60.0,
-        )
-        resp.raise_for_status()
-        return resp.json()["embeddings"]
+        return _embed_texts(texts)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("Ollama embed unavailable: %s", exc)
+        logger.warning("Embedding unavailable: %s", exc)
         return None
 
 

@@ -43,6 +43,8 @@
   let gapResult  = $state<AdvisorAdapter | null>(null);
   let fillAllLoading = $state(false);
   let fillAllResults = $state<AdvisorAdapter[]>([]);
+  let filledGapsList = $state<string[]>([]);   // gaps being addressed in current fillAll
+  let dismissedGaps  = $state<Set<string>>(new Set()); // gaps dismissed by user (survive re-eval)
 
   // Selection dirty flag — prevents auto-re-eval after manual apply actions
   let selectionDirty = $state(false);
@@ -113,6 +115,7 @@
     if (!need.trim()) return;
     loading = true; error = ''; result = null;
     altTarget = null; sourcesAdapter = null; selEval = null;
+    dismissedGaps = new Set(); filledGapsList = [];
     try {
       result = await advisorRecommend(need.trim(), model);
       adapters     = [...result.recommendation.adapters];
@@ -126,6 +129,7 @@
     const q = refineInput.trim();
     if (!q || refineLoading) return;
     refineLoading = true; refineError = '';
+    dismissedGaps = new Set(); filledGapsList = [];
     const augmentedNeed = `${need}\n\n[RAFFINEMENT DEMANDÉ]: ${q}\nSélection actuelle : ${selection.map(a => a.name).join(', ')}. Modifie uniquement ce qui est demandé, conserve le reste.`;
     try {
       const r = await advisorRecommend(augmentedNeed, model);
@@ -166,20 +170,20 @@
 
   function replaceWithAlternative(alt: AdvisorAdapter) {
     if (!altTarget) return;
-    const clean: AdvisorAdapter = {
-      name: alt.name, role: altTarget.role, description: alt.description,
-      data_types: alt.data_types ?? [], data_sources: alt.data_sources ?? [],
-      rag_recommended: alt.rag_recommended, estimated_pairs: alt.estimated_pairs,
+    const replaced: AdvisorAdapter = {
+      ...alt,
+      role: altTarget.role,
+      source_configs: altTarget.source_configs,
     };
-    if (altTarget.role === 'orchestrator') orchestrator = clean;
-    else adapters = adapters.map(a => a.name === altTarget!.name ? clean : a);
+    if (altTarget.role === 'orchestrator') orchestrator = replaced;
+    else adapters = adapters.map(a => a.name === altTarget!.name ? replaced : a);
     altTarget = null; alternatives = [];
     markDirty();
   }
 
   function markDirty() {
     selectionDirty = true;
-    selEval = null;
+    // Do NOT clear selEval here — keep existing scores visible until user re-evaluates
   }
 
   // triggerEval is kept for post-analyse / post-refine only (automatic, not after manual apply)
@@ -219,21 +223,29 @@
   }
 
   function applyGapAdapter() {
-    if (!gapResult) return;
+    if (!gapResult || !gapTarget) return;
     adapters = [...adapters, { ...gapResult, role: 'specialist' as const }];
+    dismissedGaps = new Set([...dismissedGaps, gapTarget]);
     gapTarget = null; gapResult = null;
     markDirty();
   }
 
+  function dismissGap(gap: string) {
+    dismissedGaps = new Set([...dismissedGaps, gap]);
+    if (gapTarget === gap) { gapTarget = null; gapResult = null; }
+  }
+
   async function fillAllGaps() {
-    if (!selEval?.gaps.length) return;
+    const visibleGaps = (selEval?.gaps ?? []).filter(g => !dismissedGaps.has(g));
+    if (!visibleGaps.length) return;
     altTarget = null; overlapTarget = null; sourcesAdapter = null;
     gapTarget = null; gapResult = null;
     fillAllLoading = true; fillAllResults = [];
+    filledGapsList = [...visibleGaps];
     const snap = [...selection];
     try {
       const results = await Promise.all(
-        selEval.gaps.map(g => advisorFillGap(need, g, snap, model).catch(() => null))
+        visibleGaps.map(g => advisorFillGap(need, g, snap, model).catch(() => null))
       );
       fillAllResults = results.filter((r): r is AdvisorAdapter => r !== null);
     } finally { fillAllLoading = false; }
@@ -241,7 +253,9 @@
 
   function applyAllGapAdapters() {
     adapters = [...adapters, ...fillAllResults.map(r => ({ ...r, role: 'specialist' as const }))];
+    dismissedGaps = new Set([...dismissedGaps, ...filledGapsList]);
     fillAllResults = [];
+    filledGapsList = [];
     markDirty();
   }
 
@@ -525,23 +539,38 @@
                 </div>
               {/each}
             </div>
-            {#if selEval.gaps.length}
+            {@const visibleGaps = selEval.gaps.filter(g => !dismissedGaps.has(g))}
+            {@const isSufficient = selEval.overall >= 14}
+            {#if isSufficient && visibleGaps.length === 0}
+              <div class="sufficiency-banner mt-12">
+                <span class="sufficiency-icon">✓</span>
+                <span>Sélection suffisante pour commencer l'entraînement</span>
+              </div>
+            {:else if !isSufficient && visibleGaps.length > 0}
+              {@const shownGaps = visibleGaps.slice(0, 3)}
+              {@const hiddenCount = visibleGaps.length - shownGaps.length}
               <div class="eval-section mt-12">
                 <div class="eval-section-header">
-                  <span class="meta-label">Lacunes ({selEval.gaps.length})</span>
+                  <span class="meta-label">Lacunes ({visibleGaps.length})</span>
                   <button class="tag-fill-all" disabled={fillAllLoading} onclick={fillAllGaps} title="Générer un adapter pour chaque lacune">
                     {#if fillAllLoading}<span class="spinner spinner-xs"></span>{/if}
                     Tout couvrir
                   </button>
                 </div>
                 <div class="action-tags mt-6">
-                  {#each selEval.gaps as g}
-                    <button class="tag tag-warn tag-action" class:tag-active={gapTarget === g}
-                      disabled={fillAllLoading} onclick={() => openFillGap(g)}>
-                      {#if gapLoading && gapTarget === g}<span class="spinner spinner-xs"></span>{:else}+{/if}
-                      {g}
-                    </button>
+                  {#each shownGaps as g}
+                    <div class="gap-row">
+                      <button class="tag tag-warn tag-action" class:tag-active={gapTarget === g}
+                        disabled={fillAllLoading} onclick={() => openFillGap(g)}>
+                        {#if gapLoading && gapTarget === g}<span class="spinner spinner-xs"></span>{:else}+{/if}
+                        {g}
+                      </button>
+                      <button class="gap-dismiss" title="Ignorer cette lacune" onclick={() => dismissGap(g)}>✕</button>
+                    </div>
                   {/each}
+                  {#if hiddenCount > 0}
+                    <span class="gaps-hidden">+{hiddenCount} autre{hiddenCount > 1 ? 's' : ''} (non critiques)</span>
+                  {/if}
                 </div>
                 {#if fillAllResults.length > 0}
                   <div class="fill-all-results mt-10">
@@ -1012,6 +1041,19 @@
 
   /* Action tags */
   .action-tags { display:flex; flex-wrap:wrap; gap:4px; }
+  .gap-row { display:flex; align-items:center; gap:3px; }
+  .gap-dismiss { background:none; border:none; padding:0 3px; font-size:11px; color:var(--text-muted); cursor:pointer; opacity:0.5; line-height:1; }
+  .gap-dismiss:hover { opacity:1; color:var(--text-dim); }
+  .gaps-hidden { font-size:10px; color:var(--text-muted); opacity:0.6; padding:2px 6px; align-self:center; }
+
+  /* Sufficiency banner */
+  .sufficiency-banner {
+    display:flex; align-items:center; gap:8px;
+    padding:8px 12px; border-radius:var(--radius);
+    background:rgba(74,222,128,.08); border:1px solid rgba(74,222,128,.3);
+    font-size:12px; color:var(--green); font-weight:500;
+  }
+  .sufficiency-icon { font-size:14px; flex-shrink:0; }
   .tag-action {
     cursor:pointer; transition:background 150ms, border-color 150ms, transform 100ms;
     display:inline-flex; align-items:center; gap:4px;

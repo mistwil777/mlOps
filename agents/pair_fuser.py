@@ -29,12 +29,11 @@ from pipeline.utils.logger import get_logger
 logger = get_logger("mlops.pair_fuser")
 
 _OLLAMA_URL       = "http://localhost:11434/api/generate"
-_EMBED_MODEL      = "nomic-embed-text"
 _OLLAMA_GEN_MODEL = "qwen2.5-coder:7b"  # local LLM for synthesis — overridable
-_RATE_LIMIT_S     = 0.3
-_TOP_K_MATCHES    = 3    # candidates per source pair before LLM filter
-_SIM_THRESHOLD    = 0.55 # min cosine similarity to attempt fusion
-_HTTP_TIMEOUT     = 60
+_RATE_LIMIT_S    = 0.3
+_TOP_K_MATCHES   = 3    # candidates per source pair before LLM filter
+_SIM_THRESHOLD   = 0.55 # min cosine similarity to attempt fusion
+_HTTP_TIMEOUT    = 60
 
 
 def _load_languages() -> dict[str, Any]:
@@ -45,106 +44,8 @@ def _load_languages() -> dict[str, Any]:
         return yaml.safe_load(fh) or {}
 
 
-def _embed_ollama(texts: list[str]) -> list[list[float]]:
-    """Embed texts via Ollama nomic-embed-text."""
-    vecs = []
-    with httpx.Client(timeout=_HTTP_TIMEOUT) as client:
-        for text in texts:
-            r = client.post(
-                "http://localhost:11434/api/embeddings",
-                json={"model": _EMBED_MODEL, "prompt": text[:1024]},
-            )
-            r.raise_for_status()
-            vecs.append(r.json()["embedding"])
-    return vecs
-
-
-def _embed_sentence_transformers(texts: list[str]) -> list[list[float]]:
-    """Embed via sentence-transformers, run in a subprocess with timeout to avoid PyTorch deadlocks."""
-    import concurrent.futures  # noqa: PLC0415
-    import json as _json        # noqa: PLC0415
-    import subprocess           # noqa: PLC0415
-    import sys as _sys          # noqa: PLC0415
-
-    script = (
-        "import json, sys\n"
-        "from sentence_transformers import SentenceTransformer\n"
-        "texts = json.loads(sys.argv[1])\n"
-        "m = SentenceTransformer('nomic-ai/nomic-embed-text-v1.5', trust_remote_code=True)\n"
-        "vecs = m.encode(texts, normalize_embeddings=True).tolist()\n"
-        "print(json.dumps(vecs))\n"
-    )
-    proc = subprocess.run(
-        [_sys.executable, "-c", script, _json.dumps(texts)],
-        capture_output=True, text=True, timeout=30,
-        env={**__import__("os").environ, "TOKENIZERS_PARALLELISM": "false"},
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(proc.stderr.strip() or "sentence-transformers subprocess failed")
-    return _json.loads(proc.stdout.strip())
-
-
-def _embed_sklearn_tfidf(texts: list[str]) -> list[list[float]]:
-    """TF-IDF via scikit-learn — requires pip install scikit-learn.
-
-    Fits on the combined corpus so cross-language technical vocabulary is shared.
-    Lower semantic quality than neural embeddings but reliable and fast.
-    """
-    from sklearn.feature_extraction.text import TfidfVectorizer  # type: ignore  # noqa: PLC0415
-    from sklearn.preprocessing import normalize                   # type: ignore  # noqa: PLC0415
-
-    vec = TfidfVectorizer(sublinear_tf=True, ngram_range=(1, 2), analyzer="word", min_df=1)
-    mat = vec.fit_transform(texts)
-    mat = normalize(mat, norm="l2")
-    return mat.toarray().tolist()
-
-
-_EMBED_BACKEND: str = ""  # "ollama" | "sentence-transformers" | "tfidf" | "none"
-
-
-def _embed(texts: list[str]) -> list[list[float]]:
-    global _EMBED_BACKEND
-
-    # 1. Ollama nomic-embed-text (best)
-    if _EMBED_BACKEND in ("", "ollama"):
-        try:
-            result = _embed_ollama(texts)
-            _EMBED_BACKEND = "ollama"
-            return result
-        except Exception:
-            if _EMBED_BACKEND == "ollama":
-                _EMBED_BACKEND = ""  # was working before — reset to retry next call
-            else:
-                _EMBED_BACKEND = "skip-ollama"
-
-    # 2. sentence-transformers (good quality — may time out if PyTorch is broken on this host)
-    if _EMBED_BACKEND in ("", "skip-ollama", "sentence-transformers"):
-        try:
-            logger.info("Ollama unavailable — trying sentence-transformers")
-            result = _embed_sentence_transformers(texts)
-            _EMBED_BACKEND = "sentence-transformers"
-            return result
-        except (ImportError, Exception) as exc:
-            logger.warning("sentence-transformers unavailable: %s", exc)
-            _EMBED_BACKEND = "tfidf"  # skip permanently for this run
-
-    # 3. scikit-learn TF-IDF (fallback — shared vocabulary, cross-lang keyword matching)
-    if _EMBED_BACKEND in ("tfidf",):
-        try:
-            logger.warning("Neural embeddings unavailable — falling back to TF-IDF (lower quality)")
-            result = _embed_sklearn_tfidf(texts)
-            return result
-        except (ImportError, Exception) as exc:
-            logger.warning("scikit-learn unavailable: %s", exc)
-            _EMBED_BACKEND = "none"
-
-    raise RuntimeError(
-        "No embedding backend available for pair fusion.\n"
-        "Fix (choose one):\n"
-        "  1. Start Ollama:               ollama serve  (then: ollama pull nomic-embed-text)\n"
-        "  2. Install sentence-transformers: pip install sentence-transformers\n"
-        "  3. Install scikit-learn:          pip install scikit-learn  (lower quality, cross-lang)"
-    )
+import pipeline.utils.embeddings as _embeddings_module  # noqa: E402
+from pipeline.utils.embeddings import embed as _embed   # noqa: E402
 
 
 def _cosine(a: list[float], b: list[float]) -> float:
@@ -245,8 +146,11 @@ class PairFuser:
             return []
 
         logger.info("Embedding %d source + %d target descriptions…", len(source_pairs), len(target_pairs))
-        src_texts = [p["prompt"] for p in source_pairs]
-        tgt_texts = [p["prompt"] for p in target_pairs]
+        # Support both legacy {prompt, completion} and neutral {task_name/description, code} schemas
+        def _text(p: dict) -> str:
+            return p.get("prompt") or p.get("task_name") or p.get("description") or str(p)[:200]
+        src_texts = [_text(p) for p in source_pairs]
+        tgt_texts = [_text(p) for p in target_pairs]
 
         # Embed source and target in a single call so that TF-IDF (fallback) builds
         # its vocabulary on the combined corpus — cross-language similarity only works
@@ -257,7 +161,7 @@ class PairFuser:
 
         # Lower the threshold when using TF-IDF (weaker cross-lang signal vs neural embeddings)
         threshold = self.sim_threshold
-        if _EMBED_BACKEND == "tfidf":
+        if _embeddings_module._BACKEND == "tfidf":
             threshold = min(threshold, 0.05)
             logger.info("TF-IDF active — sim_threshold lowered to %.2f", threshold)
 

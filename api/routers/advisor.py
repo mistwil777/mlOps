@@ -27,14 +27,21 @@ def _build_source_catalogue() -> str:
     """Build a compact source catalogue string from config/sources/*.yaml and config/languages.yaml.
 
     Injected into the advisor prompt so the LLM picks validated sources
-    instead of hallucinating URLs.
+    instead of hallucinating URLs. github_search entries are excluded — they are
+    keyword strings, not crawlable URLs, and would inflate the prompt for no benefit.
     """
     lines: list[str] = []
 
     # ── domain source registries ──────────────────────────────────────────────
+    URL_PRIORITIES = {
+        "official_docs": "doc_crawl",
+        "official_repo": "web_crawl",
+        "quality_repos": "web_crawl",
+    }
     if _SOURCES_DIR.exists():
         for src_file in sorted(_SOURCES_DIR.glob("*.yaml")):
-            domain = src_file.stem
+            if src_file.stem == "library":
+                continue  # library.yaml has a different schema — not topic-based
             try:
                 data = yaml.safe_load(src_file.read_text()) or {}
             except Exception:
@@ -42,16 +49,16 @@ def _build_source_catalogue() -> str:
             topics = data.get("topics", {})
             if not topics:
                 continue
-            lines.append(f"=== Domain: {domain} ===")
+            lines.append(f"=== Domain: {src_file.stem} ===")
             for topic, buckets in topics.items():
-                lines.append(f"  Topic: {topic}")
-                for priority in ("official_docs", "official_repo", "quality_repos", "github_search"):
-                    urls = buckets.get(priority, [])
-                    if urls:
-                        tag = {"official_docs": "doc_crawl", "official_repo": "web_crawl",
-                               "quality_repos": "web_crawl", "github_search": "web_crawl"}[priority]
-                        for u in urls[:3]:  # cap to keep prompt size reasonable
-                            lines.append(f"    [{tag}] [{priority}] {u}")
+                topic_lines: list[str] = []
+                for priority, tag in URL_PRIORITIES.items():
+                    for u in buckets.get(priority, [])[:2]:  # max 2 per priority
+                        if isinstance(u, str) and u.startswith("http"):
+                            topic_lines.append(f"    [{tag}] {u}")
+                if topic_lines:
+                    lines.append(f"  Topic: {topic}")
+                    lines.extend(topic_lines)
 
     # ── fusible language pairs ────────────────────────────────────────────────
     if _LANGUAGES_CFG.exists():
@@ -297,14 +304,8 @@ def _call_claude(model: str, need: str, doc_contexts: list[str] | None = None) -
             )
     response = _client.messages.create(
         model=model,
-        max_tokens=8192,
-        system=[
-            {
-                "type": "text",
-                "text": _SYSTEM_PROMPT,
-                "cache_control": {"type": "ephemeral"},
-            }
-        ],
+        max_tokens=4096,
+        system=_SYSTEM_PROMPT,
         messages=[
             {"role": "user", "content": user_content},
         ],
@@ -317,7 +318,23 @@ def _parse_recommendation(raw: str) -> dict[str, Any]:
     if clean.startswith("```"):
         lines = clean.splitlines()
         clean = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
-    return json.loads(clean)
+    try:
+        return json.loads(clean)
+    except json.JSONDecodeError:
+        # Truncated output: attempt to close unclosed JSON gracefully
+        # Close any open arrays/objects to make it parseable
+        repaired = clean
+        open_braces  = repaired.count('{') - repaired.count('}')
+        open_brackets = repaired.count('[') - repaired.count(']')
+        # Strip trailing incomplete key/value (last comma or unclosed string)
+        repaired = repaired.rstrip().rstrip(',')
+        if repaired.endswith('"'):
+            # Unclosed string — remove it back to the last comma or opening brace
+            last_sep = max(repaired.rfind(','), repaired.rfind('{'), repaired.rfind('['))
+            if last_sep > 0:
+                repaired = repaired[:last_sep].rstrip().rstrip(',')
+        repaired += ']' * open_brackets + '}' * open_braces
+        return json.loads(repaired)
 
 
 def _update_project_config(project: str, recommendation: dict[str, Any], need: str = "") -> None:
@@ -436,6 +453,8 @@ STRICT RULES for gaps and overlaps — read carefully:
 gaps: List ONLY sub-domains that are completely absent AND critical for the client need.
 Do NOT report gaps for: edge cases, rare scenarios, future extensions, or anything the \
 orchestrator can handle. Maximum 3 gaps. If the selection is reasonably complete, return [].
+IMPORTANT: if the computed overall score is >= 14.0, you MUST return "gaps": [] — the \
+selection is sufficiently complete to begin fine-tuning. Do not invent marginal gaps.
 
 overlaps: Report ONLY pairs where an orchestrator CANNOT distinguish which adapter to call \
 because their input/output contracts are IDENTICAL in practice — not just semantically related.
@@ -497,7 +516,7 @@ def alternatives(body: AlternativeRequest) -> list[dict[str, Any]]:
     try:
         response = _client.messages.create(
             model=body.model,
-            max_tokens=3000,
+            max_tokens=2048,
             system=[{"type": "text", "text": _SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
             messages=[{"role": "user", "content": prompt}],
         )
@@ -653,7 +672,7 @@ def fill_gap(body: FillGapRequest) -> dict[str, Any]:
     try:
         response = _client.messages.create(
             model=body.model,
-            max_tokens=1200,
+            max_tokens=1024,
             system=[{"type": "text", "text": _SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
             messages=[{"role": "user", "content": prompt}],
         )
@@ -686,7 +705,7 @@ def resolve_overlap(body: ResolveOverlapRequest) -> list[dict[str, Any]]:
     try:
         response = _client.messages.create(
             model=body.model,
-            max_tokens=4096,
+            max_tokens=2048,
             system=[{"type": "text", "text": _SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
             messages=[{"role": "user", "content": prompt}],
         )
@@ -698,7 +717,6 @@ def resolve_overlap(body: ResolveOverlapRequest) -> list[dict[str, Any]]:
         result = _parse_recommendation(raw)
         if isinstance(result, list):
             return result
-        # model sometimes wraps in {"resolutions": [...]} or {"data": [...]}
         for key in ("resolutions", "data", "items", "result"):
             if key in result and isinstance(result[key], list):
                 return result[key]
@@ -717,8 +735,8 @@ def evaluate_selection(body: EvaluateSelectionRequest) -> dict[str, Any]:
     try:
         response = _client.messages.create(
             model=body.model,
-            max_tokens=800,
-            system=[{"type": "text", "text": _SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
+            max_tokens=600,
+            system=_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": prompt}],
         )
         raw = response.content[0].text
@@ -935,6 +953,85 @@ async def cross_project_matches(adapter_desc: str, k: int = 10) -> dict[str, Any
         "samples": results[:3],
         "oldest_collected_at": oldest,
     }
+
+
+class RecommendSourcesRequest(BaseModel):
+    adapter_name: str
+    adapter_description: str
+    domain: str = ""
+    task_type: str = ""
+    existing_source_values: list[str] = []
+    model: str = _HAIKU_MODEL   # Haiku by default — cheap, fast, sufficient
+
+
+_RECOMMEND_SOURCES_TEMPLATE = """\
+You are an MLOps data architect specialising in LLM fine-tuning datasets.
+
+Adapter to feed:
+  name: {adapter_name}
+  description: {adapter_description}
+  domain: {domain}
+  task_type: {task_type}
+
+Already configured sources (do NOT suggest these again):
+{existing_sources}
+
+Source catalogue (validated, crawlable — use these URLs preferably):
+{source_catalogue}
+
+Suggest 3 to 5 additional data sources for this adapter that:
+1. Are freely accessible (no login required)
+2. Contain concrete examples matching the adapter's task
+3. Are NOT already in the existing sources list
+
+For each source, pick the collector_type:
+  - official documentation site → "doc_crawl" (add "lang_hint" if language-specific)
+  - wiki with multi-language code examples → "multilang_wiki"
+  - other web pages, blogs, repos → "web_crawl"
+
+Reply ONLY with a JSON array (no markdown, no prose):
+[
+  {{"label": "Short name", "collector_type": "doc_crawl", "value": "https://...", "estimated_pairs": 80, "lang_hint": "python", "reason": "one sentence why (French)"}},
+  ...
+]
+"""
+
+
+@router.post("/recommend-sources")
+def recommend_sources(body: RecommendSourcesRequest) -> list[dict[str, Any]]:
+    """Suggest additional sources for an adapter using Haiku (low cost)."""
+    catalogue = _build_source_catalogue()
+    existing_str = "\n".join(f"  - {v}" for v in body.existing_source_values) or "  (none)"
+    prompt = _RECOMMEND_SOURCES_TEMPLATE.format(
+        adapter_name=body.adapter_name,
+        adapter_description=body.adapter_description,
+        domain=body.domain,
+        task_type=body.task_type,
+        existing_sources=existing_str,
+        source_catalogue=catalogue,
+    )
+    try:
+        response = _client.messages.create(
+            model=body.model,
+            max_tokens=1024,
+            system="You are a concise JSON-only assistant. Output only valid JSON arrays.",
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = response.content[0].text.strip()
+    except anthropic.APIError as exc:
+        raise HTTPException(502, f"Anthropic API error: {exc}")
+
+    try:
+        clean = raw
+        if clean.startswith("```"):
+            lines = clean.splitlines()
+            clean = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+        result = json.loads(clean)
+        if not isinstance(result, list):
+            raise ValueError("Expected JSON array")
+        return result
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise HTTPException(422, f"Model returned invalid JSON: {exc}\nRaw: {raw[:400]}")
 
 
 class PatchAdapterSourcesRequest(BaseModel):

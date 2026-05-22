@@ -55,12 +55,12 @@ setup-ui:
 	cd frontend && npm install
 
 # ── Services (Docker) ────────────────────────────────────────────────────────
-.PHONY: services services-stop
+.PHONY: start services services-stop
+start:
+	./scripts/start_services.sh
+
 services:
-	docker compose up -d qdrant mlflow 2>/dev/null || \
-	  (mlflow server --host 0.0.0.0 --port $(MLFLOW_PORT) \
-	    --backend-store-uri sqlite:///experiments/mlops.db \
-	    --default-artifact-root experiments/artifacts &)
+	docker compose up -d qdrant mlflow
 	@echo "Qdrant: http://localhost:6333"
 	@echo "MLflow: http://localhost:$(MLFLOW_PORT)"
 
@@ -96,6 +96,12 @@ PROJECT ?= migrator
 .PHONY: extract clean-data rag train eval deploy
 extract:
 	$(VENV)/bin/python -m pipeline.extract --project $(PROJECT)
+
+clean-raw:
+	$(VENV)/bin/python -m pipeline.clean_raw --project $(PROJECT)
+
+clean-raw-dry:
+	$(VENV)/bin/python -m pipeline.clean_raw --project $(PROJECT) --dry-run
 
 clean-data:
 	$(VENV)/bin/python -m pipeline.clean --project $(PROJECT)

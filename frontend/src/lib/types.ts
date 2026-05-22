@@ -192,6 +192,8 @@ export interface SourceSuggestion {
   value: string;
   lang_hint?: string;        // for doc_crawl: "python" | "java" | "typescript" …
   estimated_pairs?: number;
+  max_pages?: number;        // doc_crawl: max pages to visit (defaults to estimated_pairs * 4)
+  max_depth?: number;        // doc_crawl: crawl depth (default 5)
   fusible?: boolean;         // true when a pair_fuser can combine this with another doc_crawl source
   lang_pair_key?: string;    // e.g. "python-java" — matches a key in config/languages.yaml
 }

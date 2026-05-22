@@ -35,8 +35,35 @@ _HTTP_TIMEOUT    = 20
 _RATE_LIMIT_S    = 0.8
 _MIN_CODE_CHARS  = 30
 _MIN_DESC_CHARS  = 20
-_MAX_PAGES       = 60
-_MAX_DEPTH       = 3
+_MAX_PAGES       = 200
+_MAX_DEPTH       = 5
+
+# URL patterns that yield zero code pairs — skip them to avoid wasting crawl budget.
+# Applied to the path component of the URL (case-insensitive substring match).
+_SKIP_URL_PATTERNS: tuple[str, ...] = (
+    "genindex",          # Python doc alphabetical index (genindex-A.html … genindex-Z.html)
+    "py-modindex",       # Python module index
+    "/archives/",        # downloadable doc bundles (.zip, .epub, .tar, .bz2 …)
+    "download.html",     # download pages
+    "/search",           # search pages
+    "changelog",         # long changelogs — very few code snippets per byte of HTML
+    "copyright",         # legal pages
+    "license",           # legal pages
+    "about.html",        # about/meta pages
+    "bugs.html",         # bug reporting pages
+    "improve-page",      # feedback widgets
+)
+_SKIP_URL_EXTENSIONS: tuple[str, ...] = (
+    ".zip", ".tar", ".bz2", ".gz", ".epub", ".pdf", ".exe", ".msi",
+    ".whl", ".tar.gz", ".tgz", ".xz", ".7z",
+)
+
+def _should_skip_url(url: str) -> bool:
+    path = urlparse(url).path.lower()
+    if any(ext in path for ext in _SKIP_URL_EXTENSIONS):
+        return True
+    return any(pat in path for pat in _SKIP_URL_PATTERNS)
+
 
 _SSL_TEST_URL = "https://docs.python.org/fr/3/"
 _VERIFY: bool | str = True  # resolved once at module load
@@ -272,6 +299,8 @@ class DocCollector:
                 url, depth = queue.pop(0)
                 if url in visited:
                     continue
+                if _should_skip_url(url):
+                    continue
                 visited.add(url)
 
                 # Only the seed itself is treated as an index page
@@ -472,8 +501,8 @@ def main() -> None:
     parser.add_argument("--url",          required=True,  help="Seed URL to crawl")
     parser.add_argument("--lang",         required=True,  help="Language hint (python|java|typescript|go…)")
     parser.add_argument("--output",       required=True,  help="Output JSONL file")
-    parser.add_argument("--max-pages",    type=int, default=40, dest="max_pages")
-    parser.add_argument("--max-depth",    type=int, default=3,  dest="max_depth")
+    parser.add_argument("--max-pages",    type=int, default=200, dest="max_pages")
+    parser.add_argument("--max-depth",    type=int, default=5,   dest="max_depth")
     parser.add_argument("--custom-tags",  nargs="*", default=[], dest="custom_tags",
                         help="HTML tag names whose comment content is extracted as code (e.g. java-playground)")
     parser.add_argument("--adapter-name", default=None, dest="adapter_name")

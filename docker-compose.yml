@@ -1,35 +1,33 @@
-# Phase 2 — Docker infrastructure
-# Uncomment services as they become needed.
-# Phase 1 runs entirely on local files and Python processes.
+# Dev services — Qdrant + MLflow
+# MLflow logging is internal only (never in client bundle).
+# Inference uses Bedrock (advisor) or Ollama (local train-time generation).
 
 version: "3.9"
 
 services:
 
   # ── MLflow tracking server ──────────────────────────────────────────────
-  # Phase 1: run locally with: mlflow server --port 5001
-  # mlflow:
-  #   image: ghcr.io/mlflow/mlflow:v2.19.0
-  #   ports:
-  #     - "5001:5001"
-  #   volumes:
-  #     - ./experiments:/mlflow/experiments
-  #   command: >
-  #     mlflow server
-  #     --host 0.0.0.0
-  #     --port 5001
-  #     --backend-store-uri sqlite:///mlflow/experiments/mlops.db
-  #     --default-artifact-root /mlflow/experiments/artifacts
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.19.0
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./experiments:/mlflow/experiments
+    command: >
+      mlflow server
+      --host 0.0.0.0
+      --port 5001
+      --backend-store-uri sqlite:///mlflow/experiments/mlops.db
+      --default-artifact-root /mlflow/experiments/artifacts
 
   # ── Qdrant vector store ─────────────────────────────────────────────────
-  # Active: training-time RAG index (replaces LanceDB)
-  # qdrant:
-  #   image: qdrant/qdrant:v1.12.0
-  #   ports:
-  #     - "6333:6333"
-  #     - "6334:6334"
-  #   volumes:
-  #     - qdrant_data:/qdrant/storage
+  qdrant:
+    image: qdrant/qdrant:v1.12.0
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
 
   # ── MinIO object storage ────────────────────────────────────────────────
   # Phase 2: DVC remote + model artifact storage
@@ -57,3 +55,6 @@ services:
   #     POSTGRES_PASSWORD: mlops-secret
   #   volumes:
   #     - ./postgres_data:/var/lib/postgresql/data
+
+volumes:
+  qdrant_data:

@@ -1,0 +1,568 @@
+name: Migrator
+description: Besoin d'un model et ses adapters lora pour faire fonctionner Migrator
+  sans dépendances llm extérieurs. Traitement on premise pour une totale confidentialité
+  et souveraineté. Description de Migrator d
+classification: interne
+domain: code
+task_type: generation
+model: qwen2.5-coder-7b-4bit
+model_format: qwen
+rag_collection: patterns_migrator
+baseline:
+  provider: nova-pro
+  model_id: us.amazon.nova-pro-v1:0
+  measured: false
+  metrics: {}
+quality_thresholds:
+  min_pass_rate: 0.85
+  min_rouge_l: 0.65
+  max_latency_ratio: 2.0
+min_tokens: 50
+max_tokens: 2048
+blacklist_patterns:
+- password
+- secret
+- api_key
+- TODO
+- FIXME
+retrain_threshold:
+  new_patterns: 200
+  min_quality: 0.85
+data:
+  raw: datalake/projects/migrator/raw/
+  processed: datalake/projects/migrator/processed/
+  fine_tuning_ready: datalake/projects/migrator/fine-tuning-ready/
+adapters:
+- name: java-to-python-translator
+  role: specialist
+  description: 'Phase 2 du pipeline de traduction fichier : reçoit en entrée le corps
+    Java (classes, méthodes, constructeurs, champs, blocs logiques, interfaces, génériques,
+    lambdas) et le dictionnaire de mapping produit par dependency-import-mapper, et
+    génère un fichier Python complet, idiomatique PEP 8, intégrant les imports Python
+    résolus en en-tête. Ne relit jamais les déclarations import Java brutes (déjà
+    résolues en amont) et n''accède jamais au pom.xml. Gère la conversion des patterns
+    OOP Java en idiomes Python natifs : dataclasses, typing, compréhensions, context
+    managers, exceptions, etc. Produit un fichier .py autonome et syntaxiquement valide.'
+  estimated_pairs: 900
+  rag_recommended: false
+  source_configs:
+  - label: Rosetta Code — migration Java/Python
+    collector_type: multilang_wiki
+    value: fibonacci
+    estimated_pairs: 120
+  - label: Rosetta Code — structures de données
+    collector_type: multilang_wiki
+    value: linked list
+    estimated_pairs: 100
+  - label: Rosetta Code — algorithmes de tri
+    collector_type: multilang_wiki
+    value: sort
+    estimated_pairs: 90
+  - label: Rosetta Code — classes et OOP
+    collector_type: multilang_wiki
+    value: classes
+    estimated_pairs: 110
+  - label: Docs Python — tutoriel officiel
+    collector_type: doc_crawl
+    value: https://docs.python.org/3/
+    lang_hint: python
+    estimated_pairs: 100
+    fusible: true
+    lang_pair_key: python-java
+  - label: Docs Java 21 — référence officielle
+    collector_type: doc_crawl
+    value: https://docs.oracle.com/en/java/javase/21/
+    lang_hint: java
+    estimated_pairs: 100
+    fusible: true
+    lang_pair_key: python-java
+  - label: Docs Java — JEPs OpenJDK
+    collector_type: doc_crawl
+    value: https://openjdk.org/jeps/
+    lang_hint: java
+    estimated_pairs: 60
+  - label: GitHub — migration Java vers Python
+    collector_type: web_crawl
+    value: https://github.com/javaparser/javaparser
+    estimated_pairs: 80
+  - label: GitHub Search — java to python conversion
+    collector_type: web_crawl
+    value: https://github.com/search?q=java+to+python+conversion
+    estimated_pairs: 80
+  - label: TheAlgorithms Python
+    collector_type: web_crawl
+    value: https://github.com/TheAlgorithms/Python
+    estimated_pairs: 100
+  - label: TheAlgorithms Java
+    collector_type: web_crawl
+    value: https://github.com/TheAlgorithms/Java
+    estimated_pairs: 100
+  data_sources:
+  - code source Java du projet
+  - output de dependency-import-mapper
+  - corpus de paires Java→Python idiomatiques
+  score: 15
+  team_score: 15
+  pros:
+  - séparation claire avec dependency-import-mapper élimine toute ambiguïté sur qui
+    résout quoi
+  - le dictionnaire d'imports injecté améliore la cohérence des noms dans le code
+    généré
+  - focus sur la sémantique algorithmique sans distraction par la résolution de dépendances
+  cons:
+  - 'dépendance de séquençage stricte : un échec de dependency-import-mapper bloque
+    cet adaptateur'
+  - la gestion des imports dynamiques (Class.forName, reflection) reste une zone grise
+    à documenter
+  team_note: Le contrat d'interface entre ces deux adaptateurs (format du dictionnaire
+    JSON) doit être spécifié dans le schéma Pydantic partagé du projet avant le début
+    du fine-tuning.
+  data_types:
+  - corps de fichier Java (hors lignes import)
+  - dictionnaire JSON de mapping import (fourni par dependency-import-mapper)
+  - fichier .py généré
+- name: junit-to-pytest-translator
+  role: specialist
+  description: Convertit les fichiers de tests JUnit (annotations, assertions, fixtures)
+    en tests pytest Python valides et idiomatiques, utilisé par le nœud AM-TestMigration.
+  estimated_pairs: 600
+  rag_recommended: false
+  source_configs:
+  - label: Rosetta Code — tests unitaires
+    collector_type: multilang_wiki
+    value: unit tests
+    estimated_pairs: 80
+  - label: Docs Python — unittest
+    collector_type: doc_crawl
+    value: https://docs.python.org/3/
+    lang_hint: python
+    estimated_pairs: 80
+  - label: Docs Java 21 — JUnit patterns
+    collector_type: doc_crawl
+    value: https://docs.oracle.com/en/java/javase/21/
+    lang_hint: java
+    estimated_pairs: 70
+  - label: GitHub Search — junit to pytest migration
+    collector_type: web_crawl
+    value: https://github.com/search?q=junit+pytest+migration
+    estimated_pairs: 100
+  - label: GitHub Search — java test to python conversion
+    collector_type: web_crawl
+    value: https://github.com/search?q=java+test+to+python+test+conversion
+    estimated_pairs: 80
+  - label: TheAlgorithms Java — tests
+    collector_type: web_crawl
+    value: https://github.com/TheAlgorithms/Java
+    estimated_pairs: 60
+  data_sources:
+  - dépôts open source avec suites de tests JUnit et pytest
+  - docs Python unittest/pytest
+  - docs Java JUnit
+  score: 16
+  team_score: 17
+  pros:
+  - Couvre un nœud entier du pipeline (AM-TestMigration) avec un périmètre précis
+    et délimité
+  - Les patterns de conversion sont réguliers et bien représentés dans les dépôts
+    open source
+  - Remplacement direct de l'appel LLM Bedrock dans le nœud 7
+  cons:
+  - Les tests avec mocks complexes (Mockito→pytest-mock) peuvent nécessiter des paires
+    spécialisées supplémentaires
+  team_note: Le périmètre est restreint mais les données sont faciles à collecter
+    automatiquement depuis des dépôts bilingues.
+  data_types:
+  - paires de fichiers de tests JUnit/pytest alignés
+  - exemples de conversion d'annotations Java vers décorateurs Python
+  - patterns de fixtures pytest
+- name: python-migration-quality-reviewer
+  role: specialist
+  description: 'Évalue la qualité sémantique du code Python généré par migration depuis
+    Java : détecte les erreurs de traduction idiomatique, les anti-patterns non-pythoniques,
+    les incohérences logiques par rapport au code source Java d''origine, et produit
+    un score de confiance par fichier migré avec des suggestions de correction ciblées.'
+  estimated_pairs: 1000
+  rag_recommended: false
+  source_configs:
+  - label: GitHub — dépôts de migration Java vers Python avec corrections documentées
+    collector_type: web_crawl
+    value: https://github.com/search?q=java+to+python+migration&type=repositories
+    estimated_pairs: 300
+  - label: Documentation officielle Python — anti-patterns et idiomes
+    collector_type: doc_crawl
+    value: https://docs.python-guide.org/writing/style/
+    lang_hint: python
+    estimated_pairs: 80
+  - label: PEP 8 — guide de style officiel Python
+    collector_type: doc_crawl
+    value: https://peps.python.org/pep-0008/
+    lang_hint: python
+    estimated_pairs: 60
+  - label: Rosetta Code — comparaisons Java/Python pour détecter les écarts idiomatiques
+    collector_type: multilang_wiki
+    value: Java
+    estimated_pairs: 200
+  - label: Données synthétiques annotées manuellement issues des sorties de migration
+      Migrator
+    collector_type: manual
+    estimated_pairs: 360
+  - collector_type: web_crawl
+    value: https://realpython.com
+    label: Real Python - Java to Python Migration Guide
+    estimated_pairs: 120
+    lang_hint: python
+  - collector_type: web_crawl
+    value: https://realpython.com/java-python
+    label: Java to Python Migration Guide - Real Python
+    estimated_pairs: 120
+  - collector_type: web_crawl
+    value: https://github.com/faif/python-patterns
+    label: Python Design Patterns Repository
+    estimated_pairs: 95
+  - collector_type: doc_crawl
+    value: https://docs.oracle.com/en/java/javase/21/docs/technotes/guides/language/
+    label: Oracle Java SE Documentation - Language Basics
+    estimated_pairs: 150
+    lang_hint: java
+  - collector_type: web_crawl
+    value: https://github.com/jorenham/refactoring-scripts
+    label: Refactoring Python Code Examples
+    estimated_pairs: 85
+  - collector_type: doc_crawl
+    value: https://docs.python.org/3/library/typing.html
+    label: Python Typing and Type Hints Documentation
+    estimated_pairs: 110
+    lang_hint: python
+  data_sources:
+  - dépôts GitHub de projets migrés Java→Python avec historique de corrections post-migration
+  - issues et PR de projets open source documentant des erreurs de traduction Java→Python
+  - benchmarks de qualité de code Python (PEP 8, pylint, flake8) appliqués à du code
+    migré
+  - documentation officielle Python sur les anti-patterns et les idiomes recommandés
+  - jeux de données synthétiques générés à partir des sorties des adaptateurs java-to-python-translator
+    et dependency-import-mapper avec annotations manuelles
+  score: 17
+  team_score: 19
+  pros:
+  - 'Comble un angle mort critique du pipeline : aucun autre adaptateur ne produit
+    de rapport de qualité ni de score de confiance par fichier migré'
+  - Sépare clairement la responsabilité de génération (java-to-python-translator)
+    de celle de validation sémantique, respectant le principe de responsabilité unique
+  - Permet au pipeline LangGraph de décider si une boucle de correction est nécessaire
+    avant livraison finale, améliorant la robustesse globale du système
+  - Fournit une traçabilité auditables des décisions de migration, essentielle dans
+    les contextes réglementés défense et industrie
+  cons:
+  - La qualité de l'adaptateur dépend fortement de la disponibilité de paires annotées
+    Java/Python avec erreurs réelles, nécessitant un effort de collecte manuelle significatif
+  - Le score de confiance produit reste une estimation probabiliste et ne remplace
+    pas une revue humaine pour les fichiers critiques
+  team_note: 'Cet adaptateur est le chainon manquant du pipeline : il ferme la boucle
+    qualité entre la génération brute et la livraison finale, sans empiéter sur aucun
+    rôle existant, et donne à l''orchestrateur un signal fiable pour déclencher d''éventuelles
+    itérations correctives.'
+  data_types:
+  - paires (code Java source, code Python migré) annotées avec scores de qualité et
+    listes d'erreurs
+  - exemples de traductions incorrectes ou partielles avec corrections attendues
+  - rapports de qualité structurés au format JSON (score, erreurs, suggestions)
+  - exemples de code Python non-idiomatique vs idiomatique issus de migrations réelles
+- name: spring-config-to-python-config-migrator
+  role: specialist
+  description: Traduit les fichiers de configuration Spring Boot (application.properties,
+    application.yml, bootstrap.yml) en configuration Python idiomatique équivalente
+    pour Flask, FastAPI ou Pydantic Settings, en préservant la sémantique des profils,
+    des variables d'environnement, des datasources, des ports, des clés de sécurité
+    et des propriétés personnalisées.
+  estimated_pairs: 1000
+  rag_recommended: false
+  source_configs:
+  - label: Docs officielles Spring Boot — application properties reference
+    collector_type: doc_crawl
+    value: https://docs.spring.io/spring-boot/docs/current/reference/html/application-properties.html
+    lang_hint: java
+    estimated_pairs: 180
+  - label: Docs officielles Pydantic Settings
+    collector_type: doc_crawl
+    value: https://docs.pydantic.dev/latest/concepts/pydantic_settings/
+    lang_hint: python
+    estimated_pairs: 120
+  - label: Docs officielles FastAPI — Settings and Environment Variables
+    collector_type: doc_crawl
+    value: https://fastapi.tiangolo.com/advanced/settings/
+    lang_hint: python
+    estimated_pairs: 80
+  - label: Docs officielles Flask — Configuration Handling
+    collector_type: doc_crawl
+    value: https://flask.palletsprojects.com/en/latest/config/
+    lang_hint: python
+    estimated_pairs: 70
+  - label: Docs officielles python-dotenv
+    collector_type: doc_crawl
+    value: https://saurabh-kumar.com/python-dotenv/
+    lang_hint: python
+    estimated_pairs: 50
+  - label: Dépôts GitHub — migrations Spring Boot vers FastAPI/Flask avec fichiers
+      de config
+    collector_type: web_crawl
+    value: https://github.com/search?q=spring+boot+to+fastapi+migration+config&type=repositories
+    estimated_pairs: 150
+  - label: Articles Dev.to et Medium — Spring Boot to Python config migration
+    collector_type: web_crawl
+    value: https://dev.to/search?q=spring+boot+python+migration+configuration
+    estimated_pairs: 100
+  - label: 'Paires manuelles — cas complexes : profils multi-env, datasources, sécurité
+      OAuth2, propriétés custom'
+    collector_type: manual
+    estimated_pairs: 250
+  - collector_type: doc_crawl
+    value: https://docs.spring.io/spring-boot/docs/current/reference/html/appendix-application-properties.html
+    label: Spring Boot Application Properties Reference
+    estimated_pairs: 150
+    lang_hint: java
+  - collector_type: web_crawl
+    value: https://github.com/topics/spring-boot-to-fastapi
+    label: Real-world Spring to FastAPI migration examples
+    estimated_pairs: 120
+  - collector_type: doc_crawl
+    value: https://docs.pydantic.dev/latest/concepts/pydantic_settings/#customization
+    label: Pydantic BaseSettings Advanced Configuration
+    estimated_pairs: 90
+    lang_hint: python
+  - collector_type: web_crawl
+    value: https://github.com/yaml/pyyaml
+    label: YAML Configuration in Python Applications
+    estimated_pairs: 75
+  data_sources:
+  - Documentation officielle Spring Boot (application properties reference)
+  - Documentation officielle Pydantic Settings
+  - Documentation officielle Flask configuration
+  - Documentation officielle FastAPI settings avec Pydantic
+  - Dépôts GitHub open-source de migrations Spring Boot vers Python
+  - Articles et guides de migration Spring vers FastAPI/Flask sur Dev.to et Medium
+  - Documentation python-decouple et python-dotenv
+  score: 17
+  team_score: 19
+  pros:
+  - 'Couvre un angle mort critique du pipeline : sans migration des fichiers de configuration,
+    l''application Python générée ne peut pas démarrer ni se connecter à ses ressources'
+  - Périmètre strictement délimité aux fichiers de configuration déclaratifs, sans
+    chevauchement avec java-to-python-translator (code source) ni dependency-import-mapper
+    (imports inline) ni maven-to-pypi-dependency-resolver (dépendances Maven)
+  - Gère nativement la sémantique des profils Spring (spring.profiles.active) et leur
+    transposition vers des patterns Python multi-environnement (.env, config classes
+    héritées)
+  - 'Produit des artefacts directement exploitables : fichier config.py, .env template,
+    ou classe Settings Pydantic annotée'
+  cons:
+  - La diversité extrême des propriétés Spring Boot personnalisées (starters tiers,
+    bibliothèques internes) peut générer des cas non couverts nécessitant un fallback
+    commenté plutôt qu'une traduction directe
+  - 'Les configurations de sécurité Spring Security (JWT, OAuth2, LDAP) n''ont pas
+    d''équivalent Python universel : la correspondance dépend du framework cible choisi,
+    ce qui complexifie la génération de paires d''entraînement représentatives'
+  team_note: 'Comble le dernier maillon manquant du pipeline de migration fonctionnelle
+    : l''orchestrateur peut désormais invoquer cet adaptateur après maven-to-pypi-dependency-resolver
+    et avant le quality-reviewer pour garantir qu''un projet Python complet et démarrable
+    est produit à l''issue de chaque migration.'
+  data_types:
+  - paires (application.properties Spring Boot → config Python Pydantic/Flask/FastAPI)
+  - paires (application.yml Spring Boot → config.py ou .env Python)
+  - exemples de migration de profils Spring (dev/prod/test) vers équivalents Python
+  - exemples de migration de datasource Spring vers SQLAlchemy ou équivalent Python
+  - exemples de gestion de variables d'environnement Spring vers python-decouple ou
+    os.environ
+- name: jpa-hibernate-to-sqlalchemy-migrator
+  role: specialist
+  description: Traduit les entités JPA/Hibernate (annotations @Entity, @Table, @Column,
+    @OneToMany, @ManyToOne, @ManyToMany, @Inheritance, @Embeddable, etc.), les repositories
+    Spring Data JPA et les mappings Hibernate XML en modèles SQLAlchemy (Core et ORM)
+    ou Tortoise ORM Python idiomatiques, en préservant la sémantique relationnelle,
+    les contraintes, les index et les stratégies d'héritage.
+  estimated_pairs: 1060
+  rag_recommended: false
+  source_configs:
+  - label: Documentation officielle SQLAlchemy ORM — Mapping Classes
+    collector_type: doc_crawl
+    value: https://docs.sqlalchemy.org/en/20/orm/mapping_styles.html
+    lang_hint: python
+    estimated_pairs: 120
+  - label: Documentation officielle SQLAlchemy ORM — Relationships
+    collector_type: doc_crawl
+    value: https://docs.sqlalchemy.org/en/20/orm/relationships.html
+    lang_hint: python
+    estimated_pairs: 100
+  - label: Documentation officielle Hibernate ORM — Mapping Guide
+    collector_type: doc_crawl
+    value: https://docs.jboss.org/hibernate/orm/6.4/userguide/html_single/Hibernate_User_Guide.html
+    lang_hint: java
+    estimated_pairs: 120
+  - label: Documentation officielle Jakarta Persistence (JPA) — Annotations
+    collector_type: doc_crawl
+    value: https://jakarta.ee/specifications/persistence/3.1/jakarta-persistence-spec-3.1.html
+    lang_hint: java
+    estimated_pairs: 100
+  - label: Documentation officielle Tortoise ORM — Fields et Relations
+    collector_type: doc_crawl
+    value: https://tortoise.github.io/fields.html
+    lang_hint: python
+    estimated_pairs: 80
+  - label: Documentation Alembic — Auto-generate Migrations
+    collector_type: doc_crawl
+    value: https://alembic.sqlalchemy.org/en/latest/autogenerate.html
+    lang_hint: python
+    estimated_pairs: 60
+  - label: GitHub — projets de migration Spring Boot vers FastAPI avec SQLAlchemy
+    collector_type: web_crawl
+    value: https://github.com/search?q=spring-boot+to+fastapi+sqlalchemy+migration&type=repositories
+    estimated_pairs: 180
+  - label: Articles et guides de migration JPA vers SQLAlchemy
+    collector_type: web_crawl
+    value: https://medium.com/search?q=JPA+Hibernate+SQLAlchemy+migration
+    estimated_pairs: 100
+  - label: 'Paires manuelles annotées : entités JPA complexes → modèles SQLAlchemy
+      (héritage, embeddable, JPQL → queries)'
+    collector_type: manual
+    estimated_pairs: 200
+  data_sources:
+  - Documentation officielle JPA / Jakarta Persistence
+  - Documentation officielle Hibernate ORM
+  - Documentation officielle SQLAlchemy (ORM et Core)
+  - Documentation officielle Tortoise ORM
+  - Documentation Alembic (migrations SQLAlchemy)
+  - Dépôts GitHub open-source de projets Spring Boot migrés vers FastAPI/Flask avec
+    SQLAlchemy
+  - Articles et tutoriels de migration JPA vers SQLAlchemy
+  - Exemples Rosetta Code sur la modélisation ORM multi-langages
+  score: 17
+  team_score: 19
+  pros:
+  - 'Couvre un sous-domaine hautement spécialisé et non trivial que ni java-to-python-translator
+    ni dependency-import-mapper ne traitent : la sémantique relationnelle ORM (cardinalités,
+    héritage, clés étrangères, JPQL) requiert une compréhension contextuelle que seul
+    un adapter dédié peut fournir de manière fiable.'
+  - 'Frontières de responsabilité parfaitement nettes : cet adapter ne touche ni aux
+    imports inline (dependency-import-mapper), ni aux dépendances Maven (maven-to-pypi-dependency-resolver),
+    ni à la logique métier Java générale (java-to-python-translator), ce qui évite
+    tout chevauchement.'
+  - Volume d'entraînement réaliste (≈1060 paires) grâce à la richesse des documentations
+    JPA, Hibernate et SQLAlchemy, complété par des paires manuelles pour les cas complexes
+    (stratégies d'héritage, entités embarquées, requêtes JPQL nommées).
+  - 'Produit des artefacts directement exploitables par le pipeline Migrator : modèles
+    SQLAlchemy prêts à l''emploi et scripts Alembic pour la gestion des migrations
+    de schéma en environnement on-premise.'
+  cons:
+  - Les cas d'héritage JPA (SINGLE_TABLE, JOINED, TABLE_PER_CLASS) vers SQLAlchemy
+    polymorphique sont parmi les transformations les plus complexes et nécessitent
+    une forte densité de paires manuelles annotées pour couvrir les variantes rares.
+  - La traduction des méthodes dérivées Spring Data JPA (findByEmailAndStatus, etc.)
+    vers des requêtes SQLAlchemy expressives relève de la génération de code contextuel
+    et peut produire des résultats incorrects pour des signatures de méthodes non
+    vues à l'entraînement.
+  team_note: Cet adapter comble le seul angle mort structurel du pipeline Migrator
+    en prenant en charge la couche persistence ORM sans empiéter sur aucun des huit
+    composants existants, ce qui en fait une addition à très haute valeur ajoutée
+    pour la complétude de la chaîne de migration Java→Python.
+  data_types:
+  - Entités Java annotées JPA (@Entity, @Table, @Column, @Id, @GeneratedValue, @Embeddable,
+    @MappedSuperclass)
+  - Annotations de relations JPA (@OneToMany, @ManyToOne, @ManyToMany, @OneToOne,
+    @JoinColumn, @JoinTable)
+  - Stratégies d'héritage JPA (@Inheritance, SINGLE_TABLE, JOINED, TABLE_PER_CLASS)
+  - Repositories Spring Data JPA (interfaces étendant JpaRepository, méthodes dérivées,
+    @Query JPQL)
+  - Fichiers de mapping Hibernate XML (hbm.xml)
+  - Modèles SQLAlchemy ORM Python équivalents (DeclarativeBase, mapped_column, relationship)
+  - Modèles Tortoise ORM Python équivalents (fields, ForeignKeyField, ManyToManyField)
+  - Schémas Alembic de migration de base de données générés
+- name: migration-pipeline-orchestrator
+  role: orchestrator
+  description: Orchestre le pipeline de migration en interprétant l'état global LangGraph,
+    route vers le bon agent manager selon la phase active, et synthétise les résultats
+    partiels pour produire un rapport de migration cohérent.
+  estimated_pairs: 300
+  rag_recommended: false
+  source_configs:
+  - label: GitHub Search — LangGraph multi-agent orchestration
+    collector_type: web_crawl
+    value: https://github.com/search?q=langgraph+multi+agent+orchestration
+    estimated_pairs: 80
+  - label: GitHub Search — pipeline routing state machine LLM
+    collector_type: web_crawl
+    value: https://github.com/search?q=pipeline+routing+state+machine+LLM
+    estimated_pairs: 60
+  data_sources: []
+  score: 14
+  team_score: 18
+  pros:
+  - Pièce centrale qui garantit la cohérence du pipeline en cas d'erreur ou de cas
+    limites non prévus
+  - Permet une synthèse lisible du rapport final de migration pour les équipes de
+    review humaine
+  cons:
+  - Le routage déterministe du pipeline LangGraph est déjà largement géré par le code
+    Python existant — la valeur ajoutée LLM se concentre sur la synthèse et la gestion
+    des cas ambigus
+  team_note: La majorité du routage est déterministe (nœuds 1, 3, 4 du CDC) — cet
+    orchestrateur LLM n'intervient que pour la synthèse narrative et la gestion des
+    cas d'erreur complexes.
+  data_types:
+  - exemples de routage de pipeline multi-agents
+  - paires état LangGraph / décision de routage
+  - exemples de synthèse de rapports de migration
+advisor_need: Besoin d'un model et ses adapters lora pour faire fonctionner Migrator
+  sans dépendances llm extérieurs. Traitement on premise pour une totale confidentialité
+  et souveraineté. Description de Migrator dans le CDC joint.
+advisor_notes: 'Déploiement on-premise total requis. Modèle de base recommandé : CodeLlama-34B-Instruct
+  ou DeepSeek-Coder-33B-Instruct, optimisés pour la génération de code multi-langages.
+  La base vectorielle Weaviate est déjà présente dans l''infrastructure Docker du
+  Migrator (docker-compose.yml) — elle doit être conservée et alimentée par les Digital
+  Twins pour enrichir les prompts des adaptateurs java-to-python-translator et code-validator-fixer.
+  Le service t2v-transformers (all-MiniLM-L6-v2) déjà en place assure la vectorisation
+  locale sans dépendance externe. Tous les appels Amazon Nova Pro / AWS Bedrock référencés
+  dans les nœuds AM-Migration, AM-TestMigration, AM-Coverage et AM-TestValidation
+  sont remplacés par des appels locaux via les adaptateurs LoRA ci-dessus. Les composants
+  déterministes (scan, AST, graphe de dépendances, compilation) NE doivent PAS être
+  remplacés par des adaptateurs LoRA. En déploiement classifié ou air-gapped, désactiver
+  le crawl externe et alimenter les datasets via import manuel.'
+rag_global: true
+software_components:
+- scan_project_node — détection récursive des fichiers source par extension selon
+  le profil actif, implémenté en Python natif (os.walk), aucune IA nécessaire
+- AST structurel Java — extraction de class_name, methods, fields, test_framework
+  via la bibliothèque javalang, entièrement déterministe
+- AST structurel Python/JS/TS/Go/Rust/C — parsing structurel des fichiers source via
+  ast (Python), tree-sitter (autres langages), sans LLM
+- Analyse qualité statique Java — comptage des violations Checkstyle et PMD, exécution
+  en sous-processus et parsing XML des rapports, déterministe
+- DependencyManager — construction du graphe orienté NetworkX à partir des imports
+  regex, tri topologique (nx.topological_sort), détection de cycles (nx.simple_cycles),
+  calcul de centralité (nx.betweenness_centrality)
+- Chunking RAG — découpage des Digital Twins en chunks sémantiques et indexation dans
+  Weaviate via client Python gRPC, logique de chunking déterministe
+- WebCrawlerTool — crawl headless de l'application web cible via Playwright pour générer
+  le contrat fonctionnel JSON (nœud 5 optionnel), pas de LLM
+- JavaCoverageTool — comparaison déterministe entre méthodes de la classe (Digital
+  Twin) et méthodes testées pour calculer le statut FULL/PARTIAL/EMPTY/MISSING
+- ImportFixer — correction automatique des imports Python manquants après migration
+  via analyse AST Python et règles de mapping statiques Java→Python
+- Compilateur/validateur syntaxique — exécution de py_compile (Python), javac (Java)
+  ou équivalent pour validation syntaxique du code généré, parsing des erreurs en
+  rapport structuré
+- scan_java_files / scan_source_files — fonction utilitaire de découverte récursive
+  des fichiers par extension, implémentée sans IA
+- PostgreSQL metadata store — stockage des métadonnées de pipeline (statuts, rapports,
+  checkpoints) via SQLAlchemy, composant infrastructure pur
+- Redis cache — mise en cache des états intermédiaires LangGraph et des résultats
+  de compilation pour les reprises de pipeline, composant infrastructure pur
+- Nommage des fichiers migrés — transformation déterministe des noms de fichiers (ex.
+  BookManagerTest.java → test_book_manager_test.py) via règles de conversion snake_case
+- Checkpoint/reprise de pipeline — sauvegarde et restauration de l'état LangGraph
+  TypedDict via sérialisation JSON pour la reprise après erreur, logique déterministe
+transform:
+  template: code_migration
+  params:
+    src_lang: python
+    tgt_lang: java
+    lang_pair_key: python-java
+id: migrator

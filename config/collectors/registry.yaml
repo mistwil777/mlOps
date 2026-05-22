@@ -21,13 +21,11 @@ collectors:
     optional_args:
       - topic         # keyword filter on task names, or "all"
       - max_tasks     # max number of wiki tasks to process
-      - url           # override default Rosetta Code base URL
       - adapter_name
     cli_mapping:
       langs:       "--langs"        # list → space-separated string
       topic:       "--topic"
       max_tasks:   "--max-tasks"
-      url:         "--url"
       adapter_name: "--adapter-name"
     output_schema:
       - task_name
@@ -51,7 +49,7 @@ collectors:
       url:         "--url"
       lang:        "--lang"
       max_pages:   "--max-pages"
-      max_depth:   "--max-depth"
+      max_depth:   "--max-depth"    # crawl depth: default 5 — set higher for deep doc sites
       custom_tags: "--custom-tags"  # list → space-separated string
       adapter_name: "--adapter-name"
     output_schema:

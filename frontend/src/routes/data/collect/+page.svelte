@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { getProjects, startCollect, startFuse, getCollectStatus, getAdapterCoverage } from '$lib/api';
+  import { getProjects, startCollect, startFuse, getCollectStatus, getAdapterCoverage, advisorRecommendSources } from '$lib/api';
   import type { Project, ProjectAdapter, SourceSuggestion, AdapterCoverageResult } from '$lib/types';
 
   let projects: Project[] = $state([]);
@@ -56,6 +56,140 @@
   function getSourceStatus(adapterName: string, sourceValue: string): SourceHistoryEntry | null {
     if (!selectedProject) return null;
     return sourceHistory[sourceKey(selectedProject.id, adapterName, sourceValue)] ?? null;
+  }
+
+  // ── ajout manuel de source ────────────────────────────────────────────────
+  let showAddSource = $state(false);
+  let newSrcAdapter  = $state('');
+  let newSrcType     = $state<'doc_crawl' | 'web_crawl' | 'multilang_wiki'>('doc_crawl');
+  let newSrcUrl      = $state('');
+  let newSrcLabel    = $state('');
+  let newSrcLang     = $state('');
+  let newSrcPairs    = $state(100);
+  let addSrcErr      = $state('');
+
+  // ── recommandation automatique de sources ─────────────────────────────────
+  type RecSuggestion = { label: string; collector_type: string; value: string; estimated_pairs: number; lang_hint?: string; reason?: string };
+  let recLoading     = $state(false);
+  let recSuggestions = $state<RecSuggestion[]>([]);
+  let recSelected    = $state<Set<number>>(new Set());
+  let recErr         = $state('');
+  let recAddingAll   = $state(false);
+
+  async function loadSourceRecommendations() {
+    if (!selectedProject || !newSrcAdapter) return;
+    const adapter = (selectedProject.adapters ?? []).find(a => a.name === newSrcAdapter);
+    if (!adapter) return;
+    recLoading = true;
+    recErr = '';
+    recSuggestions = [];
+    recSelected = new Set();
+    try {
+      const existing = (adapter.source_configs ?? []).map(s => s.value).filter((v): v is string => typeof v === 'string' && v.length > 0);
+      recSuggestions = await advisorRecommendSources({
+        adapter_name: adapter.name,
+        adapter_description: adapter.description ?? '',
+        domain: selectedProject.domain ?? '',
+        task_type: selectedProject.task_type ?? '',
+        existing_source_values: existing,
+      });
+      // All selected by default
+      recSelected = new Set(recSuggestions.map((_, i) => i));
+    } catch (e) {
+      recErr = (e as Error).message;
+    } finally {
+      recLoading = false;
+    }
+  }
+
+  function toggleRecSelection(i: number) {
+    const s = new Set(recSelected);
+    s.has(i) ? s.delete(i) : s.add(i);
+    recSelected = s;
+  }
+
+  function toggleAllRec() {
+    recSelected = recSelected.size === recSuggestions.length
+      ? new Set()
+      : new Set(recSuggestions.map((_, i) => i));
+  }
+
+  function applyRecSuggestion(s: RecSuggestion) {
+    newSrcUrl   = s.value;
+    newSrcLabel = s.label;
+    newSrcType  = (s.collector_type as typeof newSrcType) ?? 'doc_crawl';
+    newSrcLang  = s.lang_hint ?? '';
+    newSrcPairs = s.estimated_pairs ?? 100;
+    recSuggestions = [];
+    recSelected = new Set();
+  }
+
+  async function addSelectedSources() {
+    if (!selectedProject || recSelected.size === 0) return;
+    recAddingAll = true;
+    addSrcErr = '';
+    const toAdd = [...recSelected].map(i => recSuggestions[i]);
+    const newConfigs: import('$lib/types').SourceSuggestion[] = toAdd.map(s => ({
+      collector_type: s.collector_type as import('$lib/types').SourceSuggestion['collector_type'],
+      value: s.value,
+      label: s.label,
+      estimated_pairs: s.estimated_pairs,
+      ...(s.lang_hint ? { lang_hint: s.lang_hint } : {}),
+    }));
+    try {
+      const adapterName = newSrcAdapter;
+      const res = await fetch(`/api/projects/${selectedProject.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          adapters: (selectedProject.adapters ?? []).map(a =>
+            a.name === adapterName
+              ? { ...a, source_configs: [...(a.source_configs ?? []), ...newConfigs] }
+              : a
+          ),
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      selectedProject = await res.json();
+      recSuggestions = [];
+      recSelected = new Set();
+      showAddSource = false;
+    } catch (e) {
+      addSrcErr = (e as Error).message;
+    } finally {
+      recAddingAll = false;
+    }
+  }
+
+  async function addSource() {
+    if (!selectedProject || !newSrcUrl.trim() || !newSrcAdapter) { addSrcErr = 'Adapter et URL requis.'; return; }
+    addSrcErr = '';
+    const sc: SourceSuggestion = {
+      collector_type: newSrcType,
+      value: newSrcUrl.trim(),
+      label: newSrcLabel.trim() || newSrcUrl.trim(),
+      estimated_pairs: newSrcPairs,
+      ...(newSrcLang ? { lang_hint: newSrcLang.trim() } : {}),
+    };
+    // Patch project via API to persist the new source_config
+    try {
+      const res = await fetch(`/api/projects/${selectedProject.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          adapters: (selectedProject.adapters ?? []).map(a =>
+            a.name === newSrcAdapter
+              ? { ...a, source_configs: [...(a.source_configs ?? []), sc] }
+              : a
+          ),
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const updated = await res.json();
+      selectedProject = updated;
+      showAddSource = false;
+      newSrcUrl = ''; newSrcLabel = ''; newSrcLang = ''; newSrcPairs = 100;
+    } catch (e) { addSrcErr = (e as Error).message; }
   }
 
   // ── fusion panel ─────────────────────────────────────────────────────────
@@ -161,16 +295,19 @@
     try {
       const wikiLangs = selectedSource.source.collector_type === 'multilang_wiki'
         ? getLangsForSource(selectedSource.adapter) : undefined;
+      const srcEst = selectedSource.source.estimated_pairs ?? 100;
+      const srcMaxPages = selectedSource.source.collector_type === 'doc_crawl' ? srcEst * 4 : srcEst;
       const res = await startCollect({
         project_id: selectedProject.id,
-        topic: selectedSource.source.value,
-        max_pairs: maxPairs,
-        domain: selectedProject.domain,
-        task_type: selectedProject.task_type,
+        topic: selectedSource.source.collector_type === 'manual' ? undefined : selectedSource.source.value,
+        max_pairs: srcMaxPages,
+        domain: selectedProject.domain ?? '',
+        task_type: selectedProject.task_type ?? '',
         collector_type: selectedSource.source.collector_type,
         source_value: selectedSource.source.value,
         adapter_name: selectedSource.adapter.name,
         lang: selectedSource.source.lang_hint,
+        max_depth: selectedSource.source.collector_type === 'doc_crawl' ? 5 : undefined,
         ...(wikiLangs ? { langs: wikiLangs } : {}),
       });
       openSSE(res.job_id, (finalStatus) => {
@@ -220,16 +357,19 @@
     try {
       const wikiLangs = item.source.collector_type === 'multilang_wiki'
         ? getLangsForSource(item.adapter) : undefined;
+      const itemEst = item.source.estimated_pairs ?? 100;
+      const itemMaxPages = item.source.collector_type === 'doc_crawl' ? itemEst * 4 : itemEst;
       const res = await startCollect({
         project_id: selectedProject.id,
-        topic: item.source.value,
-        max_pairs: maxPairs,
-        domain: selectedProject.domain,
-        task_type: selectedProject.task_type,
+        topic: item.source.collector_type === 'manual' ? undefined : item.source.value,
+        max_pairs: itemMaxPages,
+        domain: selectedProject.domain ?? '',
+        task_type: selectedProject.task_type ?? '',
         collector_type: item.source.collector_type,
         source_value: item.source.value,
         adapter_name: item.adapter.name,
         lang: item.source.lang_hint,
+        max_depth: item.source.collector_type === 'doc_crawl' ? 5 : undefined,
         ...(wikiLangs ? { langs: wikiLangs } : {}),
       });
 
@@ -258,29 +398,56 @@
   }
 
   // ── SSE helper ────────────────────────────────────────────────────────────
+  // Reconnects automatically when the browser drops the SSE (tab switch, sleep,
+  // network hiccup). The backend job keeps running — we just re-attach to the stream.
   function openSSE(
     jobId: string,
     onDone: (status: string) => void,
     onStatus: (status: string) => void,
   ) {
-    es?.close();
-    es = new EventSource(`/api/data/collect/${jobId}/stream`);
-    es.addEventListener('log', (e) => {
-      const d = JSON.parse(e.data);
-      logs = [...logs, d.line];
-      scrollLog();
-    });
-    es.addEventListener('done', async (e) => {
-      const d = JSON.parse(e.data);
-      onStatus(d.status);
+    let settled = false;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+    function connect() {
       es?.close();
-      onDone(d.status);
-    });
-    es.onerror = () => {
-      onStatus('failed');
-      es?.close();
-      onDone('failed');
-    };
+      es = new EventSource(`/api/data/collect/${jobId}/stream`);
+
+      es.addEventListener('log', (e) => {
+        const d = JSON.parse(e.data);
+        logs = [...logs, d.line];
+        scrollLog();
+      });
+
+      es.addEventListener('done', (e) => {
+        if (settled) return;
+        settled = true;
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        const d = JSON.parse(e.data);
+        onStatus(d.status);
+        es?.close();
+        onDone(d.status);
+      });
+
+      es.onerror = () => {
+        es?.close();
+        if (settled) return;
+        // Poll server status — if finished, resolve; if still running, reconnect.
+        reconnectTimer = setTimeout(async () => {
+          try {
+            const s = await getCollectStatus(jobId);
+            if (s.status === 'completed' || s.status === 'failed') {
+              if (!settled) { settled = true; onStatus(s.status); onDone(s.status); }
+            } else {
+              connect(); // still running — reattach
+            }
+          } catch {
+            connect(); // network error — try again
+          }
+        }, 3000);
+      };
+    }
+
+    connect();
   }
 
   function scrollLog() {
@@ -361,10 +528,6 @@
           <option value={p.id} selected={p.id === selectedProject?.id}>{p.name}</option>
         {/each}
       </select>
-      <label class="form-field-inline">
-        <span class="field-label">Paires max par source</span>
-        <input bind:value={maxPairs} type="number" min="5" max="500" class="input input-sm" />
-      </label>
     </div>
   </div>
 
@@ -518,6 +681,103 @@
           </div>
         {/if}
       {/each}
+
+      <!-- Ajout manuel d'une source -->
+      <div class="add-source-section mt-8">
+        {#if !showAddSource}
+          <button class="btn btn-ghost btn-sm" onclick={() => { showAddSource = true; newSrcAdapter = selectedProject?.adapters?.[0]?.name ?? ''; }}>
+            + Ajouter une source
+          </button>
+        {:else}
+          <div class="add-source-form">
+            <div class="form-row mb-8">
+              <label class="field-label">Adapter</label>
+              <select class="input input-sm" bind:value={newSrcAdapter} onchange={() => { recSuggestions = []; recErr = ''; }}>
+                {#each selectedProject.adapters ?? [] as a}
+                  <option value={a.name}>{a.name}</option>
+                {/each}
+              </select>
+              <label class="field-label">Type</label>
+              <select class="input input-sm" bind:value={newSrcType}>
+                <option value="doc_crawl">Docs</option>
+                <option value="web_crawl">Web</option>
+                <option value="multilang_wiki">Wiki</option>
+              </select>
+              <button
+                class="btn btn-ghost btn-sm rec-btn"
+                onclick={loadSourceRecommendations}
+                disabled={recLoading}
+                title="Obtenir des recommandations de sources pour cet adapter (Haiku — faible coût)"
+              >
+                {#if recLoading}⟳{:else}✦{/if} Recommander
+              </button>
+            </div>
+
+            <!-- Suggestions IA -->
+            {#if recSuggestions.length > 0}
+              <div class="rec-list mb-8">
+                <div class="rec-header">
+                  <button class="rec-toggle-all" onclick={toggleAllRec}>
+                    {recSelected.size === recSuggestions.length ? '☑' : recSelected.size > 0 ? '⊟' : '☐'} Tout
+                  </button>
+                  <span>Suggestions — cocher puis ajouter</span>
+                  <button
+                    class="btn btn-primary btn-sm"
+                    onclick={addSelectedSources}
+                    disabled={recSelected.size === 0 || recAddingAll}
+                  >
+                    {recAddingAll ? '⟳' : '+'} Ajouter {recSelected.size > 0 ? `(${recSelected.size})` : ''}
+                  </button>
+                </div>
+                {#each recSuggestions as s, i}
+                  {@const checked = recSelected.has(i)}
+                  <div
+                    class="rec-item"
+                    class:rec-item--checked={checked}
+                    role="button"
+                    tabindex="0"
+                    onclick={() => toggleRecSelection(i)}
+                    onkeydown={e => e.key === 'Enter' && toggleRecSelection(i)}
+                  >
+                    <span class="rec-check">{checked ? '☑' : '☐'}</span>
+                    <span class="collector-badge collector-badge--{s.collector_type}">
+                      {COLLECTOR_LABELS[s.collector_type] ?? s.collector_type}
+                    </span>
+                    <span class="rec-label">{s.label}</span>
+                    {#if s.lang_hint}<span class="rec-lang">{s.lang_hint}</span>{/if}
+                    <span class="rec-pairs">~{s.estimated_pairs}</span>
+                    {#if s.reason}<span class="rec-reason">{s.reason}</span>{/if}
+                    <button
+                      class="rec-prefill-btn"
+                      title="Pré-remplir le formulaire avec cette source"
+                      onclick={e => { e.stopPropagation(); applyRecSuggestion(s); }}
+                    >↓</button>
+                  </div>
+                {/each}
+              </div>
+            {/if}
+            {#if recErr}<div class="banner-error mb-8">{recErr}</div>{/if}
+
+            <div class="form-row mb-8">
+              <label class="field-label">URL / valeur</label>
+              <input class="input" style="flex:1" bind:value={newSrcUrl} placeholder="https://docs.example.com/" />
+            </div>
+            <div class="form-row mb-8">
+              <label class="field-label">Label</label>
+              <input class="input" style="flex:1" bind:value={newSrcLabel} placeholder="Nom affiché (optionnel)" />
+              <label class="field-label">Langue</label>
+              <input class="input input-sm" bind:value={newSrcLang} placeholder="python" />
+              <label class="field-label">~Paires</label>
+              <input class="input input-sm" type="number" min="10" bind:value={newSrcPairs} />
+            </div>
+            {#if addSrcErr}<div class="banner-error mb-8">{addSrcErr}</div>{/if}
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-primary btn-sm" onclick={addSource}>Ajouter</button>
+              <button class="btn btn-ghost btn-sm" onclick={() => { showAddSource = false; addSrcErr = ''; recSuggestions = []; }}>Annuler</button>
+            </div>
+          </div>
+        {/if}
+      </div>
     </div>
 
     <!-- Lancement source unique -->
@@ -587,6 +847,11 @@
             {fuseRunning ? '⟳ Fusion en cours…' : `⚡ Fusionner ${fp.label}`}
           </button>
         {/each}
+        {#if fuseRunning}
+          <button class="btn btn-ghost btn-sm" onclick={() => { es?.close(); fuseRunning = false; fuseStatus = 'failed'; }}>
+            ✕ Annuler
+          </button>
+        {/if}
         {#if fuseStatus === 'completed'}
           <span class="ok-badge">✓ Fusion terminée</span>
         {:else if fuseStatus === 'failed'}
@@ -599,7 +864,14 @@
   <!-- Logs -->
   {#if logs.length > 0 || running}
     <div class="card">
-      <div class="section-title">Logs</div>
+      <div class="card-header">
+        <span class="section-title">Logs</span>
+        <button
+          class="btn btn-ghost btn-sm"
+          title="Copier les logs"
+          onclick={() => navigator.clipboard.writeText(logs.join('\n'))}
+        >⧉ Copier</button>
+      </div>
       <div id="log-box" class="log-box">
         {#each logs as line}
           <div class="log-line">{line}</div>
@@ -746,5 +1018,52 @@
   .badge-failed { background:rgba(255,80,80,0.15); color:var(--red); border:1px solid var(--red); padding:4px 10px; border-radius:4px; font-size:12px; }
   @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
   .blink { animation:blink 1s step-end infinite; }
-  .banner-warn { background:rgba(251,146,60,.1); border:1px solid rgba(251,146,60,.3); color:#fb923c; border-radius:var(--radius); padding:10px 14px; font-size:12px; }
+  .banner-warn  { background:rgba(251,146,60,.1); border:1px solid rgba(251,146,60,.3); color:#fb923c; border-radius:var(--radius); padding:10px 14px; font-size:12px; }
+  .banner-error { background:rgba(255,80,80,.1);  border:1px solid rgba(255,80,80,.3);  color:var(--red); border-radius:var(--radius); padding:8px 12px; font-size:12px; }
+
+  .add-source-section { padding-top:4px; }
+  .add-source-form {
+    border:1px dashed var(--border); border-radius:var(--radius);
+    padding:12px 14px; background:var(--surface-2); margin-top:6px;
+  }
+
+  /* Source recommendations */
+  .rec-btn { color:var(--accent); border-color:rgba(91,152,248,.3); }
+  .rec-btn:hover { background:rgba(91,152,248,.08); }
+
+  .rec-list {
+    border:1px solid rgba(91,152,248,.25); border-radius:var(--radius);
+    background:rgba(91,152,248,.04); overflow:hidden;
+  }
+  .rec-header {
+    display:flex; align-items:center; gap:8px;
+    font-size:10px; font-weight:600; color:var(--accent);
+    padding:5px 10px; background:rgba(91,152,248,.08);
+    border-bottom:1px solid rgba(91,152,248,.15);
+  }
+  .rec-header span { flex:1; text-transform:uppercase; letter-spacing:.05em; }
+  .rec-toggle-all {
+    background:none; border:none; color:var(--accent); cursor:pointer;
+    font-size:12px; padding:0 4px; line-height:1;
+  }
+  .rec-item {
+    display:flex; align-items:center; gap:7px; width:100%;
+    padding:6px 10px; background:transparent;
+    border-bottom:1px solid rgba(91,152,248,.08); cursor:pointer;
+    transition:background 120ms;
+  }
+  .rec-item:last-child { border-bottom:none; }
+  .rec-item:hover { background:rgba(91,152,248,.08); }
+  .rec-item--checked { background:rgba(91,152,248,.1); }
+  .rec-check { font-size:13px; color:var(--accent); flex-shrink:0; user-select:none; width:16px; }
+  .rec-label { flex:1; font-size:12px; color:var(--text); }
+  .rec-lang  { font-size:10px; color:var(--text-dim); background:var(--surface-3); padding:1px 5px; border-radius:3px; flex-shrink:0; }
+  .rec-pairs { font-size:10px; color:var(--text-dim); white-space:nowrap; flex-shrink:0; }
+  .rec-reason { font-size:10px; color:var(--text-dim); font-style:italic; max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rec-prefill-btn {
+    background:none; border:1px solid var(--border); border-radius:3px;
+    color:var(--text-dim); cursor:pointer; font-size:11px; padding:1px 5px;
+    flex-shrink:0; transition:color 120ms, border-color 120ms;
+  }
+  .rec-prefill-btn:hover { color:var(--text); border-color:var(--text-muted); }
 </style>

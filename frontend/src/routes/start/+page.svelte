@@ -115,9 +115,9 @@
   );
 
   // Étape 2.5 — sources + collecte + pipeline
-  interface SourceEntry { source: string; adapter: string; selected: boolean; collector_type: string; source_value: string; langs?: string[]; lang_hint?: string; }
+  interface SourceEntry { source: string; adapter: string; selected: boolean; collector_type: string; source_value: string; estimated_pairs: number; max_pages?: number; max_depth?: number; langs?: string[]; lang_hint?: string; }
   let sourceEntries = $state<SourceEntry[]>([]);
-  let collectMaxPairs = $state(50);
+  let collectMaxPairs = $state(50); // kept for state save/restore compat, no longer shown in UI
   let collectTopic    = $state('');
   let collectJobId    = $state('');
   let collectRunning  = $state(false);
@@ -146,11 +146,16 @@
           .map(s => s.lang_hint as string);
         const adapterLangs = [...new Set(fusibleLangs)];
 
-        for (const sc of (a.source_configs as Array<{ collector_type: string; value: string; label: string; lang_hint?: string }>)) {
+        for (const sc of (a.source_configs as Array<{ collector_type: string; value: string; label: string; lang_hint?: string; estimated_pairs?: number; max_pages?: number; max_depth?: number }>)) {
           const key = `${sc.collector_type}:${sc.value}`;
           if (!seen.has(key)) {
             seen.add(key);
-            const entry: SourceEntry = { source: sc.label, adapter: a.name, selected: true, collector_type: sc.collector_type, source_value: sc.value };
+            const estPairs = sc.estimated_pairs ?? 100;
+            // For doc_crawl: max_pages defaults to estimated_pairs * 4 so crawl depth isn't bounded
+            // by the number of *expected* pairs — many pages yield 0 pairs (navigation, intros)
+            const maxPages = sc.max_pages ?? (sc.collector_type === 'doc_crawl' ? estPairs * 4 : estPairs);
+            const maxDepth = sc.max_depth ?? (sc.collector_type === 'doc_crawl' ? 5 : undefined);
+            const entry: SourceEntry = { source: sc.label, adapter: a.name, selected: true, collector_type: sc.collector_type, source_value: sc.value, estimated_pairs: estPairs, max_pages: maxPages, max_depth: maxDepth };
             if (sc.collector_type === 'multilang_wiki' && adapterLangs.length >= 2) {
               entry.langs = adapterLangs;
             } else if (sc.lang_hint) {
@@ -188,37 +193,68 @@
     if (selectedSources.length === 0) { collectErr = 'Sélectionnez au moins une source.'; return; }
     collectErr = ''; collectLogs = []; collectRunning = true; collectStatus = 'running';
     collectedPairs = []; collectedTotal = 0;
-    // Use the first selected source's collector_type; mixed types run sequentially per source
-    const firstSrc = selectedSources[0];
-    try {
-      const res = await startCollect({
-        project_id: tempProjectId,
-        topic: collectTopic || need.trim(),
-        max_pairs: collectMaxPairs,
-        domain: projDomain,
-        task_type: 'generation',
-        collector_type: firstSrc.collector_type,
-        source_value: firstSrc.source_value,
-        adapter_name: firstSrc.adapter,
-        ...(firstSrc.langs ? { langs: firstSrc.langs } : {}),
-        ...(firstSrc.lang_hint ? { lang: firstSrc.lang_hint } : {}),
-      });
-      collectJobId = res.job_id;
-      collectEs = new EventSource(`/api/data/collect/${collectJobId}/stream`);
-      collectEs.addEventListener('log', (e) => {
-        const d = JSON.parse(e.data);
-        collectLogs = [...collectLogs, d.line];
-        scrollBox('collect-log');
-      });
-      collectEs.addEventListener('done', async (e) => {
-        const d = JSON.parse(e.data);
-        collectStatus = d.status;
-        collectRunning = false;
-        collectEs?.close();
-        if (d.status === 'completed') await loadCollectedPairs(tempProjectId);
-      });
-      collectEs.onerror = () => { collectStatus = 'failed'; collectRunning = false; collectEs?.close(); };
-    } catch (e) { collectErr = (e as Error).message; collectRunning = false; collectStatus = 'failed'; }
+
+    // Run each source sequentially — each uses its own estimated_pairs as the cap
+    for (const src of selectedSources) {
+      collectLogs = [...collectLogs, `── Collecte : ${src.source} (max ${src.estimated_pairs} paires) ──`];
+      try {
+        const res = await startCollect({
+          project_id: tempProjectId,
+          topic: src.collector_type === 'manual' ? undefined : (src.source_value || collectTopic || need.trim()),
+          max_pairs: src.max_pages ?? src.estimated_pairs,
+          domain: projDomain,
+          task_type: 'generation',
+          collector_type: src.collector_type,
+          source_value: src.source_value,
+          adapter_name: src.adapter,
+          ...(src.langs ? { langs: src.langs } : {}),
+          ...(src.lang_hint ? { lang: src.lang_hint } : {}),
+          ...(src.max_depth !== undefined ? { max_depth: src.max_depth } : {}),
+        });
+        collectJobId = res.job_id;
+        await new Promise<void>((resolve) => {
+          let settled = false;
+          let reconnTimer: ReturnType<typeof setTimeout> | null = null;
+          function connectCollectSSE() {
+            collectEs?.close();
+            collectEs = new EventSource(`/api/data/collect/${collectJobId}/stream`);
+            collectEs.addEventListener('log', (e) => {
+              const d = JSON.parse(e.data);
+              collectLogs = [...collectLogs, d.line];
+              scrollBox('collect-log');
+            });
+            collectEs.addEventListener('done', () => {
+              if (settled) return;
+              settled = true;
+              if (reconnTimer) clearTimeout(reconnTimer);
+              collectEs?.close();
+              resolve();
+            });
+            collectEs.onerror = () => {
+              collectEs?.close();
+              if (settled) return;
+              reconnTimer = setTimeout(async () => {
+                try {
+                  const s = await fetch(`/api/data/collect/${collectJobId}/status`).then(r => r.json());
+                  if (s.status === 'completed' || s.status === 'failed') {
+                    if (!settled) { settled = true; resolve(); }
+                  } else {
+                    connectCollectSSE();
+                  }
+                } catch { connectCollectSSE(); }
+              }, 3000);
+            };
+          }
+          connectCollectSSE();
+        });
+      } catch (e) {
+        collectLogs = [...collectLogs, `  ERREUR : ${(e as Error).message}`];
+      }
+    }
+
+    collectRunning = false;
+    collectStatus = 'completed';
+    await loadCollectedPairs(tempProjectId);
   }
 
   async function loadCollectedPairs(pid: string) {
@@ -654,7 +690,6 @@
           rag_recommended: a.rag_recommended ?? false,
           source_configs: a.source_configs ?? [],
           data_sources: a.data_sources ?? [],
-          // Persist LLM-scored fields
           ...(a.score       !== undefined ? { score:      a.score }      : {}),
           ...(a.team_score  !== undefined ? { team_score: a.team_score } : {}),
           ...(a.pros?.length             ? { pros:        a.pros }        : {}),
@@ -670,7 +705,18 @@
       });
       projectId = (proj as { id: string }).id;
       step = 4;
-    } catch (e) { createErr = (e as Error).message; }
+    } catch (e) {
+      const msg = (e as Error).message ?? '';
+      // 409 = project already exists — derive its ID and proceed rather than blocking
+      if (msg.startsWith('409')) {
+        const derivedId = projName.trim().toLowerCase().replace(/ /g, '-').replace(/_/g, '-');
+        projectId = derivedId;
+        createErr = '';
+        step = 4;
+      } else {
+        createErr = msg;
+      }
+    }
     finally { creating = false; }
   }
 
@@ -805,6 +851,8 @@
       generatedPairsStore  = s.generatedPairsStore  ?? {};
       analysisSavedAt = s.savedAt ?? null;
       if (adapters.length > 0) {
+        // Re-derive source entries if they weren't saved (e.g. user never opened Sources tab)
+        if (sourceEntries.length === 0) initSourceEntries();
         step = 2;
         if (!selEval) runWizardEval();
         loadCrossMatches();
@@ -893,6 +941,12 @@
       step = 2;
       runWizardEval();
       return;
+    }
+
+    // Auto-resume last session if the user refreshed mid-session
+    if (savedAnalyses.length > 0) {
+      // Load most recent (index is sorted newest-first)
+      loadAnalysis(savedAnalyses[0].key);
     }
   });
 
@@ -1518,10 +1572,6 @@
             <div class="form-group">
               <label class="form-label" for="collect-topic">Sujet / mots-clés</label>
               <input id="collect-topic" class="form-input" bind:value={collectTopic} placeholder="ex: contrats droit des affaires" />
-            </div>
-            <div class="form-group mt-8">
-              <label class="form-label" for="collect-max">Paires max par source</label>
-              <input id="collect-max" type="number" min="10" max="500" class="form-input" bind:value={collectMaxPairs} />
             </div>
             {#if collectErr}<div class="api-error mt-8">{collectErr}</div>{/if}
             <button

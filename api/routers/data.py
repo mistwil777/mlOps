@@ -161,7 +161,7 @@ def _load_collector_registry() -> dict[str, Any]:
 
 class CollectRequest(BaseModel):
     project_id: str
-    topic: str
+    topic: Optional[str] = None
     max_pairs: int = 50
     domain: Optional[str] = None
     task_type: Optional[str] = None
@@ -171,6 +171,7 @@ class CollectRequest(BaseModel):
     langs: Optional[list[str]] = None   # for multilang_wiki: e.g. ["Python", "Java"]
     lang: Optional[str] = None          # for doc_crawl: "python" | "java" | …
     custom_tags: Optional[list[str]] = None  # for doc_crawl: custom HTML tags
+    max_depth: Optional[int] = None     # for doc_crawl: crawl depth override
 
 
 @router.post("/collect")
@@ -203,18 +204,18 @@ async def start_collect(req: CollectRequest) -> dict[str, str]:
     asyncio.create_task(_run_collect(
         job_id, req.project_id, req.topic, req.max_pairs, config,
         req.collector_type, req.source_value, req.adapter_name,
-        req.langs, req.lang, req.custom_tags,
+        req.langs, req.lang, req.custom_tags, req.max_depth,
     ))
     return {"job_id": job_id}
 
 
-_COLLECT_TIMEOUT_S = 300
+_COLLECT_TIMEOUT_S = 1800  # 30 min — doc crawls can visit 400+ pages at ~1s each
 
 
 async def _run_collect(
     job_id: str,
     project_id: str,
-    topic: str,
+    topic: str | None,
     max_pairs: int,
     config: dict[str, Any],
     collector_type: str = "web_crawl",
@@ -223,6 +224,7 @@ async def _run_collect(
     langs: list[str] | None = None,
     lang: str | None = None,
     custom_tags: list[str] | None = None,
+    max_depth: int | None = None,
 ) -> None:
     registry  = _load_collector_registry()
     collector = registry[collector_type]
@@ -270,11 +272,12 @@ async def _run_collect(
 
     # Map known request fields to their CLI arg names
     field_values: dict[str, Any] = {
-        "topic":       source_value or topic,
-        "url":         source_value or topic,
+        "topic":       source_value or topic or None,
+        "url":         source_value or topic or None,
         "max_tasks":   max_pairs,
         "max_pages":   max_pairs,
-        "lang":        lang or topic,
+        "max_depth":   max_depth,
+        "lang":        lang or topic or None,
         "langs":       effective_langs,
         "custom_tags": custom_tags,
         "domain":      config.get("domain", "code"),
@@ -404,10 +407,32 @@ async def _run_fuse(job_id: str, req: FuseRequest) -> None:
     source_lang = pcfg["source_lang"]
     target_lang = pcfg["target_lang"]
 
-    # Source/target JSONL: pairs tagged with lang=source_lang / lang=target_lang
-    source_jsonl = raw_dir / f"doc_{source_lang}.jsonl"
-    target_jsonl = raw_dir / f"doc_{target_lang}.jsonl"
+    # Merge all doc_crawl_*.jsonl + multilang_wiki_*.jsonl files into two lang-filtered files
+    # that pair_fuser expects: one per lang.
+    import json as _json  # noqa: PLC0415
+    source_jsonl = raw_dir / f"_fuse_src_{source_lang}.jsonl"
+    target_jsonl = raw_dir / f"_fuse_tgt_{target_lang}.jsonl"
     output       = raw_dir / "pairs_raw.jsonl"
+
+    all_raw: list[dict] = []
+    for pattern in ("doc_crawl_*.jsonl", "multilang_wiki_*.jsonl"):
+        for f in sorted(raw_dir.glob(pattern)):
+            try:
+                for line in f.read_text().splitlines():
+                    if line.strip():
+                        all_raw.append(_json.loads(line))
+            except Exception:
+                pass
+
+    src_records = [r for r in all_raw if r.get("lang", "").lower() == source_lang.lower()]
+    tgt_records = [r for r in all_raw if r.get("lang", "").lower() == target_lang.lower()]
+
+    _JOBS[job_id]["lines"].append(
+        f"Collected {len(src_records)} {source_lang} + {len(tgt_records)} {target_lang} records from raw files"
+    )
+
+    source_jsonl.write_text("\n".join(_json.dumps(r) for r in src_records))
+    target_jsonl.write_text("\n".join(_json.dumps(r) for r in tgt_records))
 
     cmd = [
         sys.executable, "-m", "agents.pair_fuser",
@@ -443,6 +468,11 @@ async def _run_fuse(job_id: str, req: FuseRequest) -> None:
         _JOBS[job_id]["status"] = "failed"
         _JOBS[job_id]["lines"].append(f"ERROR: {exc}")
     finally:
+        for tmp in (source_jsonl, target_jsonl):
+            try:
+                tmp.unlink(missing_ok=True)
+            except Exception:
+                pass
         _JOBS[job_id]["finished_at"] = datetime.now(timezone.utc).timestamp()
         _purge_old_jobs()
 
@@ -847,13 +877,12 @@ async def data_health(project_id: str) -> dict[str, Any]:
 
 @router.get("/adapter-coverage/{project_id}")
 async def adapter_coverage(project_id: str) -> dict[str, Any]:
-    """Return per-adapter pair counts vs targets, read directly from raw JSONL."""
+    """Return per-adapter record counts vs targets, read directly from raw JSONL."""
     cfg = _load_project_config(project_id)
     adapters: list[dict[str, Any]] = cfg.get("adapters", [])
 
     records = _all_raw_records(project_id, "raw")
 
-    # Count by adapter_name from JSONL records
     counts: dict[str, int] = {}
     untagged = 0
     for r in records:

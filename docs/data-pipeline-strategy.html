@@ -151,9 +151,9 @@
     <h1>MLOps — Stratégie Pipeline Données</h1>
     <p class="subtitle">Architecture de collecte, qualification, augmentation et préparation des données pour le fine-tuning d'adapters LoRA</p>
     <div class="doc-meta">
-      <div class="meta-item">Version <span>1.0</span></div>
-      <div class="meta-item">Date <span>2026-05-21</span></div>
-      <div class="meta-item">Statut <span>En cours de construction</span></div>
+      <div class="meta-item">Version <span>1.1</span></div>
+      <div class="meta-item">Date <span>2026-05-22</span></div>
+      <div class="meta-item">Statut <span>Pipeline implémenté — en cours de validation</span></div>
       <div class="meta-item">Audience <span>Auditeurs, responsables, équipe technique</span></div>
     </div>
   </div>
@@ -273,83 +273,69 @@
 
     <p>Le pipeline est strictement séquentiel. Chaque étape est un filtre : seules les données qui passent progressent vers l'étape suivante. Les rejets sont loggés avec leur motif.</p>
 
+    <div class="card decision">
+      <div class="card-title">✓ Point critique — Format natif jusqu'à l'étape 4</div>
+      <p>Les étapes 1 à 3 opèrent sur les enregistrements <strong>monolingues natifs</strong> ({description, code, lang} ou {task_name, lang, code}). C'est normal et attendu. La transformation en paires {prompt, completion} n'intervient qu'à l'étape 4, via <code>pair_fuser.py</code>. Les métriques de couverture des étapes 1-3 comptent des enregistrements, pas des paires.</p>
+    </div>
+
     <div class="pipeline">
       <div class="pipe-step">
         <div class="pipe-box">
-          <div class="step-label">Étape 1</div>
-          <div class="step-title">Collecte brute</div>
-          <div class="step-desc">Sources déclarées par adapter dans le YAML projet. Collecteurs génériques (multilang_wiki, doc_crawl, web_crawl, manual). Output : enregistrements bruts avec métadonnées (source, date, langue, contexte).</div>
+          <div class="step-label">Étape 1 — <code>agents/</code></div>
+          <div class="step-title">Collecte brute <span class="tag tag-green">Implémenté</span></div>
+          <div class="step-desc">Sources déclarées par adapter dans le YAML projet. Collecteurs génériques : <code>multilang_wiki</code> (rosetta_collector.py), <code>doc_crawl</code> (doc_collector.py), <code>web_crawl</code>, <code>manual</code>. Output : enregistrements monolingues neutres avec métadonnées (source, date, langue, adapter_name). Les collecteurs ne produisent jamais de prompt/completion.</div>
           <div class="step-cost">Coût : ~0 (scraping) — variable selon volume</div>
         </div>
       </div>
       <div class="pipe-arrow">↓</div>
       <div class="pipe-step">
         <div class="pipe-box">
-          <div class="step-label">Étape 2</div>
-          <div class="step-title">Vérification structurelle (software)</div>
-          <div class="step-desc">Via MCP servers. Syntaxe valide ? Longueur minimale ? Langue correctement détectée ? Code exécutable ? Filtres déterministes, rapides, coût nul. Rejette ~20-30% des records bruts.</div>
-          <div class="step-cost">Coût : 0 — déterministe et local</div>
+          <div class="step-label">Étape 2 — <code>pipeline/clean_raw.py</code></div>
+          <div class="step-title">Nettoyage sémantique des enregistrements bruts <span class="tag tag-green">Implémenté</span></div>
+          <div class="step-desc">Opère sur les enregistrements monolingues avant fusion en paires. 7 composants séquentiels :<br><br>
+            <strong>1. Déduplication exacte</strong> — hash sur (description+code) normalisé, supprime les doublons stricts.<br>
+            <strong>2. Score heuristique</strong> — longueur, ratio alphanumérique, densité information. Seuil : 0.55. Rapide, coût nul.<br>
+            <strong>3. Déduplication sémantique</strong> — cosine ≥ 0.92 sur embeddings (cascade : Bedrock Titan v2 → Ollama nomic-embed → TF-IDF). Supprime les quasi-doublons.<br>
+            <strong>4. Score de pertinence</strong> — cosine record vs description de l'adapter. Seuil : 0.30. Élimine les records hors sujet.<br>
+            <strong>5. Clustering de couverture</strong> — K-means (k=8) sur embeddings. Identifie les angles morts dans les catégories collectées.<br>
+            <strong>6. Contrôle de volume</strong> — si &gt; cible × 1.5 : trim aux meilleurs scores ; si &lt; cible × 0.5 : flag pour augmentation.<br>
+            <strong>7. Augmentation ciblée</strong> — uniquement sur records ≥ 0.65 heuristique. Max 2 variantes par record. Priorité aux clusters sous-représentés.
+          </div>
+          <div class="step-cost">Coût : embedding local ou Bedrock (~0.002$/1K tokens) — coût nul si TF-IDF fallback</div>
         </div>
       </div>
       <div class="pipe-arrow">↓</div>
       <div class="pipe-step">
         <div class="pipe-box">
-          <div class="step-label">Étape 3</div>
-          <div class="step-title">Scoring de pertinence (LLM)</div>
-          <div class="step-desc">Méthode déclarée dans le YAML de l'adapter (cosine+euclidean pour le juridique, TDV+cosine pour le code). Haiku par défaut, routé vers Sonnet pour les cas complexes. Score de pertinence par rapport à la tâche de l'adapter.</div>
+          <div class="step-label">Étape 3 — <code>pipeline/pair_fuser.py</code></div>
+          <div class="step-title">Fusion en paires d'entraînement <span class="tag tag-yellow">Planifié</span></div>
+          <div class="step-desc">Aligne les enregistrements monolingues en paires {prompt, completion} selon le template déclaré dans <code>config/transforms/</code>. Pour <code>code_migration</code> : regroupe par task_name, joint source_lang et target_lang. Pour <code>doc_to_code</code> : renommage direct description→prompt, code→completion. C'est LA SEULE étape où le format d'entraînement est appliqué.</div>
+          <div class="step-cost">Coût : ~0 (déterministe, aucun LLM)</div>
+        </div>
+      </div>
+      <div class="pipe-arrow">↓</div>
+      <div class="pipe-step">
+        <div class="pipe-box">
+          <div class="step-label">Étape 4 — <code>pipeline/clean.py</code></div>
+          <div class="step-title">Nettoyage des paires <span class="tag tag-green">Implémenté</span></div>
+          <div class="step-desc">Opère sur les paires {prompt, completion} déjà formées. Validation de structure, longueur des tokens, ratio prompt/completion, qualité du contenu. Scoring LLM si nécessaire (Haiku → Sonnet selon difficulté détectée).</div>
           <div class="step-cost">Coût : ~0.50€/adapter (Haiku) — principal levier de réduction</div>
         </div>
       </div>
       <div class="pipe-arrow">↓</div>
       <div class="pipe-step">
         <div class="pipe-box">
-          <div class="step-label">Étape 4</div>
-          <div class="step-title">Vérification sémantique (software + LLM)</div>
-          <div class="step-desc">Pour le code : exécution sandboxée via MCP, comparaison d'outputs. Le LLM n'intervient que sur ce que le software ne peut pas trancher. Pour le texte : LLM juge (Sonnet) sur un sous-ensemble filtré par l'étape 3.</div>
-          <div class="step-cost">Coût : ~5-15€/adapter (Sonnet sur volume réduit)</div>
-        </div>
-      </div>
-      <div class="pipe-arrow">↓</div>
-      <div class="pipe-step">
-        <div class="pipe-box">
-          <div class="step-label">Étape 5</div>
-          <div class="step-title">Déduplication</div>
-          <div class="step-desc">Hash sur contenu normalisé. Détection des doublons sémantiques proches via embedding. Suppression des variantes trop similaires qui n'apportent pas de diversité.</div>
-          <div class="step-cost">Coût : ~0 (déterministe) + embedding si similarité sémantique</div>
-        </div>
-      </div>
-      <div class="pipe-arrow">↓</div>
-      <div class="pipe-step">
-        <div class="pipe-box">
-          <div class="step-label">Étape 6</div>
-          <div class="step-title">Couverture des catégories</div>
-          <div class="step-desc">Clustering des données validées. Comparaison avec les catégories attendues définies par l'advisor. Identification des gaps → recommandations ciblées de collecte supplémentaire.</div>
-          <div class="step-cost">Coût : ~0.20€ (embedding + clustering local)</div>
-        </div>
-      </div>
-      <div class="pipe-arrow">↓</div>
-      <div class="pipe-step">
-        <div class="pipe-box">
-          <div class="step-label">Étape 7</div>
-          <div class="step-title">Augmentation (optionnelle)</div>
-          <div class="step-desc">Uniquement sur les données ayant passé TOUTES les étapes précédentes. Inspirée de la data augmentation en Computer Vision : transformations qui préservent la relation sémantique. Vérifiée par exécution.</div>
-          <div class="step-cost">Coût : ~3-10€/adapter (Sonnet pour génération + vérification)</div>
-        </div>
-      </div>
-      <div class="pipe-arrow">↓</div>
-      <div class="pipe-step">
-        <div class="pipe-box">
-          <div class="step-label">Étape 8</div>
-          <div class="step-title">Transformation → format entraînable</div>
-          <div class="step-desc">Transformation en paires {prompt, completion} via templates YAML (config/transforms/). C'est LA SEULE étape où le format d'entraînement est appliqué. Formatage final pour MLX-LM LoRA.</div>
-          <div class="step-cost">Coût : ~0.20€ (Haiku pour formatage)</div>
+          <div class="step-label">Étape 5 — <code>pipeline/extract.py</code></div>
+          <div class="step-title">Formatage final pour MLX-LM <span class="tag tag-green">Implémenté</span></div>
+          <div class="step-desc">Applique les templates de chat (system prompt + special tokens) selon le modèle cible. Segmente train/valid (90/10). Output : JSONL ready for <code>mlx_lm.lora</code>. Les tokens spéciaux sont vérifiés avant toute utilisation.</div>
+          <div class="step-cost">Coût : 0 — local</div>
         </div>
       </div>
     </div>
 
     <div class="card warning">
-      <div class="card-title">⚠ Point critique — Ordre inviolable</div>
-      <p>La transformation en paires {prompt, completion} se fait <strong>uniquement à l'étape 8</strong>. Les étapes 1 à 7 opèrent sur les données dans leur schéma natif (description/code, task_name/code, etc.). Appliquer le format d'entraînement plus tôt pollue la qualification et masque les problèmes de qualité.</p>
+      <div class="card-title">⚠ Règle inviolable — Ordre des étapes</div>
+      <p>La transformation en paires {prompt, completion} se fait <strong>uniquement à l'étape 3 (pair_fuser)</strong>. Les étapes 1-2 opèrent sur les données dans leur schéma natif. Les enregistrements monolingues en datalake/raw/ sont une étape normale et attendue — ce n'est pas un bug. Le comptage de couverture à l'étape 1 mesure des enregistrements, pas des paires.</p>
     </div>
   </div>
 
@@ -461,36 +447,40 @@
 
     <p>Inspirée de la <strong>data augmentation en Computer Vision</strong> : en CV, une rotation d'image préserve le label (un chat reste un chat). En MLOps, la règle équivalente est que toute transformation doit préserver la relation sémantique entre les données.</p>
 
-    <div class="card warning">
-      <div class="card-title">⚠ Condition préalable stricte</div>
-      <p>L'augmentation ne s'applique <strong>que sur des données ayant passé TOUS les filtres de qualité</strong>. Jamais sur de la data brute ou partiellement validée. Augmenter de la mauvaise data ne fait qu'amplifier le bruit.</p>
+    <div class="card decision">
+      <div class="card-title">✓ Implémenté dans <code>pipeline/clean_raw.py</code></div>
+      <p>L'augmentation est intégrée à <code>clean_raw.py</code>, appliquée à la fin après tous les filtres. Seuil d'éligibilité : score heuristique ≥ <strong>0.65</strong>. Max <strong>2 variantes</strong> par enregistrement. Priorité aux clusters sous-représentés identifiés par K-means. Les transformations de code sont vérifiées par AST Python (pas de LLM pour les transformations de base).</p>
     </div>
 
-    <h3 class="sub">Transformations valides</h3>
+    <div class="card warning">
+      <div class="card-title">⚠ Condition préalable stricte</div>
+      <p>L'augmentation ne s'applique <strong>que si le volume est insuffisant</strong> (< cible × 0.5) ET uniquement sur les enregistrements ≥ 0.65 de score heuristique. Jamais sur de la data brute, partiellement validée, ou quand le volume est déjà atteint.</p>
+    </div>
+
+    <h3 class="sub">Transformations implémentées (Python, AST-vérifié)</h3>
     <div class="rule-box">
-      <div class="rule-label">Ce qui préserve la relation sémantique</div>
+      <div class="rule-label">Transformations disponibles dans clean_raw.py</div>
       <ul>
-        <li><strong>Renommage de variables</strong> — x, y, z → noms sémantiques (count, index, result)</li>
-        <li><strong>Variations de style</strong> — même algorithme en impératif vs fonctionnel</li>
-        <li><strong>Montée en complexité contrôlée</strong> — ajouter gestion d'erreurs, cas limites, types</li>
-        <li><strong>Équivalents algorithmiques</strong> — bubble sort ↔ insertion sort (même complexité cognitive)</li>
+        <li><strong>Renommage d'identifiants</strong> — variables courtes (i, x, n) → noms sémantiques (count, value, size). Vérifié par AST Python.</li>
+        <li><strong>Swap de style boucle</strong> — for → while avec logique équivalente. Vérifié par AST.</li>
+        <li><strong>Paraphrase de description</strong> — reformulation via template simple (pas de LLM). "Implémentez X" → "Écrivez une fonction qui X".</li>
       </ul>
     </div>
 
     <h3 class="sub">Transformations invalides (GIGO)</h3>
     <div class="rule-box">
-      <div class="rule-label">Ce qui introduit du bruit</div>
+      <div class="rule-label">Ce qui introduit du bruit — jamais appliqué</div>
       <ul>
         <li><strong>Traduction automatique des commentaires</strong> sans compréhension du code</li>
         <li><strong>Substitution de tokens aléatoire</strong> — équivalent du bruit gaussien en CV</li>
-        <li><strong>Code non vérifiable</strong> — toute augmentation doit être vérifiée par exécution</li>
+        <li><strong>Code non vérifiable</strong> — toute augmentation doit être vérifiable par analyse statique</li>
         <li><strong>Généralisation excessive</strong> — créer des cas qui n'existent pas dans la vraie base client</li>
       </ul>
     </div>
 
-    <div class="card decision">
-      <div class="card-title">✓ Règle de vérification — Exécution obligatoire</div>
-      <p>Pour le code : outputs identiques sur un ensemble d'inputs de test = augmentation valide. Pour le texte : LLM juge vérifie la cohérence sémantique. Augmenter peu mais rigoureusement — pas d'augmentation massive avec vérification par échantillon.</p>
+    <div class="card info">
+      <div class="card-title">Extensibilité — Ajouter des transformations</div>
+      <p>La fonction <code>augment_record(r)</code> dans <code>clean_raw.py</code> est le point d'extension. Chaque transformation retourne une liste de variants. Pour les langues non-Python (Java, Rust, etc.) : les transformations actuelles sautent les records non-Python sans erreur — à étendre avec les parsers correspondants.</p>
     </div>
   </div>
 
@@ -655,7 +645,7 @@
       <h2>Agents et outils à construire</h2>
     </div>
 
-    <p>Liste des agents et outils nécessaires au pipeline de données. <strong>Aucun n'est encore construit</strong> — ce document sert de feuille de route. Ils doivent tous être construits avant d'être utilisés.</p>
+    <p>Liste des agents et outils nécessaires au pipeline de données. Certains sont déjà implémentés — les statuts ci-dessous reflètent l'état réel au 2026-05-22.</p>
 
     <h3 class="sub">Agents LLM</h3>
     <div class="agents-grid">
@@ -757,34 +747,45 @@
     <div class="agents-grid">
 
       <div class="agent-card tool-card">
-        <div class="agent-name">pipeline/cluster.py</div>
-        <div class="agent-role">Clustering des données validées par adapter. Utilise les embeddings nomic-embed-text (Ollama local). Produit les clusters et les compare aux catégories attendues du YAML adapter.</div>
+        <div class="agent-name">pipeline/clean_raw.py <span class="tag tag-green">Implémenté</span></div>
+        <div class="agent-role">Nettoyage sémantique complet des enregistrements monolingues bruts. 7 composants : dédup exacte, scoring heuristique (seuil 0.55), dédup sémantique (cosine ≥ 0.92), scoring pertinence (seuil 0.30), clustering K-means (k=8), contrôle volume, augmentation ciblée (seuil 0.65). CLI : <code>--project &lt;id&gt;</code>, <code>--dry-run</code>.</div>
         <div class="agent-details">
-          <div class="agent-detail"><strong>Input :</strong> datalake/.../validated/ + YAML adapter (catégories attendues)</div>
-          <div class="agent-detail"><strong>Output :</strong> rapport de couverture JSON + gaps identifiés</div>
+          <div class="agent-detail"><strong>Input :</strong> datalake/projects/{id}/raw/*.jsonl</div>
+          <div class="agent-detail"><strong>Output :</strong> datalake/projects/{id}/clean_raw/*.jsonl + rapport JSON</div>
+          <div class="agent-detail"><strong>Étape pipeline :</strong> 2 — avant pair_fuser</div>
         </div>
       </div>
 
       <div class="agent-card tool-card">
-        <div class="agent-name">pipeline/deduplicate.py</div>
-        <div class="agent-role">Déduplication à deux niveaux : hash exact sur contenu normalisé, puis similarité sémantique via embedding pour détecter les quasi-doublons.</div>
+        <div class="agent-name">pipeline/cluster.py <span class="tag tag-green">Implémenté</span></div>
+        <div class="agent-role">Clustering des données par adapter. Utilisé en interne par clean_raw.py (K-means sur embeddings). Peut être appelé indépendamment pour analyser la couverture après collecte.</div>
         <div class="agent-details">
-          <div class="agent-detail"><strong>Input :</strong> datalake/.../raw/consolidated.jsonl</div>
-          <div class="agent-detail"><strong>Output :</strong> fichier dédupliqué + rapport des rejets</div>
+          <div class="agent-detail"><strong>Input :</strong> datalake/.../raw/ ou clean_raw/</div>
+          <div class="agent-detail"><strong>Output :</strong> rapport de couverture + gaps identifiés</div>
         </div>
       </div>
 
       <div class="agent-card tool-card">
-        <div class="agent-name">pipeline/transform.py</div>
-        <div class="agent-role">Transformation des données validées en paires {prompt, completion} selon le template déclaré dans config/transforms/. Seule étape où le format d'entraînement est appliqué.</div>
+        <div class="agent-name">pipeline/pair_fuser.py <span class="tag tag-yellow">Planifié</span></div>
+        <div class="agent-role">Fusion des enregistrements monolingues en paires {prompt, completion} selon le template déclaré dans config/transforms/. Pour code_migration : joint par task_name + filtre par lang. Seule étape où le format d'entraînement est appliqué.</div>
         <div class="agent-details">
-          <div class="agent-detail"><strong>Input :</strong> datalake/.../validated/ + config/transforms/{template}.yaml</div>
-          <div class="agent-detail"><strong>Output :</strong> datalake/.../ready/pairs.jsonl</div>
+          <div class="agent-detail"><strong>Input :</strong> datalake/.../clean_raw/ + config/transforms/{template}.yaml</div>
+          <div class="agent-detail"><strong>Output :</strong> datalake/.../processed/pairs.jsonl</div>
+          <div class="agent-detail"><strong>Étape pipeline :</strong> 3 — après clean_raw, avant clean.py</div>
         </div>
       </div>
 
       <div class="agent-card tool-card">
-        <div class="agent-name">pipeline/recommend.py</div>
+        <div class="agent-name">pipeline/transform.py <span class="tag tag-green">Implémenté</span></div>
+        <div class="agent-role">Version alternative de fusion de paires depuis templates YAML. Complémentaire à pair_fuser pour les cas doc_to_code (renommage direct description→prompt, code→completion sans fusion multi-lang).</div>
+        <div class="agent-details">
+          <div class="agent-detail"><strong>Input :</strong> datalake/.../clean_raw/ + config/transforms/{template}.yaml</div>
+          <div class="agent-detail"><strong>Output :</strong> datalake/.../processed/pairs.jsonl</div>
+        </div>
+      </div>
+
+      <div class="agent-card tool-card">
+        <div class="agent-name">pipeline/recommend.py <span class="tag tag-yellow">Planifié</span></div>
         <div class="agent-role">Analyse les métriques post-entraînement MLflow et les gaps de couverture pour produire des recommandations ciblées d'ajout de données par catégorie de faiblesse.</div>
         <div class="agent-details">
           <div class="agent-detail"><strong>Input :</strong> MLflow run_id + rapport couverture cluster.py</div>
@@ -802,91 +803,77 @@
       <h2>Ordre de construction recommandé</h2>
     </div>
 
-    <p>Construire tous les outils avant de les utiliser. Cet ordre respecte les dépendances : chaque outil s'appuie sur les précédents.</p>
+    <p>Ordre de construction respectant les dépendances. Statuts au 2026-05-22.</p>
 
     <div class="roadmap">
       <div class="roadmap-item">
-        <div class="roadmap-num">1</div>
+        <div class="roadmap-num" style="background:var(--teal);color:white;border-color:var(--teal)">✓</div>
         <div class="roadmap-content">
-          <div class="roadmap-title">config/verifiers/registry.yaml <span class="tag tag-green">Config</span></div>
-          <div class="roadmap-desc">Registre des MCP servers disponibles — le référentiel que tous les autres composants consultent. Définit le contrat d'interface.</div>
+          <div class="roadmap-title">agents/ — Collecteurs génériques <span class="tag tag-green">Fait</span></div>
+          <div class="roadmap-desc"><code>rosetta_collector.py</code> (multilang_wiki), <code>doc_collector.py</code> (doc_crawl), <code>web_collector.py</code>. Output neutre sans prompt/completion. Paramètres langues via CLI.</div>
         </div>
       </div>
       <div class="roadmap-item">
-        <div class="roadmap-num">2</div>
+        <div class="roadmap-num" style="background:var(--teal);color:white;border-color:var(--teal)">✓</div>
         <div class="roadmap-content">
-          <div class="roadmap-title">mcp/data-quality <span class="tag tag-cyan">MCP</span></div>
-          <div class="roadmap-desc">Outils déterministes sans dépendances. Actif dès l'étape 2 du pipeline. Coût nul — à construire en priorité pour réduire le volume traité par les LLMs en aval.</div>
+          <div class="roadmap-title">pipeline/clean_raw.py — Nettoyage sémantique brut <span class="tag tag-green">Fait</span></div>
+          <div class="roadmap-desc">7 composants implémentés. Dry-run validé sur migrator (15 337 records, 7 881 dupes exactes supprimées). Embedding cascade : Bedrock → Ollama → TF-IDF.</div>
         </div>
       </div>
       <div class="roadmap-item">
-        <div class="roadmap-num">3</div>
+        <div class="roadmap-num" style="background:var(--teal);color:white;border-color:var(--teal)">✓</div>
         <div class="roadmap-content">
-          <div class="roadmap-title">mcp/code-executor <span class="tag tag-cyan">MCP</span></div>
-          <div class="roadmap-desc">Exécution sandboxée générique. Prérequis pour le TDV (scoring code) et pour la vérification des augmentations. Python natif d'abord, Docker pour les autres langages.</div>
+          <div class="roadmap-title">pipeline/transform.py + cluster.py <span class="tag tag-green">Fait</span></div>
+          <div class="roadmap-desc">Transformation depuis templates config/transforms/. Clustering K-means intégré à clean_raw.py.</div>
         </div>
       </div>
       <div class="roadmap-item">
         <div class="roadmap-num">4</div>
         <div class="roadmap-content">
-          <div class="roadmap-title">pipeline/deduplicate.py <span class="tag tag-orange">Script</span></div>
-          <div class="roadmap-desc">Dépend uniquement du datalake. Doit tourner avant tout scoring LLM pour ne pas payer pour scorer des doublons.</div>
+          <div class="roadmap-title">pipeline/pair_fuser.py — Fusion en paires <span class="tag tag-yellow">Prochain</span></div>
+          <div class="roadmap-desc">Aligne les enregistrements monolingues (après clean_raw) en paires {prompt, completion}. Pour code_migration : joint par task_name + filtre src_lang/tgt_lang. Prérequis pour pouvoir lancer clean.py et l'entraînement.</div>
         </div>
       </div>
       <div class="roadmap-item">
         <div class="roadmap-num">5</div>
         <div class="roadmap-content">
-          <div class="roadmap-title">agents/data-scorer <span class="tag tag-purple">Agent LLM</span></div>
-          <div class="roadmap-desc">Dépend de mcp/data-quality (pré-filtre) et du registre verifiers. Premier agent LLM du pipeline — son routing Haiku/Sonnet doit être calibré sur des exemples réels.</div>
+          <div class="roadmap-title">config/verifiers/registry.yaml <span class="tag tag-blue">Config</span></div>
+          <div class="roadmap-desc">Registre des MCP servers disponibles. Définit le contrat d'interface pour les verifiers recommandés par l'advisor.</div>
         </div>
       </div>
       <div class="roadmap-item">
         <div class="roadmap-num">6</div>
         <div class="roadmap-content">
-          <div class="roadmap-title">agents/semantic-judge <span class="tag tag-purple">Agent LLM</span></div>
-          <div class="roadmap-desc">Dépend de mcp/code-executor. N'intervient qu'après que le software a traité les cas déterministes.</div>
+          <div class="roadmap-title">mcp/code-executor <span class="tag tag-cyan">MCP</span></div>
+          <div class="roadmap-desc">Exécution sandboxée générique. Prérequis pour la validation TDV des paires de code. Python natif d'abord, Docker pour les autres langages.</div>
         </div>
       </div>
       <div class="roadmap-item">
         <div class="roadmap-num">7</div>
         <div class="roadmap-content">
-          <div class="roadmap-title">pipeline/cluster.py <span class="tag tag-orange">Script</span></div>
-          <div class="roadmap-desc">Dépend des données validées (étapes 2-4) et des embeddings Ollama. Prérequis pour coverage-analyst et recommend.py.</div>
+          <div class="roadmap-title">agents/semantic-judge <span class="tag tag-purple">Agent LLM</span></div>
+          <div class="roadmap-desc">Dépend de mcp/code-executor. N'intervient qu'après que le software a traité les cas déterministes (vérification paires code).</div>
         </div>
       </div>
       <div class="roadmap-item">
         <div class="roadmap-num">8</div>
         <div class="roadmap-content">
-          <div class="roadmap-title">pipeline/transform.py <span class="tag tag-orange">Script</span></div>
-          <div class="roadmap-desc">Transformation finale en paires d'entraînement. Dépend des templates config/transforms/ (déjà partiellement existants).</div>
-        </div>
-      </div>
-      <div class="roadmap-item">
-        <div class="roadmap-num">9</div>
-        <div class="roadmap-content">
-          <div class="roadmap-title">agents/data-augmentor <span class="tag tag-purple">Agent LLM</span></div>
-          <div class="roadmap-desc">Dépend de mcp/code-executor (vérification) et de données déjà validées. Construit en dernier car optionnel — le pipeline fonctionne sans lui.</div>
-        </div>
-      </div>
-      <div class="roadmap-item">
-        <div class="roadmap-num">10</div>
-        <div class="roadmap-content">
           <div class="roadmap-title">pipeline/recommend.py + agents/coverage-analyst <span class="tag tag-orange">Script</span> <span class="tag tag-purple">Agent LLM</span></div>
-          <div class="roadmap-desc">Dépend de MLflow (métriques entraînement) et de cluster.py. Construit après le premier cycle entraînement complet — nécessite des données réelles d'évaluation pour être calibré.</div>
+          <div class="roadmap-desc">Dépend de MLflow (métriques entraînement) et de cluster.py. À construire après le premier cycle entraînement complet — nécessite des données réelles d'évaluation pour être calibré.</div>
         </div>
       </div>
     </div>
 
     <div class="card decision" style="margin-top:24px">
-      <div class="card-title">✓ Principe — Construire avant d'utiliser</div>
-      <p>Aucun outil ne doit être invoqué dans un pipeline réel avant d'avoir été testé en isolation. L'ordre ci-dessus garantit que chaque outil est disponible et validé quand le suivant en a besoin.</p>
+      <div class="card-title">✓ Prochaine étape concrète — pair_fuser.py</div>
+      <p><code>pipeline/clean_raw.py</code> est prêt et validé. Le blocage actuel : les données propres sont monolingues, il faut <code>pair_fuser.py</code> pour former les paires d'entraînement avant de lancer <code>clean.py</code> et <code>extract.py</code>. C'est le prochain sprint.</p>
     </div>
   </div>
 
   <!-- FOOTER -->
   <div class="doc-footer">
     <span>MLOps Platform — Capgemini</span>
-    <span>Dernière mise à jour : 2026-05-21</span>
+    <span>Dernière mise à jour : 2026-05-22 — v1.1</span>
   </div>
 
 </div>

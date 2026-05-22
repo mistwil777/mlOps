@@ -25,33 +25,26 @@ from pipeline.utils.logger import get_logger
 logger = get_logger("mlops.rag_index")
 
 _SEEDS_INDEX = Path("config/rag_seeds/index.yaml")
-_EMBED_DIM   = 768  # nomic-embed-text v1.5
+_EMBED_DIM   = None  # resolved lazily from active backend (1024 Bedrock / 768 nomic)
 _COLLECTION  = "patterns"
 
-_ST_MODEL = None
+from pipeline.utils.embeddings import embed as _embed_texts, embed_dim as _embed_dim_fn  # noqa: E402
 
 
-def _st_embed(texts: list[str]) -> list[list[float]]:
-    global _ST_MODEL  # noqa: PLW0603
-    if _ST_MODEL is None:
-        from sentence_transformers import SentenceTransformer  # noqa: PLC0415
-        logger.info("Loading nomic-embed-text-v1.5 (first call only)…")
-        _ST_MODEL = SentenceTransformer("nomic-ai/nomic-embed-text-v1.5", trust_remote_code=True)
-    vecs = _ST_MODEL.encode(texts, normalize_embeddings=True)
-    return vecs.tolist()
+def _get_embed_dim() -> int:
+    global _EMBED_DIM  # noqa: PLW0603
+    if _EMBED_DIM is None:
+        _EMBED_DIM = _embed_dim_fn()
+    return _EMBED_DIM
+
+
+def _embed(texts: list[str]) -> list[list[float]]:
+    return _embed_texts(texts)
 
 
 def _dummy_embed(texts: list[str]) -> list[list[float]]:
     rng = np.random.default_rng(42)
-    return [rng.random(_EMBED_DIM).tolist() for _ in texts]
-
-
-def _embed(texts: list[str]) -> list[list[float]]:
-    try:
-        return _st_embed(texts)
-    except Exception as exc:
-        logger.warning("sentence-transformers unavailable (%s) — using dummy embeddings", exc)
-        return _dummy_embed(texts)
+    return [rng.random(_get_embed_dim()).tolist() for _ in texts]
 
 
 def _qdrant_client(host: str = "localhost", port: int = 6333) -> QdrantClient:
@@ -90,7 +83,7 @@ class RagIndex:
         if self._collection not in existing:
             self._client.create_collection(
                 collection_name=self._collection,
-                vectors_config=VectorParams(size=_EMBED_DIM, distance=Distance.COSINE),
+                vectors_config=VectorParams(size=_get_embed_dim(), distance=Distance.COSINE),
             )
             self._client.create_payload_index(
                 collection_name=self._collection,
