@@ -943,11 +943,6 @@
       return;
     }
 
-    // Auto-resume last session if the user refreshed mid-session
-    if (savedAnalyses.length > 0) {
-      // Load most recent (index is sorted newest-first)
-      loadAnalysis(savedAnalyses[0].key);
-    }
   });
 
   // Sauvegarde automatique à chaque modification des adapters, sources ou score
@@ -1019,7 +1014,13 @@
         </div>
       {/if}
 
-      <button class="btn btn-primary btn-lg" onclick={() => step = 1}>
+      <button class="btn btn-primary btn-lg" onclick={() => {
+        need = ''; projName = ''; projectId = ''; runId = '';
+        adapters = []; orchestrator = null; selEval = null;
+        recommendation = null; uploadedDocs = []; sourceEntries = [];
+        generatedPairsStore = {}; collectTopic = ''; step2Tab = 'architecture';
+        step = 1;
+      }}>
         Nouvelle analyse →
       </button>
     </div>

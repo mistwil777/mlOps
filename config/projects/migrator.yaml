@@ -62,33 +62,16 @@ adapters:
     collector_type: multilang_wiki
     value: classes
     estimated_pairs: 110
-  - label: Docs Python — tutoriel officiel
+  - label: Python 3 official docs
     collector_type: doc_crawl
     value: https://docs.python.org/3/
     lang_hint: python
     estimated_pairs: 100
-    fusible: true
-    lang_pair_key: python-java
-  - label: Docs Java 21 — référence officielle
+  - label: Java 21 official docs
     collector_type: doc_crawl
     value: https://docs.oracle.com/en/java/javase/21/
     lang_hint: java
     estimated_pairs: 100
-    fusible: true
-    lang_pair_key: python-java
-  - label: Docs Java — JEPs OpenJDK
-    collector_type: doc_crawl
-    value: https://openjdk.org/jeps/
-    lang_hint: java
-    estimated_pairs: 60
-  - label: GitHub — migration Java vers Python
-    collector_type: web_crawl
-    value: https://github.com/javaparser/javaparser
-    estimated_pairs: 80
-  - label: GitHub Search — java to python conversion
-    collector_type: web_crawl
-    value: https://github.com/search?q=java+to+python+conversion
-    estimated_pairs: 80
   - label: TheAlgorithms Python
     collector_type: web_crawl
     value: https://github.com/TheAlgorithms/Python
@@ -98,9 +81,10 @@ adapters:
     value: https://github.com/TheAlgorithms/Java
     estimated_pairs: 100
   data_sources:
-  - code source Java du projet
-  - output de dependency-import-mapper
-  - corpus de paires Java→Python idiomatiques
+  - Rosetta Code (Java/Python bilingue)
+  - Python 3 official docs
+  - Java 21 official docs
+  - TheAlgorithms Python/Java
   score: 15
   team_score: 15
   pros:
@@ -128,36 +112,38 @@ adapters:
   estimated_pairs: 600
   rag_recommended: false
   source_configs:
-  - label: Rosetta Code — tests unitaires
-    collector_type: multilang_wiki
-    value: unit tests
-    estimated_pairs: 80
-  - label: Docs Python — unittest
+  - label: pytest official docs
     collector_type: doc_crawl
-    value: https://docs.python.org/3/
+    value: https://docs.pytest.org/
     lang_hint: python
-    estimated_pairs: 80
-  - label: Docs Java 21 — JUnit patterns
+    estimated_pairs: 120
+  - label: JUnit 5 official docs
     collector_type: doc_crawl
-    value: https://docs.oracle.com/en/java/javase/21/
+    value: https://junit.org/junit5/docs/current/user-guide/
     lang_hint: java
-    estimated_pairs: 70
-  - label: GitHub Search — junit to pytest migration
-    collector_type: web_crawl
-    value: https://github.com/search?q=junit+pytest+migration
     estimated_pairs: 100
-  - label: GitHub Search — java test to python conversion
+  - label: Python unittest standard library
+    collector_type: doc_crawl
+    value: https://docs.python.org/3/library/unittest.html
+    lang_hint: python
+    estimated_pairs: 70
+  - label: GitHub — JUnit to pytest real migrations
+    collector_type: web_crawl
+    value: https://github.com/search?q=junit+to+pytest+language:python+language:java&type=repositories
+    estimated_pairs: 150
+  - label: GitHub — java test to python conversion
     collector_type: web_crawl
     value: https://github.com/search?q=java+test+to+python+test+conversion
     estimated_pairs: 80
   - label: TheAlgorithms Java — tests
     collector_type: web_crawl
     value: https://github.com/TheAlgorithms/Java
-    estimated_pairs: 60
+    estimated_pairs: 70
   data_sources:
-  - dépôts open source avec suites de tests JUnit et pytest
-  - docs Python unittest/pytest
-  - docs Java JUnit
+  - pytest official docs
+  - JUnit 5 official docs
+  - Python unittest stdlib
+  - GitHub bilingue JUnit/pytest
   score: 16
   team_score: 17
   pros:
@@ -184,63 +170,42 @@ adapters:
   estimated_pairs: 1000
   rag_recommended: false
   source_configs:
-  - label: GitHub — dépôts de migration Java vers Python avec corrections documentées
-    collector_type: web_crawl
-    value: https://github.com/search?q=java+to+python+migration&type=repositories
-    estimated_pairs: 300
-  - label: Documentation officielle Python — anti-patterns et idiomes
-    collector_type: doc_crawl
-    value: https://docs.python-guide.org/writing/style/
-    lang_hint: python
-    estimated_pairs: 80
-  - label: PEP 8 — guide de style officiel Python
+  - label: PEP 8 — style guide officiel Python
     collector_type: doc_crawl
     value: https://peps.python.org/pep-0008/
     lang_hint: python
     estimated_pairs: 60
-  - label: Rosetta Code — comparaisons Java/Python pour détecter les écarts idiomatiques
+  - label: The Hitchhiker's Guide — writing style
+    collector_type: doc_crawl
+    value: https://docs.python-guide.org/writing/style/
+    lang_hint: python
+    estimated_pairs: 80
+  - label: Python typing — docs officielles
+    collector_type: doc_crawl
+    value: https://docs.python.org/3/library/typing.html
+    lang_hint: python
+    estimated_pairs: 80
+  - label: Rosetta Code — Java/Python idiom comparison
     collector_type: multilang_wiki
     value: Java
     estimated_pairs: 200
-  - label: Données synthétiques annotées manuellement issues des sorties de migration
-      Migrator
+  - label: GitHub — java-to-python migrations with fixes
+    collector_type: web_crawl
+    value: https://github.com/search?q=java+to+python+migration&type=repositories
+    estimated_pairs: 150
+  - label: Python design patterns repo
+    collector_type: web_crawl
+    value: https://github.com/faif/python-patterns
+    estimated_pairs: 70
+  - label: Paires manuelles annotées — sorties de migration Migrator
     collector_type: manual
     estimated_pairs: 360
-  - collector_type: web_crawl
-    value: https://realpython.com
-    label: Real Python - Java to Python Migration Guide
-    estimated_pairs: 120
-    lang_hint: python
-  - collector_type: web_crawl
-    value: https://realpython.com/java-python
-    label: Java to Python Migration Guide - Real Python
-    estimated_pairs: 120
-  - collector_type: web_crawl
-    value: https://github.com/faif/python-patterns
-    label: Python Design Patterns Repository
-    estimated_pairs: 95
-  - collector_type: doc_crawl
-    value: https://docs.oracle.com/en/java/javase/21/docs/technotes/guides/language/
-    label: Oracle Java SE Documentation - Language Basics
-    estimated_pairs: 150
-    lang_hint: java
-  - collector_type: web_crawl
-    value: https://github.com/jorenham/refactoring-scripts
-    label: Refactoring Python Code Examples
-    estimated_pairs: 85
-  - collector_type: doc_crawl
-    value: https://docs.python.org/3/library/typing.html
-    label: Python Typing and Type Hints Documentation
-    estimated_pairs: 110
-    lang_hint: python
   data_sources:
-  - dépôts GitHub de projets migrés Java→Python avec historique de corrections post-migration
-  - issues et PR de projets open source documentant des erreurs de traduction Java→Python
-  - benchmarks de qualité de code Python (PEP 8, pylint, flake8) appliqués à du code
-    migré
-  - documentation officielle Python sur les anti-patterns et les idiomes recommandés
-  - jeux de données synthétiques générés à partir des sorties des adaptateurs java-to-python-translator
-    et dependency-import-mapper avec annotations manuelles
+  - PEP 8 + Python style guides
+  - Python typing docs
+  - Rosetta Code Java/Python idiomes
+  - GitHub migrations Java→Python avec corrections
+  - Paires manuelles annotées
   score: 17
   team_score: 19
   pros:
@@ -277,70 +242,54 @@ adapters:
   estimated_pairs: 1000
   rag_recommended: false
   source_configs:
-  - label: Docs officielles Spring Boot — application properties reference
+  - label: Spring Boot application properties reference
     collector_type: doc_crawl
     value: https://docs.spring.io/spring-boot/docs/current/reference/html/application-properties.html
     lang_hint: java
     estimated_pairs: 180
-  - label: Docs officielles Pydantic Settings
+  - label: Pydantic Settings docs
     collector_type: doc_crawl
     value: https://docs.pydantic.dev/latest/concepts/pydantic_settings/
     lang_hint: python
     estimated_pairs: 120
-  - label: Docs officielles FastAPI — Settings and Environment Variables
+  - label: FastAPI — Settings and Environment Variables
     collector_type: doc_crawl
     value: https://fastapi.tiangolo.com/advanced/settings/
     lang_hint: python
     estimated_pairs: 80
-  - label: Docs officielles Flask — Configuration Handling
+  - label: Flask — Configuration Handling
     collector_type: doc_crawl
     value: https://flask.palletsprojects.com/en/latest/config/
     lang_hint: python
     estimated_pairs: 70
-  - label: Docs officielles python-dotenv
+  - label: python-dotenv docs
     collector_type: doc_crawl
     value: https://saurabh-kumar.com/python-dotenv/
     lang_hint: python
     estimated_pairs: 50
-  - label: Dépôts GitHub — migrations Spring Boot vers FastAPI/Flask avec fichiers
-      de config
+  - label: GitHub — Spring Boot to FastAPI/Flask config migrations
     collector_type: web_crawl
     value: https://github.com/search?q=spring+boot+to+fastapi+migration+config&type=repositories
     estimated_pairs: 150
-  - label: Articles Dev.to et Medium — Spring Boot to Python config migration
+  - label: 12 Factor App — configuration
+    collector_type: doc_crawl
+    value: https://12factor.net/config
+    lang_hint: python
+    estimated_pairs: 40
+  - label: Dev.to — Spring Boot to Python config migration
     collector_type: web_crawl
     value: https://dev.to/search?q=spring+boot+python+migration+configuration
-    estimated_pairs: 100
-  - label: 'Paires manuelles — cas complexes : profils multi-env, datasources, sécurité
-      OAuth2, propriétés custom'
+    estimated_pairs: 80
+  - label: Paires manuelles — profils multi-env, OAuth2, datasources
     collector_type: manual
     estimated_pairs: 250
-  - collector_type: doc_crawl
-    value: https://docs.spring.io/spring-boot/docs/current/reference/html/appendix-application-properties.html
-    label: Spring Boot Application Properties Reference
-    estimated_pairs: 150
-    lang_hint: java
-  - collector_type: web_crawl
-    value: https://github.com/topics/spring-boot-to-fastapi
-    label: Real-world Spring to FastAPI migration examples
-    estimated_pairs: 120
-  - collector_type: doc_crawl
-    value: https://docs.pydantic.dev/latest/concepts/pydantic_settings/#customization
-    label: Pydantic BaseSettings Advanced Configuration
-    estimated_pairs: 90
-    lang_hint: python
-  - collector_type: web_crawl
-    value: https://github.com/yaml/pyyaml
-    label: YAML Configuration in Python Applications
-    estimated_pairs: 75
   data_sources:
-  - Documentation officielle Spring Boot (application properties reference)
-  - Documentation officielle Pydantic Settings
-  - Documentation officielle Flask configuration
-  - Documentation officielle FastAPI settings avec Pydantic
-  - Dépôts GitHub open-source de migrations Spring Boot vers Python
-  - Articles et guides de migration Spring vers FastAPI/Flask sur Dev.to et Medium
-  - Documentation python-decouple et python-dotenv
+  - Spring Boot application properties (officiel)
+  - Pydantic Settings + FastAPI + Flask config docs
+  - python-dotenv docs
+  - GitHub migrations Spring Boot → Python
+  - 12 Factor App
+  - Paires manuelles cas complexes
   score: 17
   team_score: 19
   pros:
@@ -382,58 +331,55 @@ adapters:
   estimated_pairs: 1060
   rag_recommended: false
   source_configs:
-  - label: Documentation officielle SQLAlchemy ORM — Mapping Classes
+  - label: SQLAlchemy ORM — Mapping Classes
     collector_type: doc_crawl
     value: https://docs.sqlalchemy.org/en/20/orm/mapping_styles.html
     lang_hint: python
     estimated_pairs: 120
-  - label: Documentation officielle SQLAlchemy ORM — Relationships
+  - label: SQLAlchemy ORM — Relationships
     collector_type: doc_crawl
     value: https://docs.sqlalchemy.org/en/20/orm/relationships.html
     lang_hint: python
     estimated_pairs: 100
-  - label: Documentation officielle Hibernate ORM — Mapping Guide
+  - label: SQLAlchemy Core — Table & Column
+    collector_type: doc_crawl
+    value: https://docs.sqlalchemy.org/en/20/core/metadata.html
+    lang_hint: python
+    estimated_pairs: 80
+  - label: Hibernate ORM User Guide
     collector_type: doc_crawl
     value: https://docs.jboss.org/hibernate/orm/6.4/userguide/html_single/Hibernate_User_Guide.html
     lang_hint: java
     estimated_pairs: 120
-  - label: Documentation officielle Jakarta Persistence (JPA) — Annotations
+  - label: Jakarta Persistence (JPA) spec annotations
     collector_type: doc_crawl
     value: https://jakarta.ee/specifications/persistence/3.1/jakarta-persistence-spec-3.1.html
     lang_hint: java
     estimated_pairs: 100
-  - label: Documentation officielle Tortoise ORM — Fields et Relations
+  - label: Spring Data JPA reference
     collector_type: doc_crawl
-    value: https://tortoise.github.io/fields.html
-    lang_hint: python
-    estimated_pairs: 80
-  - label: Documentation Alembic — Auto-generate Migrations
+    value: https://docs.spring.io/spring-data/jpa/docs/current/reference/html/
+    lang_hint: java
+    estimated_pairs: 100
+  - label: Alembic — auto-generate migrations
     collector_type: doc_crawl
     value: https://alembic.sqlalchemy.org/en/latest/autogenerate.html
     lang_hint: python
     estimated_pairs: 60
-  - label: GitHub — projets de migration Spring Boot vers FastAPI avec SQLAlchemy
+  - label: GitHub — Spring Boot to FastAPI + SQLAlchemy
     collector_type: web_crawl
     value: https://github.com/search?q=spring-boot+to+fastapi+sqlalchemy+migration&type=repositories
     estimated_pairs: 180
-  - label: Articles et guides de migration JPA vers SQLAlchemy
-    collector_type: web_crawl
-    value: https://medium.com/search?q=JPA+Hibernate+SQLAlchemy+migration
-    estimated_pairs: 100
-  - label: 'Paires manuelles annotées : entités JPA complexes → modèles SQLAlchemy
-      (héritage, embeddable, JPQL → queries)'
+  - label: Paires manuelles — héritage JPA, embeddable, JPQL
     collector_type: manual
     estimated_pairs: 200
   data_sources:
-  - Documentation officielle JPA / Jakarta Persistence
-  - Documentation officielle Hibernate ORM
-  - Documentation officielle SQLAlchemy (ORM et Core)
-  - Documentation officielle Tortoise ORM
-  - Documentation Alembic (migrations SQLAlchemy)
-  - Dépôts GitHub open-source de projets Spring Boot migrés vers FastAPI/Flask avec
-    SQLAlchemy
-  - Articles et tutoriels de migration JPA vers SQLAlchemy
-  - Exemples Rosetta Code sur la modélisation ORM multi-langages
+  - SQLAlchemy ORM + Core docs
+  - Hibernate ORM + Jakarta JPA specs
+  - Spring Data JPA reference
+  - Alembic migrations docs
+  - GitHub migrations JPA → SQLAlchemy
+  - Paires manuelles cas complexes
   score: 17
   team_score: 19
   pros:
@@ -483,15 +429,30 @@ adapters:
   estimated_pairs: 300
   rag_recommended: false
   source_configs:
-  - label: GitHub Search — LangGraph multi-agent orchestration
+  - label: LangGraph — official docs
+    collector_type: doc_crawl
+    value: https://langchain-ai.github.io/langgraph/
+    estimated_pairs: 80
+  - label: LangGraph — multi-agent patterns
+    collector_type: web_crawl
+    value: https://github.com/langchain-ai/langgraph/tree/main/examples
+    estimated_pairs: 100
+  - label: GitHub — LangGraph multi-agent orchestration
     collector_type: web_crawl
     value: https://github.com/search?q=langgraph+multi+agent+orchestration
     estimated_pairs: 80
-  - label: GitHub Search — pipeline routing state machine LLM
+  - label: GitHub — pipeline routing state machine LLM
     collector_type: web_crawl
     value: https://github.com/search?q=pipeline+routing+state+machine+LLM
     estimated_pairs: 60
-  data_sources: []
+  - label: LangChain — agent tooling patterns
+    collector_type: doc_crawl
+    value: https://python.langchain.com/docs/how_to/agent_executor/
+    estimated_pairs: 80
+  data_sources:
+  - LangGraph official docs + examples
+  - LangChain agent tooling
+  - GitHub multi-agent orchestration examples
   score: 14
   team_score: 18
   pros:

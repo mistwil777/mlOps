@@ -33,6 +33,39 @@ def _detect_available_ram_gb() -> float:
         return 16.0  # conservative default
 
 
+def check_collection_gate(project_config: dict[str, Any]) -> None:
+    """Raise RuntimeError if any adapter has not reached its minimum data threshold.
+
+    Reads per-adapter JSONL files from processed/clean_raw/<adapter>.jsonl.
+    Each adapter must have at least estimated_pairs * VOLUME_RATIO_LOW records.
+    Training is blocked until ALL adapters pass.
+    """
+    project_id = project_config.get("id") or project_config.get("name", "").lower()
+    adapters = project_config.get("adapters", [])
+    clean_dir = Path("datalake/projects") / project_id / "processed" / "clean_raw"
+
+    VOLUME_RATIO_LOW = 0.5  # mirrors clean_raw.py — must match
+
+    failures: list[str] = []
+    for adapter in adapters:
+        name   = adapter["name"]
+        target = adapter.get("estimated_pairs", 500)
+        min_required = int(target * VOLUME_RATIO_LOW)
+        jsonl_path = clean_dir / f"{name}.jsonl"
+
+        if not jsonl_path.exists():
+            failures.append(f"  {name}: file missing (0/{min_required} required)")
+            continue
+
+        count = sum(1 for line in jsonl_path.open() if line.strip())
+        if count < min_required:
+            failures.append(f"  {name}: {count}/{min_required} records (target={target})")
+
+    if failures:
+        msg = "\n".join(["Training blocked — adapters below minimum threshold:"] + failures)
+        raise RuntimeError(msg)
+
+
 class LoraTrainer:
     def __init__(self, project: str):
         self.project = project
@@ -96,6 +129,8 @@ class LoraTrainer:
 
         mlflow.set_tracking_uri(os.environ.get("MLFLOW_TRACKING_URI", "http://localhost:5001"))
         mlflow.set_experiment(experiment_name)
+
+        check_collection_gate(self.project_config)
 
         available_ram = _detect_available_ram_gb()
         config = self.get_optimal_config(self.project_config["model"], available_ram)

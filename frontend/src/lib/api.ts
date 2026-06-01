@@ -203,6 +203,7 @@ export const advisorRecommendSources = (body: {
   domain?: string;
   task_type?: string;
   existing_source_values?: string[];
+  existing_source_labels?: string[];
 }) => req<Array<{
   label: string;
   collector_type: string;

@@ -272,12 +272,18 @@ Return ONLY a raw JSON object (no markdown, no prose, start immediately with {{)
     "team_note": "une phrase"
   }},
   "rag_global": false,
+  "domain": "code",
+  "task_type": "generation",
   "notes": "deployment notes",
   "software_components": [
     "composant déterministe 1 — description courte",
     "composant déterministe 2 — description courte"
   ]
 }}
+
+The "domain" field MUST be one of: code, legal, hr, finance, defense, healthcare, sales, compliance, customer-support, other.
+The "task_type" field MUST be one of: migration, summarization, classification, qa, generation, review, extraction, translation, refactoring, documentation.
+Choose the values that best match the client need — they drive the data pipeline scoring strategy.
 """
 
 
@@ -377,6 +383,12 @@ def _update_project_config(project: str, recommendation: dict[str, Any], need: s
 
     cfg["multi_adapter"] = True
     cfg["adapters"] = adapter_entries
+
+    # domain and task_type are pipeline-critical — always update when advisor provides them
+    if recommendation.get("domain"):
+        cfg["domain"] = recommendation["domain"]
+    if recommendation.get("task_type"):
+        cfg["task_type"] = recommendation["task_type"]
 
     # Persist top-level recommendation context
     if recommendation.get("notes"):
@@ -961,6 +973,7 @@ class RecommendSourcesRequest(BaseModel):
     domain: str = ""
     task_type: str = ""
     existing_source_values: list[str] = []
+    existing_source_labels: list[str] = []
     model: str = _HAIKU_MODEL   # Haiku by default — cheap, fast, sufficient
 
 
@@ -1001,14 +1014,33 @@ Reply ONLY with a JSON array (no markdown, no prose):
 def recommend_sources(body: RecommendSourcesRequest) -> list[dict[str, Any]]:
     """Suggest additional sources for an adapter using Haiku (low cost)."""
     catalogue = _build_source_catalogue()
-    existing_str = "\n".join(f"  - {v}" for v in body.existing_source_values) or "  (none)"
+    # Build a deduplicated set of existing URLs/values for catalogue filtering
+    existing_values_set = {v.lower().rstrip("/") for v in body.existing_source_values if v}
+    # Filter catalogue lines that reference already-configured URLs
+    filtered_catalogue_lines = []
+    for line in catalogue.splitlines():
+        url_in_line = next((v for v in body.existing_source_values if v and v in line), None)
+        if not url_in_line:
+            filtered_catalogue_lines.append(line)
+    filtered_catalogue = "\n".join(filtered_catalogue_lines)
+
+    # Show both label and URL so the model can detect semantic duplicates
+    existing_entries = []
+    for i, v in enumerate(body.existing_source_values):
+        label = body.existing_source_labels[i] if i < len(body.existing_source_labels) else ""
+        if label:
+            existing_entries.append(f"  - {label} ({v})")
+        elif v:
+            existing_entries.append(f"  - {v}")
+    existing_str = "\n".join(existing_entries) or "  (none)"
+
     prompt = _RECOMMEND_SOURCES_TEMPLATE.format(
         adapter_name=body.adapter_name,
         adapter_description=body.adapter_description,
         domain=body.domain,
         task_type=body.task_type,
         existing_sources=existing_str,
-        source_catalogue=catalogue,
+        source_catalogue=filtered_catalogue,
     )
     try:
         response = _client.messages.create(
@@ -1029,7 +1061,13 @@ def recommend_sources(body: RecommendSourcesRequest) -> list[dict[str, Any]]:
         result = json.loads(clean)
         if not isinstance(result, list):
             raise ValueError("Expected JSON array")
-        return result
+        # Hard filter: drop anything whose value matches an existing source (exact or normalised)
+        deduped = [
+            s for s in result
+            if isinstance(s, dict)
+            and s.get("value", "").lower().rstrip("/") not in existing_values_set
+        ]
+        return deduped
     except (json.JSONDecodeError, ValueError) as exc:
         raise HTTPException(422, f"Model returned invalid JSON: {exc}\nRaw: {raw[:400]}")
 

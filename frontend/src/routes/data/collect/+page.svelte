@@ -85,13 +85,14 @@
     recSuggestions = [];
     recSelected = new Set();
     try {
-      const existing = (adapter.source_configs ?? []).map(s => s.value).filter((v): v is string => typeof v === 'string' && v.length > 0);
+      const existingSources = (adapter.source_configs ?? []).filter(s => typeof s.value === 'string' && s.value.length > 0);
       recSuggestions = await advisorRecommendSources({
         adapter_name: adapter.name,
         adapter_description: adapter.description ?? '',
         domain: selectedProject.domain ?? '',
         task_type: selectedProject.task_type ?? '',
-        existing_source_values: existing,
+        existing_source_values: existingSources.map(s => s.value as string),
+        existing_source_labels: existingSources.map(s => (s.label ?? '') as string),
       });
       // All selected by default
       recSelected = new Set(recSuggestions.map((_, i) => i));

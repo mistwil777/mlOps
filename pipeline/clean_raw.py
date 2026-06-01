@@ -4,20 +4,17 @@ Pipeline position:
     collect → [clean_raw] → pair_fuser → clean → extract → train
 
 Per-adapter workflow:
-    1. Exact deduplication      (hash on description+code)
-    2. Heuristic scoring        (code quality, length, syntax validity)
+    1. Exact deduplication      (hash on primary text fields)
+    2. Heuristic scoring        (domain-aware: code quality OR text quality)
     3. Semantic deduplication   (cosine similarity on embeddings, threshold ~0.92)
     4. Relevance scoring        (cosine similarity to adapter description)
     5. Volume control           (keep top-N if excess; augment qualifying records if deficit)
     6. Coverage clustering      (K-means → detect thematic gaps → guide augmentation targets)
-    7. Cross-adapter reassignment (records sémantically closer to another adapter → move them)
+    7. Cross-adapter reassignment (records semantically closer to another adapter → move them)
 
-Augmentation (CV-inspired) — only on records scoring above QUALITY_THRESHOLD:
-    - Identifier renaming       (variable/function names → generic equivalents)
-    - Semantic paraphrase       (description rewrite via Haiku — low cost)
-    - Structural variation      (code reformat: inline → multi-line, loop style swap)
-    Verification: augmented code must parse without AST error (Python) or pass
-    basic structural checks (other langs) before being accepted.
+Domain-aware scoring and augmentation (driven by project config `domain` field):
+    domain=code  → code keyword check, Python AST validation, identifier renaming, loop swap
+    domain=text  → entropy + length + boilerplate check, sentence reordering, paraphrase
 
 CLI:
     python -m pipeline.clean_raw --project <id> [--adapter <name>] [--dry-run]
@@ -52,8 +49,9 @@ logger = get_logger("mlops.clean_raw")
 QUALITY_THRESHOLD    = 0.55   # min heuristic score to keep a record
 AUGMENT_THRESHOLD    = 0.65   # min score to be eligible for augmentation
 SEM_DEDUP_THRESHOLD  = 0.92   # cosine similarity above which a record is a near-duplicate
-RELEVANCE_THRESHOLD  = 0.30   # min cosine sim to adapter description (weak filter only)
-VOLUME_RATIO_HIGH    = 1.5    # if collected > target × this → trim to target × 1.0
+RELEVANCE_THRESHOLD  = 0.05   # min cosine sim to adapter description — low because code vs prose
+                               # naturally has low cosine similarity even when on-topic
+VOLUME_RATIO_HIGH    = 1.1    # if collected > target × this → trim to target × 1.1 (hard cap)
 VOLUME_RATIO_LOW     = 0.5    # if collected < target × this → trigger augmentation
 MAX_AUG_PER_RECORD   = 2      # max synthetic variants produced per source record
 N_CLUSTERS_DEFAULT   = 8      # K for coverage clustering
@@ -97,7 +95,7 @@ def dedup_exact(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
-# ── 2. Heuristic scoring ──────────────────────────────────────────────────────
+# ── 2. Heuristic scoring (domain-aware) ──────────────────────────────────────
 
 def _has_valid_python_syntax(code: str) -> bool:
     try:
@@ -107,9 +105,13 @@ def _has_valid_python_syntax(code: str) -> bool:
         return False
 
 
+def _primary_text(r: dict[str, Any]) -> str:
+    """Return the main content field regardless of schema."""
+    return str(r.get("code") or r.get("text") or r.get("content") or r.get("prompt") or "")
+
+
 def _code_score(r: dict[str, Any]) -> float:
-    # Support both native-schema records (code/description) and legacy web_crawl (prompt/completion)
-    code  = str(r.get("code") or r.get("prompt") or "")
+    code  = _primary_text(r)
     desc  = str(r.get("description") or r.get("task_name") or r.get("completion") or "")
     lang  = str(r.get("lang") or "").lower()
 
@@ -118,7 +120,6 @@ def _code_score(r: dict[str, Any]) -> float:
 
     score = 0.0
 
-    # Length score (prefer 50–1500 chars)
     n = len(code)
     if n < 10:
         score += 0.0
@@ -127,44 +128,98 @@ def _code_score(r: dict[str, Any]) -> float:
     elif n <= 1500:
         score += 0.4
     else:
-        score += 0.3   # very long code blocks are less focused
+        score += 0.3
 
-    # Has code keywords (any language)
     CODE_KEYWORDS = ("def ", "class ", "return", "import", "public ", "private ",
                      "function", "=>", "void ", "int ", "if ", "for ", "while ")
     if any(kw in code for kw in CODE_KEYWORDS):
         score += 0.2
 
-    # Description present and non-trivial
     if len(desc.strip()) > 20:
         score += 0.15
 
-    # Python syntax validity bonus
     if lang == "python":
         if _has_valid_python_syntax(code):
             score += 0.15
         else:
             score -= 0.1
 
-    # Multi-line code bonus (more likely to be a real snippet)
     if code.count("\n") >= 3:
         score += 0.1
 
-    # Penalty: only metadata/prose masquerading as code
     if re.match(r"^[A-Z][a-z].*:$", code.strip().splitlines()[0]):
         score -= 0.15
 
     return min(1.0, max(0.0, score))
 
 
-def score_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _text_score(r: dict[str, Any]) -> float:
+    """Domain-agnostic quality score for prose/document records."""
+    import math as _math
+    from collections import Counter as _Counter
+
+    text = _primary_text(r)
+    desc = str(r.get("description") or r.get("title") or r.get("task_name") or "")
+
+    if not text.strip():
+        return 0.0
+
+    score = 0.0
+
+    # Length (prefer 100–4000 chars for prose)
+    n = len(text)
+    if n < 50:
+        score += 0.0
+    elif n < 100:
+        score += 0.2
+    elif n <= 4000:
+        score += 0.4
+    else:
+        score += 0.3
+
+    # Shannon entropy — filters nav/boilerplate/repetitive text
+    counts = _Counter(text)
+    total  = len(text)
+    entropy = -sum((c / total) * _math.log2(c / total) for c in counts.values())
+    if entropy >= 4.0:
+        score += 0.25
+    elif entropy >= 3.0:
+        score += 0.1
+    else:
+        score -= 0.15
+
+    # Has a non-trivial description/title
+    if len(desc.strip()) > 20:
+        score += 0.15
+
+    # Multi-sentence bonus (actual content, not a header)
+    sentence_count = len(re.findall(r"[.!?]+", text))
+    if sentence_count >= 3:
+        score += 0.1
+
+    # Penalty: navigation/boilerplate patterns
+    _BOILERPLATE = (
+        re.compile(r"lorem ipsum", re.IGNORECASE),
+        re.compile(r"click here", re.IGNORECASE),
+        re.compile(r"all rights reserved", re.IGNORECASE),
+        re.compile(r"cookie(s)? policy", re.IGNORECASE),
+        re.compile(r"^\s*(home|menu|search|login|sign in)\s*$", re.IGNORECASE | re.MULTILINE),
+    )
+    if any(p.search(text) for p in _BOILERPLATE):
+        score -= 0.3
+
+    return min(1.0, max(0.0, score))
+
+
+def score_records(records: list[dict[str, Any]], domain: str = "code") -> list[dict[str, Any]]:
+    scorer = _code_score if domain == "code" else _text_score
     out = []
     for r in records:
-        s = _code_score(r)
+        s = scorer(r)
         out.append({**r, "_heuristic_score": round(s, 4)})
     low = sum(1 for r in out if r["_heuristic_score"] < QUALITY_THRESHOLD)
-    logger.info("Heuristic scoring: %d/%d records below threshold %.2f",
-                low, len(out), QUALITY_THRESHOLD)
+    logger.info("Heuristic scoring (%s): %d/%d records below threshold %.2f",
+                domain, low, len(out), QUALITY_THRESHOLD)
     return out
 
 
@@ -253,10 +308,10 @@ def apply_volume_control(
     low_threshold  = int(target * VOLUME_RATIO_LOW)
 
     if n > high_threshold:
-        # Keep top-N by combined score
+        # Cap at target × VOLUME_RATIO_HIGH (e.g. +10%), keep best by score
         sorted_recs = sorted(records, key=_combined_score, reverse=True)
-        kept = sorted_recs[:target]
-        logger.info("Volume trim: %d → %d (target=%d)", n, len(kept), target)
+        kept = sorted_recs[:high_threshold]
+        logger.info("Volume trim: %d → %d (cap=%d target=%d)", n, len(kept), high_threshold, target)
         log_metric("raw_volume_trimmed", n - len(kept))
         return kept, "trimmed"
     elif n < low_threshold:
@@ -439,53 +494,59 @@ def _augment_paraphrase_desc(description: str, lang: str) -> str | None:
     return f"Implementation that {description[0].lower()}{description[1:]}" if len(description) > 5 else None
 
 
-def augment_record(r: dict[str, Any]) -> list[dict[str, Any]]:
-    """Produce up to MAX_AUG_PER_RECORD augmented variants of a qualifying record."""
-    code = str(r.get("code") or "")
-    desc = str(r.get("description") or r.get("task_name") or "")
-    lang = str(r.get("lang") or "").lower()
+def _augment_text_truncation(text: str) -> str | None:
+    """Keep only the first 2/3 of a long prose record — simulates partial excerpt."""
+    stripped = text.strip()
+    if len(stripped) < 300:
+        return None
+    cutoff = int(len(stripped) * 0.67)
+    # Snap to a sentence boundary
+    boundary = stripped.rfind(".", 0, cutoff)
+    if boundary < 100:
+        return None
+    result = stripped[:boundary + 1].strip()
+    return result if result != stripped else None
 
+
+def augment_record(r: dict[str, Any], domain: str = "code") -> list[dict[str, Any]]:
+    """Produce up to MAX_AUG_PER_RECORD augmented variants of a qualifying record."""
+    lang = str(r.get("lang") or "").lower()
+    now  = datetime.now(timezone.utc).isoformat()
     variants: list[dict[str, Any]] = []
 
-    # Transform 1: identifier renaming
-    renamed = _augment_identifier_renaming(code, lang)
-    if renamed:
-        variants.append({
-            **r,
-            "code": renamed,
-            "_augmented": True,
-            "_aug_type": "identifier_renaming",
-            "collected_at": datetime.now(timezone.utc).isoformat(),
-        })
+    if domain == "code":
+        code = str(r.get("code") or "")
+        desc = str(r.get("description") or r.get("task_name") or "")
 
-    if len(variants) >= MAX_AUG_PER_RECORD:
-        return variants
+        renamed = _augment_identifier_renaming(code, lang)
+        if renamed:
+            variants.append({**r, "code": renamed, "_augmented": True,
+                              "_aug_type": "identifier_renaming", "collected_at": now})
+        if len(variants) < MAX_AUG_PER_RECORD:
+            loop_swapped = _augment_loop_style(code, lang)
+            if loop_swapped:
+                variants.append({**r, "code": loop_swapped, "_augmented": True,
+                                  "_aug_type": "loop_style", "collected_at": now})
+        if not variants:
+            new_desc = _augment_paraphrase_desc(desc, lang)
+            if new_desc:
+                variants.append({**r, "description": new_desc, "_augmented": True,
+                                  "_aug_type": "desc_paraphrase", "collected_at": now})
+    else:
+        # Prose/text domain — sentence reorder then truncation
+        text = _primary_text(r)
+        desc = str(r.get("description") or r.get("title") or r.get("task_name") or "")
 
-    # Transform 2: loop style swap
-    loop_swapped = _augment_loop_style(code, lang)
-    if loop_swapped:
-        variants.append({
-            **r,
-            "code": loop_swapped,
-            "_augmented": True,
-            "_aug_type": "loop_style",
-            "collected_at": datetime.now(timezone.utc).isoformat(),
-        })
-
-    if len(variants) >= MAX_AUG_PER_RECORD:
-        return variants
-
-    # Transform 3: description paraphrase (only if no code variant found)
-    if not variants:
         new_desc = _augment_paraphrase_desc(desc, lang)
         if new_desc:
-            variants.append({
-                **r,
-                "description": new_desc,
-                "_augmented": True,
-                "_aug_type": "desc_paraphrase",
-                "collected_at": datetime.now(timezone.utc).isoformat(),
-            })
+            variants.append({**r, "description": new_desc, "_augmented": True,
+                              "_aug_type": "desc_paraphrase", "collected_at": now})
+        if len(variants) < MAX_AUG_PER_RECORD:
+            truncated = _augment_text_truncation(text)
+            text_field = "text" if "text" in r else ("content" if "content" in r else "prompt")
+            if truncated:
+                variants.append({**r, text_field: truncated, "_augmented": True,
+                                  "_aug_type": "text_truncation", "collected_at": now})
 
     return variants[:MAX_AUG_PER_RECORD]
 
@@ -494,6 +555,7 @@ def augment_batch(
     records: list[dict[str, Any]],
     target: int,
     coverage: dict[str, Any] | None = None,
+    domain: str = "code",
 ) -> list[dict[str, Any]]:
     """Augment qualifying records until we approach target volume.
 
@@ -504,7 +566,6 @@ def augment_batch(
         logger.warning("No records above augmentation threshold %.2f — skipping augmentation", AUGMENT_THRESHOLD)
         return records
 
-    # Prioritise gap clusters if coverage available
     if coverage and coverage.get("gap_clusters") and coverage.get("labels"):
         gap_set = set(coverage["gap_clusters"])
         gap_idx  = {i for i, lbl in enumerate(coverage["labels"]) if lbl in gap_set}
@@ -516,9 +577,9 @@ def augment_batch(
     for r in eligible:
         if len(records) + len(augmented) >= target:
             break
-        augmented.extend(augment_record(r))
+        augmented.extend(augment_record(r, domain=domain))
 
-    logger.info("Augmentation: produced %d variants from %d eligible records", len(augmented), len(eligible))
+    logger.info("Augmentation (%s): produced %d variants from %d eligible records", domain, len(augmented), len(eligible))
     log_metric("raw_augmented", len(augmented))
     return records + augmented
 
@@ -532,11 +593,13 @@ def clean_adapter_records(
     target: int,
     n_clusters: int = N_CLUSTERS_DEFAULT,
     dry_run: bool = False,
+    domain: str = "code",
 ) -> dict[str, Any]:
     """Run the full clean_raw pipeline for one adapter. Returns report dict."""
     report: dict[str, Any] = {
         "adapter_name": adapter_name,
         "input_count":  len(records),
+        "domain":       domain,
         "steps":        {},
     }
 
@@ -545,7 +608,7 @@ def clean_adapter_records(
     report["steps"]["exact_dedup"] = len(records)
 
     # 2. Heuristic scoring + filter
-    records = score_records(records)
+    records = score_records(records, domain=domain)
     before = len(records)
     records = [r for r in records if r.get("_heuristic_score", 0) >= QUALITY_THRESHOLD]
     report["steps"]["heuristic_filter"] = len(records)
@@ -590,7 +653,7 @@ def clean_adapter_records(
     report["steps"]["volume_control"] = {"action": action, "count": len(records)}
 
     if action == "needs_augmentation" and not dry_run:
-        records = augment_batch(records, target=target, coverage=coverage)
+        records = augment_batch(records, target=target, coverage=coverage, domain=domain)
         report["steps"]["augmentation"] = len(records) - report["steps"]["volume_control"]["count"]
 
     report["output_count"] = len(records)
@@ -653,7 +716,8 @@ def main() -> None:
             ))
             logger.info("Cross-adapter reassignment complete")
 
-    full_report: dict[str, Any] = {"project": args.project, "adapters": {}}
+    domain = cfg.get("domain", "code")
+    full_report: dict[str, Any] = {"project": args.project, "domain": domain, "adapters": {}}
 
     for adapter in adapters:
         name   = adapter["name"]
@@ -661,7 +725,8 @@ def main() -> None:
         target = adapter.get("estimated_pairs", 500)
         recs   = records_by_adapter.get(name, [])
 
-        logger.info("=== Processing adapter: %s (%d records, target=%d) ===", name, len(recs), target)
+        logger.info("=== Processing adapter: %s (%d records, target=%d, domain=%s) ===",
+                    name, len(recs), target, domain)
 
         if not recs:
             logger.warning("[%s] No records found — skipping", name)
@@ -672,6 +737,7 @@ def main() -> None:
             recs, name, desc, target,
             n_clusters=args.n_clusters,
             dry_run=args.dry_run,
+            domain=domain,
         )
         if isinstance(result, tuple):
             report, cleaned = result
