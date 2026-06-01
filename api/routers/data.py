@@ -172,6 +172,7 @@ class CollectRequest(BaseModel):
     lang: Optional[str] = None          # for doc_crawl: "python" | "java" | …
     custom_tags: Optional[list[str]] = None  # for doc_crawl: custom HTML tags
     max_depth: Optional[int] = None     # for doc_crawl: crawl depth override
+    use_playwright: bool = False         # for doc_crawl: headless browser (bypasses JS/Cloudflare)
 
 
 @router.post("/collect")
@@ -205,6 +206,7 @@ async def start_collect(req: CollectRequest) -> dict[str, str]:
         job_id, req.project_id, req.topic, req.max_pairs, config,
         req.collector_type, req.source_value, req.adapter_name,
         req.langs, req.lang, req.custom_tags, req.max_depth,
+        req.use_playwright,
     ))
     return {"job_id": job_id}
 
@@ -225,6 +227,7 @@ async def _run_collect(
     lang: str | None = None,
     custom_tags: list[str] | None = None,
     max_depth: int | None = None,
+    use_playwright: bool = False,
 ) -> None:
     registry  = _load_collector_registry()
     collector = registry[collector_type]
@@ -272,17 +275,18 @@ async def _run_collect(
 
     # Map known request fields to their CLI arg names
     field_values: dict[str, Any] = {
-        "topic":       source_value or topic or None,
-        "url":         source_value or topic or None,
-        "max_tasks":   max_pairs,
-        "max_pages":   max_pairs,
-        "max_depth":   max_depth,
-        "lang":        lang or topic or None,
-        "langs":       effective_langs,
-        "custom_tags": custom_tags,
-        "domain":      config.get("domain", "code"),
-        "task_type":   config.get("task_type", "generation"),
-        "project":     project_id,
+        "topic":          source_value or topic or None,
+        "url":            source_value or topic or None,
+        "max_tasks":      max_pairs,
+        "max_pages":      max_pairs,
+        "max_depth":      max_depth,
+        "lang":           lang or topic or None,
+        "langs":          effective_langs,
+        "custom_tags":    custom_tags,
+        "domain":         config.get("domain", "code"),
+        "task_type":      config.get("task_type", "generation"),
+        "project":        project_id,
+        "use_playwright": use_playwright,
     }
 
     for field, cli_arg in cli_map.items():
@@ -291,7 +295,11 @@ async def _run_collect(
         val = field_values.get(field)
         if val is None:
             continue
-        if isinstance(val, list):
+        if isinstance(val, bool):
+            # Boolean fields map to bare flags — only append when True
+            if val:
+                extra_args.append(cli_arg)
+        elif isinstance(val, list):
             if val:
                 extra_args += [cli_arg] + [str(v) for v in val]
         else:

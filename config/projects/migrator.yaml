@@ -432,6 +432,7 @@ adapters:
   - label: LangGraph — official docs
     collector_type: doc_crawl
     value: https://langchain-ai.github.io/langgraph/
+    lang_hint: python
     estimated_pairs: 80
   - label: LangGraph — multi-agent patterns
     collector_type: web_crawl
@@ -448,6 +449,7 @@ adapters:
   - label: LangChain — agent tooling patterns
     collector_type: doc_crawl
     value: https://python.langchain.com/docs/how_to/agent_executor/
+    lang_hint: python
     estimated_pairs: 80
   data_sources:
   - LangGraph official docs + examples

@@ -35,9 +35,18 @@ _MIN_CODE_CHARS = 30
 _HTTP_TIMEOUT   = 20
 
 
-def _fetch_task_list(client: httpx.Client, limit: int = 500) -> list[str]:
-    """Return task names from Category:Programming_Tasks via paginated API."""
+def _fetch_task_list(client: httpx.Client, limit: int = 500, topic: str | None = None) -> list[str]:
+    """Return task names from Rosetta Code via the MediaWiki API.
+
+    Strategy:
+    - With topic: full-text search (srsearch) — covers cases where the category
+      API returns empty results due to Rosetta Code API restructuring.
+    - Without topic: allpages in namespace 0 as fallback.
+    Both paths also try Category:Programming_Tasks for backwards compat.
+    """
     tasks: list[str] = []
+
+    # 1. Category-based listing (original approach — may return empty on restructured API)
     params: dict[str, Any] = {
         "action": "query",
         "list": "categorymembers",
@@ -46,15 +55,39 @@ def _fetch_task_list(client: httpx.Client, limit: int = 500) -> list[str]:
         "cmnamespace": "0",
         "format": "json",
     }
-    while True:
+    while len(tasks) < limit:
         r = client.get(_ROSETTA_API, params=params)
         r.raise_for_status()
         data = r.json()
-        tasks.extend(m["title"] for m in data.get("query", {}).get("categorymembers", []))
+        batch = [m["title"] for m in data.get("query", {}).get("categorymembers", [])]
+        tasks.extend(batch)
         cont = data.get("continue")
-        if not cont or len(tasks) >= limit:
+        if not cont or not batch:
             break
         params.update(cont)
+
+    # 2. Full-text search — always run when a topic is given.
+    #    Category listing is alphabetical (not topic-filtered), so search results
+    #    are prepended to ensure topic-matching tasks survive the [:limit] slice.
+    if topic:
+        search_params: dict[str, Any] = {
+            "action": "query",
+            "list": "search",
+            "srsearch": topic,
+            "srlimit": str(min(limit, 500)),
+            "srnamespace": "0",
+            "format": "json",
+        }
+        r = client.get(_ROSETTA_API, params=search_params)
+        r.raise_for_status()
+        search_results = [
+            item["title"]
+            for item in r.json().get("query", {}).get("search", [])
+            if item["title"] not in tasks
+        ]
+        # Prepend search results so they are not truncated by [:limit]
+        tasks = search_results + tasks
+
     return tasks[:limit]
 
 
@@ -142,7 +175,8 @@ class RosettaCollector:
         ) as client:
             logger.info("Fetching Rosetta Code task list (limit=%d)…", max_tasks * 3)
             try:
-                all_tasks = _fetch_task_list(client, limit=max_tasks * 3)
+                search_topic = None if topic == "all" else topic
+                all_tasks = _fetch_task_list(client, limit=max_tasks * 3, topic=search_topic)
             except Exception as exc:
                 logger.error("Failed to fetch task list: %s", exc)
                 return []

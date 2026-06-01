@@ -184,9 +184,10 @@ def _extract_pairs_from_markdown(
 
     Strategy:
     1. Split into paragraphs/headings and code fences
-    2. For each code fence: take the non-empty text block immediately before it as description
-    3. Filter: code >= _MIN_CODE_CHARS, description >= _MIN_DESC_CHARS
-    4. If code has a lang annotation matching a different language than lang_hint, skip
+    2. For each code fence: take the non-empty text block immediately before it as description (may be empty)
+    3. Filter: drop trivially empty fences (< _MIN_CODE_CHARS and < 2 lines)
+    4. Skip fences whose lang annotation is a different real language than lang_hint
+    Description filtering and quality thresholds are enforced downstream in pipeline/clean_raw.py.
 
     Returns neutral records: {description, code, lang, source_url, collected_at}
     """
@@ -225,22 +226,23 @@ def _extract_pairs_from_markdown(
                 i += 1
                 continue
 
-            # Filter navigation artefacts: single-token fences like ">>>", "**", "_"
+            # Drop trivially empty fences (single token, no real content)
             code_lines = [l for l in code.splitlines() if l.strip()]
             if len(code_lines) < 2 and len(code) < _MIN_CODE_CHARS:
                 pending_text = ""
                 i += 1
                 continue
 
+            # Accept any code block regardless of whether a description precedes it.
+            # Description filtering belongs to pipeline/clean_raw.py, not here.
             desc = _best_description(pending_text)
-            if len(code) >= _MIN_CODE_CHARS and len(desc) >= _MIN_DESC_CHARS:
-                pairs.append({
-                    "description":  desc,
-                    "code":         code,
-                    "lang":         lang_hint,
-                    "source_url":   url,
-                    "collected_at": datetime.now(timezone.utc).isoformat(),
-                })
+            pairs.append({
+                "description":  desc,
+                "code":         code,
+                "lang":         lang_hint,
+                "source_url":   url,
+                "collected_at": datetime.now(timezone.utc).isoformat(),
+            })
             pending_text = ""
         i += 1
 
@@ -276,23 +278,23 @@ class DocCollector:
         max_pages: int = _MAX_PAGES,
         max_depth: int = _MAX_DEPTH,
         custom_tags: list[str] | None = None,
+        use_playwright: bool = False,
     ):
-        self.lang_hint   = lang_hint
-        self.max_pages   = max_pages
-        self.max_depth   = max_depth
-        self.custom_tags = custom_tags or []
+        self.lang_hint      = lang_hint
+        self.max_pages      = max_pages
+        self.max_depth      = max_depth
+        self.custom_tags    = custom_tags or []
+        self.use_playwright = use_playwright
 
     def collect(self, seed_url: str) -> list[dict[str, Any]]:
         visited: set[str] = set()
-        # The seed URL may be a directory index (ends with /) — treat it as a pure
-        # navigation page: follow its links but don't extract pairs from it and
-        # don't count it against the max_pages quota.
-        seed_is_index = seed_url.rstrip().endswith("/")
-        seed_path     = urlparse(seed_url).path
+        seed_path = urlparse(seed_url).path
 
         queue: list[tuple[str, int]] = [(seed_url, 0)]
         all_pairs: list[dict[str, Any]] = []
         content_count = 0  # pages from which extraction was attempted
+
+        fetch = self._crawl_page_playwright if self.use_playwright else None
 
         with _make_http_client() as client:
             while queue and content_count < self.max_pages:
@@ -303,31 +305,28 @@ class DocCollector:
                     continue
                 visited.add(url)
 
-                # Only the seed itself is treated as an index page
-                is_index_page = (url == seed_url) and seed_is_index
-
-                logger.info("[%d/%d] depth=%d %s%s",
-                            content_count + 1, self.max_pages, depth, url,
-                            " [index]" if is_index_page else "")
+                logger.info("[%d/%d] depth=%d %s",
+                            content_count + 1, self.max_pages, depth, url)
 
                 try:
-                    markdown, links = self._crawl_page(client, url)
+                    if fetch:
+                        markdown, links = fetch(url)
+                    else:
+                        markdown, links = self._crawl_page(client, url)
                 except Exception as exc:
                     logger.warning("Failed to crawl %s: %s", url, exc)
                     time.sleep(_RATE_LIMIT_S)
                     continue
 
-                if not is_index_page:
-                    content_count += 1
-                    pairs = _extract_pairs_from_markdown(
-                        markdown, url, self.lang_hint, custom_tags=self.custom_tags)
-                    all_pairs.extend(pairs)
-                    if pairs:
-                        logger.info("  -> %d pairs extracted", len(pairs))
+                content_count += 1
+                pairs = _extract_pairs_from_markdown(
+                    markdown, url, self.lang_hint, custom_tags=self.custom_tags)
+                all_pairs.extend(pairs)
+                if pairs:
+                    logger.info("  -> %d records extracted", len(pairs))
 
                 # Follow child links within the seed sub-path
-                if depth < self.max_depth or is_index_page:
-                    next_depth = depth if is_index_page else depth + 1
+                if depth < self.max_depth:
                     for link in links:
                         norm = _normalize_url(url, link)
                         if not norm or norm in visited:
@@ -339,7 +338,7 @@ class DocCollector:
                             continue
                         if norm == seed_url:
                             continue
-                        queue.append((norm, next_depth))
+                        queue.append((norm, depth + 1))
 
                 time.sleep(_RATE_LIMIT_S)
 
@@ -353,6 +352,60 @@ class DocCollector:
         html = r.text
         markdown = _html_to_markdown(html, custom_tags=self.custom_tags)
         links = _extract_links(html)
+        return markdown, links
+
+    def _crawl_page_playwright(self, url: str) -> tuple[str, list[str]]:
+        """Fetch page with a headless Chromium browser — bypasses JS challenges and
+        Cloudflare-style bot detection that block plain httpx requests."""
+        import random  # noqa: PLC0415
+        from playwright.sync_api import sync_playwright  # noqa: PLC0415
+
+        _USER_AGENTS = [
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        ]
+
+        ua = random.choice(_USER_AGENTS)
+        viewport = {
+            "width":  random.randint(1280, 1920),
+            "height": random.randint(800, 1080),
+        }
+
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            context = browser.new_context(
+                user_agent=ua,
+                viewport=viewport,
+                locale="en-US",
+            )
+            page = context.new_page()
+
+            # playwright-stealth: patches navigator.webdriver, WebGL, canvas fingerprint
+            try:
+                from playwright_stealth import stealth_sync  # type: ignore  # noqa: PLC0415
+                stealth_sync(page)
+            except ImportError:
+                pass
+
+            # Block images/fonts/media — faster crawl, irrelevant to code extraction
+            page.route("**/*.{png,jpg,jpeg,gif,svg,ico,woff,woff2,ttf,mp4,webm}",
+                       lambda route: route.abort())
+            try:
+                # Human-like delay before navigation (0.5–1.5s)
+                time.sleep(random.uniform(0.5, 1.5))
+                page.goto(url, wait_until="domcontentloaded", timeout=30_000)
+                # Wait for main content to render (Cloudflare challenge clears within ~5s)
+                page.wait_for_timeout(2_000)
+                html = page.content()
+            finally:
+                browser.close()
+
+        markdown = _html_to_markdown(html, custom_tags=self.custom_tags)
+        links = _extract_links(html)
+        time.sleep(_RATE_LIMIT_S)
         return markdown, links
 
     def run(
@@ -427,14 +480,37 @@ def _bs4_to_markdown(
     tokens: list[tuple[str, str]] = []
     TEXT_TAGS = {"p", "h1", "h2", "h3", "h4", "h5", "h6", "dt", "dd"}
     _HIGHLIGHT_RE = re.compile(r"\bhighlight\b", re.IGNORECASE)
+    _LANG_RE = re.compile(r"\blanguage-\w+\b", re.IGNORECASE)
+    _SHIKI_RE = re.compile(r"\bshiki\b", re.IGNORECASE)
 
     for el in main.descendants:
         if not hasattr(el, "name") or el.name is None:
             continue
 
+        # ── Shiki: <pre class="shiki ..." language="python"> ──────────────────
+        if el.name == "pre" and _SHIKI_RE.search(" ".join(el.get("class", []))):
+            if el.find_parent("pre", class_=_SHIKI_RE):
+                continue
+            code = el.get_text()
+            if code.strip():
+                tokens.append(("code", code.strip()))
+            continue
+
+        # ── highlight.js: <pre ...><code class="language-XXX hljs"> ──────────
+        if el.name == "pre":
+            code_el = el.find("code", class_=_LANG_RE)
+            if code_el is not None:
+                code = code_el.get_text()
+                if code.strip():
+                    tokens.append(("code", code.strip()))
+                continue
+
         # ── Sphinx/Pygments: <div class="highlight*"> ─────────────────────────
         if el.name == "div" and _HIGHLIGHT_RE.search(" ".join(el.get("class", []))):
             if el.find_parent("div", class_=_HIGHLIGHT_RE):
+                continue
+            # Skip if already captured by hljs pre>code above
+            if el.find("code", class_=_LANG_RE):
                 continue
             code = el.get_text()
             if code.strip():
@@ -506,6 +582,8 @@ def main() -> None:
     parser.add_argument("--custom-tags",  nargs="*", default=[], dest="custom_tags",
                         help="HTML tag names whose comment content is extracted as code (e.g. java-playground)")
     parser.add_argument("--adapter-name", default=None, dest="adapter_name")
+    parser.add_argument("--playwright",   action="store_true",
+                        help="Use headless Chromium instead of httpx (bypasses JS/Cloudflare blocks)")
     args = parser.parse_args()
 
     collector = DocCollector(
@@ -513,6 +591,7 @@ def main() -> None:
         max_pages=args.max_pages,
         max_depth=args.max_depth,
         custom_tags=args.custom_tags,
+        use_playwright=args.playwright,
     )
     n = collector.run(seed_url=args.url, output=Path(args.output), adapter_name=args.adapter_name)
     print(f"Collected {n} records → {args.output}")

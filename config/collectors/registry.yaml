@@ -44,14 +44,16 @@ collectors:
       - max_pages
       - max_depth
       - custom_tags   # list of custom HTML tags whose comment content is extracted as code
+      - use_playwright  # true to use headless Chromium (bypasses Cloudflare/JS blocks)
       - adapter_name
     cli_mapping:
-      url:         "--url"
-      lang:        "--lang"
-      max_pages:   "--max-pages"
-      max_depth:   "--max-depth"    # crawl depth: default 5 — set higher for deep doc sites
-      custom_tags: "--custom-tags"  # list → space-separated string
-      adapter_name: "--adapter-name"
+      url:           "--url"
+      lang:          "--lang"
+      max_pages:     "--max-pages"
+      max_depth:     "--max-depth"      # crawl depth: default 5 — set higher for deep doc sites
+      custom_tags:   "--custom-tags"    # list → space-separated string
+      use_playwright: "--playwright"    # boolean flag — passed as bare flag when true
+      adapter_name:  "--adapter-name"
     output_schema:
       - description
       - code
