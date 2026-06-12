@@ -1,83 +1,125 @@
-<!-- version: v1.0 | date: 2026-04-28 | breaking: none -->
-# /collect-web — Tech watch + collect new training pairs from the web
+<!-- version: v2.0 | date: 2026-06-04 | breaking: collect-web now config-driven, no hardcoded languages -->
+# /collect-web — Autonomous web collection + source discovery
 
 ## Usage
 ```
-/collect-web project=<name> [topic=<search_query>] [max_pages=20] [since=<YYYY-MM-DD>]
+/collect-web project=<name> [adapter=<adapter_name>] [topic=<keyword>] [max_pages=50]
 ```
 
 ## What this skill does
-Runs the web collector agent to:
-1. Find new Python→Java (or other language pair) code examples on the web
-2. Score and filter them
-3. Add accepted pairs to `datalake/projects/<project>/raw/web_<date>.jsonl`
-4. Generate a tech watch summary in `dashboards/watch_<project>_<date>.html`
 
-Zero cloud LLM calls — uses local Ollama for scoring only.
+Reads the project config to understand the domain, task type, and pair strategy,
+then launches the appropriate collection strategy:
 
-## Sources targeted (configurable per project)
-- GitHub search (public repos, MIT/Apache license only)
-- Stack Overflow (Q&A with accepted answers)
-- Rosetta Code (polyglot examples)
-- Project-specific sources from `config/projects/<project>.yaml`
+- `pair_strategy: fuse`      → search for **bilingual sources** (same concept in source + target lang)
+  using `agents/source_discoverer.py` + `agents/doc_collector.py`
+- `pair_strategy: doc_to_code` → search for **monolingual documentation** (description + code)
+  using `agents/doc_collector.py`
+- `domain: text, task_type: qa` → search for **Q&A pairs** using `agents/web_collector.py`
+
+Zero hardcoded language names — everything driven by `config/projects/<project>.yaml`
+and `config/languages.yaml`.
 
 ## Steps for Claude
 
-### Step 1 — Load project config
-Read `config/projects/<project>.yaml` to get `src_lang`, `tgt_lang`, and any
-`web_sources` list defined there.
+### Step 1 — Load and analyse project config
+```python
+import yaml
+cfg = yaml.safe_load(open(f"config/projects/{project}.yaml"))
+domain        = cfg.get("domain", "code")
+task_type     = cfg.get("task_type", "generation")
+adapters      = cfg.get("adapters", [])
 
-### Step 2 — Check Crawl4AI is available
-```bash
-source .venv/bin/activate && python -c "import crawl4ai; print('ok')"
+# If adapter specified, filter to that adapter only
+if adapter:
+    adapters = [a for a in adapters if a["name"] == adapter]
 ```
 
-### Step 3 — Run web collector agent
+Identify for each adapter:
+- `pair_strategy`: fuse | doc_to_code | qa
+- `lang_pair`: key into `config/languages.yaml`
+- `source_configs`: already declared sources to avoid duplicates
+
+### Step 2 — For adapters with pair_strategy=fuse: discover bilingual sources
+
 ```bash
-source .venv/bin/activate && python -m agents.web_collector \
+source .venv/bin/activate && python -m agents.source_discoverer \
+    --pair <lang_pair> \
+    --project <project> \
+    --adapter <adapter_name> \
+    --max-sources 5 \
+    --output /tmp/discovered_<adapter>.yaml
+```
+
+Review discovered sources. For each confirmed source (both languages):
+
+```bash
+# Collect source-lang side
+python -m agents.doc_collector \
+    --url <source_lang_url> \
+    --lang <source_lang> \
+    --adapter-name <adapter_name> \
+    --max-pages 30 \
+    --output datalake/projects/<project>/raw/doc_crawl_$(date +%Y%m%dT%H%M%S).jsonl
+
+# Collect target-lang side  
+python -m agents.doc_collector \
+    --url <target_lang_url> \
+    --lang <target_lang> \
+    --adapter-name <adapter_name> \
+    --max-pages 30 \
+    --output datalake/projects/<project>/raw/doc_crawl_$(date +%Y%m%dT%H%M%S).jsonl
+```
+
+### Step 3 — For adapters with pair_strategy=doc_to_code: collect monolingual docs
+
+Use source_configs already declared in the project, or add newly discovered ones:
+
+```bash
+python -m agents.doc_collector \
+    --url <url> \
+    --lang <lang> \
+    --adapter-name <adapter_name> \
+    --max-pages <max_pages> \
+    --output datalake/projects/<project>/raw/doc_crawl_$(date +%Y%m%dT%H%M%S).jsonl
+```
+
+### Step 4 — For domain=text: collect Q&A / prose data
+
+```bash
+python -m agents.web_collector \
     --project <project> \
     --topic "<topic>" \
+    --domain text \
+    --task-type qa \
     --max-pages <max_pages> \
-    --since <since> \
-    --output datalake/projects/<project>/raw/web_$(date +%Y%m%d).jsonl
-```
-
-The agent:
-- Crawls targeted sources
-- Extracts code blocks (src_lang → tgt_lang pairs)
-- Validates syntax via tree-sitter
-- Scores pairs with local Ollama
-- Respects robots.txt and rate limits (1 req/sec)
-
-### Step 4 — Generate watch report
-```bash
-python -m agents.report_generator watch \
-    --project <project> \
-    --output dashboards/watch_<project>_$(date +%Y%m%d).html
+    --adapter-name <adapter_name> \
+    --output datalake/projects/<project>/raw/web_$(date +%Y%m%dT%H%M%S).jsonl
 ```
 
 ### Step 5 — Report
-- N pages crawled, N pairs extracted, N accepted
-- Top 3 new pair examples (truncated)
-- Link to HTML dashboard
 
-## Scheduling
-For autonomous monthly collection, use Prefect:
-```bash
-python -m agents.web_collector schedule --project <project> --cron "0 2 1 * *"
-```
-This runs collection on the 1st of each month at 2am, logs results, and
-prepares data for the next retraining cycle.
+Print per-adapter summary:
+- N new sources discovered
+- N records collected (per language)
+- Suggested next step: `/clean-dataset project=<project>` or collect more
+
+## Key principle
+
+The skill reads intent from config, never hardcodes languages or topics.
+`concept_keywords` in `config/languages.yaml` drive the search queries.
+`config/trusted_domains.yaml` constrains which sites are crawled.
 
 ## Expected output
 ```
-Crawled: 18 pages (2 skipped: robots.txt)
-Extracted: 134 raw pairs
-After syntax validation: 112 pairs
-After quality scoring: 89 pairs accepted
+Adapter: java-to-python-translator (pair_strategy=fuse)
+  source_discoverer: 3 new Java sources, 4 new Python sources
+  doc_collector (java): 87 records → raw/doc_crawl_20260604T...jsonl
+  doc_collector (python): 112 records → raw/doc_crawl_20260604T...jsonl
 
-Written: datalake/projects/<project>/raw/web_20260423.jsonl
-Watch report: dashboards/watch_<project>_20260423.html
+Adapter: python-migration-quality-reviewer (pair_strategy=doc_to_code)
+  doc_collector (python): 54 records → raw/doc_crawl_20260604T...jsonl
 
-Next: run /clean-dataset project=<project> to merge with existing dataset
+Total: 253 new records collected
+Next: /clean-dataset project=migrator
 ```

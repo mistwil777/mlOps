@@ -71,6 +71,46 @@ collector_defaults:
     clojure:    .clj
 
 pairs:
+  java-python:
+    source_lang: java
+    target_lang: python
+    description: Java to Python migration (Migrator project)
+    doc_sources:
+      java:
+        - url: https://dev.java/learn/language-basics/
+          max_pages: 30
+          lang_hint: java
+        - url: https://dev.java/learn/oop/
+          max_pages: 20
+          lang_hint: java
+        - url: https://www.baeldung.com/java-oop
+          max_pages: 5
+          lang_hint: java
+      python:
+        - url: https://docs.python.org/3/tutorial/
+          max_pages: 40
+          lang_hint: python
+        - url: https://docs.python.org/3/library/stdtypes.html
+          max_pages: 5
+          lang_hint: python
+    concept_keywords:
+      - loop
+      - function
+      - class
+      - exception
+      - list
+      - map
+      - string
+      - type
+      - interface
+      - inheritance
+    # Semantic matching configuration — used by semantic_pair_matcher and transform.py
+    matching:
+      strategy: semantic_description   # embed descriptions, match by cosine
+      min_similarity: 0.75             # min cosine to accept a pair
+      match_field: description         # field to embed for matching
+      fallback: llm_translate          # if not enough matches: fall back to pair_fuser
+
   python-java:
     source_lang: python
     target_lang: java

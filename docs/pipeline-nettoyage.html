@@ -1,0 +1,1402 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pipeline de Nettoyage des Données — MLOps</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:#0d1117;color:#c9d1d9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;font-size:15px;line-height:1.7;overflow-x:hidden}
+h1{font-size:1.8rem;font-weight:700;color:#f0f6fc;letter-spacing:-0.5px;line-height:1.3}
+h2{font-size:1.3rem;font-weight:600;color:#f0f6fc;margin:2.5rem 0 1rem;padding-bottom:0.4rem;border-bottom:1px solid #21262d}
+h3{font-size:1.05rem;font-weight:600;color:#79c0ff;margin:1.5rem 0 0.6rem}
+h4{font-size:0.9rem;font-weight:600;color:#a5d6ff;margin:1rem 0 0.4rem}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+code{font-family:'JetBrains Mono','Fira Code',Consolas,monospace;font-size:0.82em;background:#161b22;padding:0.1em 0.35em;border-radius:4px;word-break:break-word}
+pre{font-family:'JetBrains Mono','Fira Code',Consolas,monospace;font-size:0.8em;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:0.9rem 1rem;white-space:pre-wrap;word-break:break-word;overflow-wrap:break-word;line-height:1.5;margin:0.75rem 0}
+pre code{background:none;padding:0;font-size:1em}
+.container{max-width:1000px;margin:0 auto;padding:2rem 1.25rem}
+.header{background:linear-gradient(135deg,#0d1117 0%,#161b22 100%);border-bottom:1px solid #21262d;padding:2rem 0}
+.header .container{display:flex;flex-direction:column;gap:0.75rem}
+.header-meta{display:flex;gap:0.5rem;flex-wrap:wrap}
+.badge{display:inline-flex;align-items:center;padding:0.2rem 0.55rem;border-radius:20px;font-size:0.72rem;font-weight:600;white-space:nowrap}
+.badge-blue{background:#1f3358;color:#79c0ff;border:1px solid #1f6feb}
+.badge-green{background:#1a3a2a;color:#56d364;border:1px solid #238636}
+.badge-orange{background:#3d2608;color:#f0883e;border:1px solid #bd5b00}
+.badge-purple{background:#2d1f4e;color:#d2a8ff;border:1px solid #6e40c9}
+.badge-red{background:#3d1a1a;color:#ff7b72;border:1px solid #da3633}
+.badge-gray{background:#21262d;color:#8b949e;border:1px solid #30363d}
+/* TOC */
+.toc{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:1.25rem 1.5rem;margin:1.5rem 0}
+.toc-title{font-size:0.75rem;font-weight:700;color:#8b949e;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.75rem}
+.toc-list{list-style:none;display:grid;grid-template-columns:1fr 1fr;gap:0.2rem 2rem}
+@media(max-width:580px){.toc-list{grid-template-columns:1fr}}
+.toc-list li{font-size:0.875rem;padding:0.1rem 0}
+.toc-list a{color:#58a6ff}
+/* Layout */
+.section{margin:2.5rem 0}
+.card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:1.25rem;margin:0.75rem 0;overflow:hidden}
+.card-blue{border-left:3px solid #1f6feb}
+.card-green{border-left:3px solid #238636}
+.card-orange{border-left:3px solid #bd5b00}
+.card-purple{border-left:3px solid #6e40c9}
+.card-red{border-left:3px solid #da3633}
+/* Summary box */
+.summary-box{background:#1c2128;border:1px solid #388bfd;border-radius:8px;padding:1rem 1.25rem;margin:0 0 1.25rem 0}
+.summary-box .summary-title{font-size:0.72rem;font-weight:700;color:#58a6ff;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.4rem}
+.summary-box p{font-size:0.92rem;color:#c9d1d9;line-height:1.6}
+/* Tables */
+.table-wrap{overflow-x:auto;margin:0.75rem 0;width:100%}
+table{width:100%;border-collapse:collapse;font-size:0.84rem;table-layout:auto}
+th{background:#21262d;color:#8b949e;text-align:left;padding:0.55rem 0.75rem;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;border-bottom:2px solid #30363d;white-space:nowrap}
+td{padding:0.55rem 0.75rem;border-bottom:1px solid #21262d;vertical-align:top;word-break:break-word;overflow-wrap:break-word}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#1c2128}
+.ok{color:#56d364}
+.warn{color:#f0883e}
+.bad{color:#ff7b72}
+.neutral{color:#8b949e}
+/* Progress bars */
+.progress-bar{height:7px;background:#21262d;border-radius:4px;overflow:hidden;margin:5px 0}
+.progress-fill{height:100%;border-radius:4px}
+.fill-green{background:linear-gradient(90deg,#238636,#56d364)}
+.fill-orange{background:linear-gradient(90deg,#bd5b00,#f0883e)}
+.fill-blue{background:linear-gradient(90deg,#1f6feb,#58a6ff)}
+/* Step header */
+.step-header{display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem}
+.step-num{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.85rem;flex-shrink:0}
+.num-blue{background:#1f3358;color:#79c0ff;border:2px solid #1f6feb}
+.num-green{background:#1a3a2a;color:#56d364;border:2px solid #238636}
+.num-orange{background:#3d2608;color:#f0883e;border:2px solid #bd5b00}
+/* Two columns */
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin:0.75rem 0}
+@media(max-width:660px){.two-col{grid-template-columns:1fr}}
+/* Impact boxes */
+.impact-box{background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:0.9rem 1rem}
+.impact-nums{display:flex;align-items:baseline;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.3rem}
+.num-before{font-size:1.5rem;font-weight:700;color:#8b949e}
+.num-arrow{color:#58a6ff;font-size:1.1rem}
+.num-after{font-size:1.5rem;font-weight:700;color:#56d364}
+.impact-label{font-size:0.78rem;color:#8b949e;margin-bottom:0.3rem}
+.impact-note{font-size:0.8rem}
+/* Before/after */
+.before-after{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin:0.75rem 0}
+@media(max-width:580px){.before-after{grid-template-columns:1fr}}
+.ba-label{font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.3rem}
+.ba-before{color:#8b949e}
+.ba-after{color:#56d364}
+/* Callouts */
+.callout{border-radius:8px;padding:0.9rem 1rem;margin:0.75rem 0;display:flex;gap:0.75rem;align-items:flex-start}
+.callout-icon{flex-shrink:0;font-size:1rem;margin-top:0.1rem}
+.callout-blue{background:#1f3358;border-left:3px solid #1f6feb}
+.callout-orange{background:#3d2608;border-left:3px solid #bd5b00}
+.callout-green{background:#1a3a2a;border-left:3px solid #238636}
+.callout p,.callout div{font-size:0.88rem;line-height:1.55}
+/* Backend chain */
+.backend-chain{display:flex;flex-direction:column;gap:0.5rem;margin:0.75rem 0}
+.backend-item{display:flex;align-items:flex-start;gap:0.75rem;padding:0.75rem;border-radius:8px;border:1px solid #30363d;background:#161b22}
+.backend-prio{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:0.7rem;font-weight:700;flex-shrink:0;margin-top:0.1rem}
+.prio-1{background:#1a3a2a;color:#56d364;border:1px solid #238636}
+.prio-2{background:#1f3358;color:#79c0ff;border:1px solid #1f6feb}
+.prio-3{background:#2d1f4e;color:#d2a8ff;border:1px solid #6e40c9}
+.prio-4{background:#3d2608;color:#f0883e;border:1px solid #bd5b00}
+.backend-content{flex:1;min-width:0}
+.backend-name{font-weight:600;color:#f0f6fc;font-size:0.9rem;word-break:break-word}
+.backend-meta{color:#8b949e;font-size:0.82rem;margin-top:0.2rem;word-break:break-word}
+/* Pipeline SVG flow */
+.flow-wrap{overflow-x:auto;margin:1rem 0}
+.flow-wrap svg{display:block;min-width:320px}
+/* Misc */
+.footnote{color:#8b949e;font-size:0.78rem;margin-top:0.3rem}
+hr{border:none;border-top:1px solid #21262d;margin:2.5rem 0}
+.anchor{scroll-margin-top:72px}
+p+p{margin-top:0.6rem}
+.dim{color:#8b949e}
+/* Diff annotations */
+.diff-add{background:rgba(56,139,253,0.15);border-left:2px solid #388bfd;display:block;margin:0 -8px;padding:0 8px}
+.diff-remove{background:rgba(255,80,80,0.1);border-left:2px solid #ff7b72;display:block;text-decoration:line-through;opacity:0.6;margin:0 -8px;padding:0 8px}
+.diff-note{font-size:11px;color:#58a6ff;font-style:italic;margin:0 -8px;padding:2px 8px;background:rgba(56,139,253,0.06);display:block}
+.example-insight{background:#161b22;border:1px solid #30363d;border-radius:6px;padding:10px 12px;margin-top:10px;font-size:12px;line-height:1.6}
+.insight-change{color:#58a6ff;font-weight:600}
+.insight-why{color:#f0883e;font-weight:600}
+.insight-benefit{color:#56d364;font-weight:600}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="container">
+    <div class="header-meta">
+      <span class="badge badge-blue">MLOps — Pipeline agnostique</span>
+      <span class="badge badge-green">v1.0 — Juin 2026</span>
+      <span class="badge badge-purple">Capgemini — Usage interne</span>
+      <span class="badge badge-orange">Defense / Souveraineté</span>
+    </div>
+    <h1>Pipeline de Nettoyage des Données</h1>
+    <p style="color:#8b949e;max-width:680px;margin-top:0.4rem;font-size:0.95rem">
+      Comment nous garantissons que chaque donnée qui entre dans l'entraînement du modèle est pertinente, propre et utile.
+      Pipeline entièrement agnostique : domaine, langue et stratégie de paires sont pilotés par la configuration projet.
+      Exemple actif dans ce document : <strong style="color:#c9d1d9">Migrator</strong> (migration Java→Python) sauf mention contraire.
+    </p>
+  </div>
+</div>
+
+<div class="container">
+
+<nav class="toc">
+  <div class="toc-title">Table des matières</div>
+  <ol class="toc-list">
+    <li><a href="#vue-ensemble">1. Vue d'ensemble</a></li>
+    <li><a href="#agnostique">2. Architecture agnostique</a></li>
+    <li><a href="#backend">3. Le moteur de comparaison</a></li>
+    <li><a href="#etape1">4. Étape 1 — Nettoyage des données brutes</a></li>
+    <li><a href="#etape2">5. Étape 2 — Formation des paires</a></li>
+    <li><a href="#etape2b">6. Étape 2bis — Génération LLM (pair_fuser)</a></li>
+    <li><a href="#etape3">7. Étape 3 — Nettoyage des paires</a></li>
+    <li><a href="#params">8. Paramètres de réglage</a></li>
+    <li><a href="#antigigo">9. Protection qualité (Anti-GIGO)</a></li>
+    <li><a href="#exemples">10. Exemples concrets</a></li>
+  </ol>
+</nav>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<section class="section anchor" id="vue-ensemble">
+<h2>1. Vue d'ensemble</h2>
+
+<div class="summary-box">
+  <div class="summary-title">En résumé</div>
+  <p>Entraîner un modèle d'IA sur de mauvaises données produit un mauvais modèle — c'est ce qu'on appelle le principe GIGO (<em>Garbage In, Garbage Out</em>). Ce pipeline est notre système de filtrage : il prend des dizaines de milliers de données brutes collectées sur le web, les analyse, les nettoie, les organise et ne conserve que ce qui est réellement utile pour l'entraînement. Le processus est entièrement automatique, reproductible, et chaque décision de filtrage est tracée.</p>
+</div>
+
+<p>Le pipeline transforme des données brutes collectées depuis des sources hétérogènes (documentation officielle, Rosetta Code, GitHub, saisie manuelle) en paires d'entraînement <em>prompt/completion</em> de haute qualité, prêtes pour le fine-tuning local.</p>
+
+<div class="flow-wrap">
+<svg viewBox="0 0 860 300" width="100%" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arr" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#58a6ff"/></marker>
+    <marker id="arr2" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#30363d"/></marker>
+    <style>.fl{font-family:system-ui,sans-serif}.animated{stroke-dasharray:6 4;animation:dash 1.2s linear infinite}@keyframes dash{to{stroke-dashoffset:-20}}</style>
+  </defs>
+  <rect width="860" height="300" fill="#0d1117"/>
+
+  <!-- Sources -->
+  <rect x="8" y="30" width="105" height="30" rx="5" fill="#161b22" stroke="#30363d"/>
+  <text x="60" y="50" text-anchor="middle" class="fl" font-size="10" fill="#8b949e">Rosetta Code</text>
+  <rect x="8" y="68" width="105" height="30" rx="5" fill="#161b22" stroke="#30363d"/>
+  <text x="60" y="88" text-anchor="middle" class="fl" font-size="10" fill="#8b949e">Docs officielles</text>
+  <rect x="8" y="106" width="105" height="30" rx="5" fill="#161b22" stroke="#30363d"/>
+  <text x="60" y="126" text-anchor="middle" class="fl" font-size="10" fill="#8b949e">GitHub / Web</text>
+  <rect x="8" y="144" width="105" height="30" rx="5" fill="#161b22" stroke="#30363d"/>
+  <text x="60" y="164" text-anchor="middle" class="fl" font-size="10" fill="#8b949e">Manuel</text>
+  <text x="60" y="14" text-anchor="middle" class="fl" font-size="10" font-weight="600" fill="#8b949e">SOURCES</text>
+
+  <!-- raw -->
+  <rect x="130" y="75" width="95" height="55" rx="7" fill="#1c2128" stroke="#30363d" stroke-width="1.5"/>
+  <text x="177" y="97" text-anchor="middle" class="fl" font-size="10" fill="#8b949e">datalake/raw/</text>
+  <text x="177" y="112" text-anchor="middle" class="fl" font-size="11" font-weight="600" fill="#c9d1d9">Données</text>
+  <text x="177" y="125" text-anchor="middle" class="fl" font-size="11" font-weight="600" fill="#c9d1d9">brutes</text>
+
+  <line x1="113" y1="45" x2="135" y2="90" stroke="#30363d" stroke-width="1.5" marker-end="url(#arr2)"/>
+  <line x1="113" y1="83" x2="132" y2="98" stroke="#30363d" stroke-width="1.5" marker-end="url(#arr2)"/>
+  <line x1="113" y1="121" x2="132" y2="110" stroke="#30363d" stroke-width="1.5" marker-end="url(#arr2)"/>
+  <line x1="113" y1="159" x2="135" y2="125" stroke="#30363d" stroke-width="1.5" marker-end="url(#arr2)"/>
+
+  <!-- Arrow raw → step1 -->
+  <line x1="225" y1="102" x2="253" y2="102" stroke="#58a6ff" stroke-width="2" marker-end="url(#arr)" class="animated"/>
+
+  <!-- STEP 1 -->
+  <rect x="253" y="45" width="145" height="118" rx="8" fill="#161b22" stroke="#1f6feb" stroke-width="2"/>
+  <rect x="253" y="45" width="145" height="24" rx="8" fill="#1f3358"/>
+  <text x="325" y="57" text-anchor="middle" class="fl" font-size="10" fill="#79c0ff">ÉTAPE 1</text>
+  <text x="325" y="68" text-anchor="middle" class="fl" font-size="11" font-weight="600" fill="#f0f6fc">clean_raw.py</text>
+  <text x="263" y="88" class="fl" font-size="10" fill="#8b949e">① Dédup exacte (MD5)</text>
+  <text x="263" y="103" class="fl" font-size="10" fill="#8b949e">② Scoring heuristique</text>
+  <text x="263" y="118" class="fl" font-size="10" fill="#8b949e">③ Dédup sémantique</text>
+  <text x="263" y="133" class="fl" font-size="10" fill="#8b949e">④–⑦ Pertinence, volume…</text>
+  <text x="325" y="155" text-anchor="middle" class="fl" font-size="10" fill="#56d364">processed/clean_raw/</text>
+
+  <!-- Arrow step1 → step2a -->
+  <line x1="398" y1="80" x2="426" y2="70" stroke="#58a6ff" stroke-width="2" marker-end="url(#arr)" class="animated"/>
+  <!-- Arrow step1 → step2b -->
+  <line x1="398" y1="125" x2="426" y2="175" stroke="#58a6ff" stroke-width="2" marker-end="url(#arr)" class="animated"/>
+
+  <!-- STEP 2a -->
+  <rect x="426" y="36" width="135" height="65" rx="8" fill="#161b22" stroke="#6e40c9" stroke-width="2"/>
+  <rect x="426" y="36" width="135" height="22" rx="8" fill="#2d1f4e"/>
+  <text x="493" y="47" text-anchor="middle" class="fl" font-size="10" fill="#d2a8ff">ÉTAPE 2a — transform.py</text>
+  <text x="493" y="62" text-anchor="middle" class="fl" font-size="10" fill="#8b949e">doc_to_code / code_migration / qa</text>
+  <text x="493" y="77" text-anchor="middle" class="fl" font-size="10" fill="#8b949e">Paires directes (1 record → 1 paire)</text>
+  <text x="493" y="93" text-anchor="middle" class="fl" font-size="10" fill="#d2a8ff">pair_strategy: doc_to_code | qa</text>
+
+  <!-- STEP 2b -->
+  <rect x="426" y="158" width="135" height="65" rx="8" fill="#161b22" stroke="#1f6feb" stroke-width="2"/>
+  <rect x="426" y="158" width="135" height="22" rx="8" fill="#1f3358"/>
+  <text x="493" y="169" text-anchor="middle" class="fl" font-size="10" fill="#79c0ff">ÉTAPE 2bis — pair_fuser.py</text>
+  <text x="493" y="184" text-anchor="middle" class="fl" font-size="10" fill="#8b949e">Génération LLM : source_lang → target_lang</text>
+  <text x="493" y="199" text-anchor="middle" class="fl" font-size="10" fill="#8b949e">Vérif. software (AST/regex) — zéro LLM accept.</text>
+  <text x="493" y="215" text-anchor="middle" class="fl" font-size="10" fill="#79c0ff">pair_strategy: fuse</text>
+
+  <!-- Arrows → merge -->
+  <line x1="561" y1="69" x2="610" y2="128" stroke="#58a6ff" stroke-width="2" marker-end="url(#arr)" class="animated"/>
+  <line x1="561" y1="190" x2="610" y2="133" stroke="#58a6ff" stroke-width="2" marker-end="url(#arr)" class="animated"/>
+
+  <!-- Merge -->
+  <rect x="610" y="108" width="60" height="40" rx="6" fill="#21262d" stroke="#30363d"/>
+  <text x="640" y="124" text-anchor="middle" class="fl" font-size="10" fill="#8b949e">merge</text>
+  <text x="640" y="138" text-anchor="middle" class="fl" font-size="10" fill="#8b949e">paires</text>
+
+  <!-- Arrow merge → step3 -->
+  <line x1="670" y1="128" x2="695" y2="128" stroke="#58a6ff" stroke-width="2" marker-end="url(#arr)" class="animated"/>
+
+  <!-- STEP 3 -->
+  <rect x="695" y="65" width="145" height="125" rx="8" fill="#161b22" stroke="#238636" stroke-width="2"/>
+  <rect x="695" y="65" width="145" height="24" rx="8" fill="#1a3a2a"/>
+  <text x="767" y="77" text-anchor="middle" class="fl" font-size="10" fill="#56d364">ÉTAPE 3</text>
+  <text x="767" y="88" text-anchor="middle" class="fl" font-size="11" font-weight="600" fill="#f0f6fc">clean.py</text>
+  <text x="705" y="108" class="fl" font-size="10" fill="#8b949e">① Dédup exacte + MinHash</text>
+  <text x="705" y="123" class="fl" font-size="10" fill="#8b949e">② Filtrage règles métier</text>
+  <text x="705" y="138" class="fl" font-size="10" fill="#8b949e">③ Score qualité des paires</text>
+  <text x="705" y="153" class="fl" font-size="10" fill="#8b949e">④ Split train / valid</text>
+  <text x="767" y="180" text-anchor="middle" class="fl" font-size="10" fill="#56d364">fine-tuning-ready/</text>
+
+  <!-- Labels positionnés sous le flow -->
+  <text x="177" y="220" text-anchor="middle" class="fl" font-size="10" fill="#8b949e">Collecte</text>
+  <text x="325" y="220" text-anchor="middle" class="fl" font-size="10" fill="#58a6ff">Nettoyage brut</text>
+  <text x="493" y="240" text-anchor="middle" class="fl" font-size="10" fill="#a855f7">Formation paires</text>
+  <text x="767" y="220" text-anchor="middle" class="fl" font-size="10" fill="#56d364">Nettoyage paires → train</text>
+
+  <!-- Numbers showing data reduction -->
+  <text x="177" y="256" text-anchor="middle" class="fl" font-size="12" font-weight="700" fill="#c9d1d9">~20 000</text>
+  <text x="177" y="270" text-anchor="middle" class="fl" font-size="10" fill="#8b949e">records bruts</text>
+  <text x="325" y="256" text-anchor="middle" class="fl" font-size="12" font-weight="700" fill="#c9d1d9">~5 000</text>
+  <text x="325" y="270" text-anchor="middle" class="fl" font-size="10" fill="#8b949e">records qualifiés</text>
+  <text x="493" y="256" text-anchor="middle" class="fl" font-size="12" font-weight="700" fill="#c9d1d9">~4 000</text>
+  <text x="493" y="270" text-anchor="middle" class="fl" font-size="10" fill="#8b949e">paires formées</text>
+  <text x="767" y="256" text-anchor="middle" class="fl" font-size="12" font-weight="700" fill="#56d364">~3 500</text>
+  <text x="767" y="270" text-anchor="middle" class="fl" font-size="10" fill="#8b949e">paires finales</text>
+</svg>
+</div>
+
+<div class="card card-blue">
+  <h4>Position dans la chaîne MLOps complète</h4>
+  <pre>Collecte  →  [Étape 1: clean_raw]  →  [Étapes 2/2bis: formation paires]  →  [Étape 3: clean]  →  Entraînement (mlx_lm.lora)</pre>
+  <p class="dim" style="font-size:0.85rem;margin-top:0.5rem">Ce document couvre les trois étapes de nettoyage. La collecte (en amont) et l'entraînement (en aval) sont documentés séparément.</p>
+</div>
+
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<section class="section anchor" id="agnostique">
+<h2>2. Architecture agnostique — Config-driven</h2>
+
+<div class="summary-box">
+  <div class="summary-title">En résumé</div>
+  <p>Le pipeline ne contient aucune logique spécifique à un projet, une langue ou un domaine. Tout le comportement est piloté par deux champs dans <code>config/projects/&lt;id&gt;.yaml</code> : <code>domain</code> (qui scorer heuristique utiliser) et <code>task_type</code> (quelle stratégie de paires et quel template appliquer). Les collecteurs, scorers et transformateurs n'ont pas connaissance du projet dans lequel ils opèrent.</p>
+</div>
+
+<div class="card card-blue">
+<h3>Domaines supportés</h3>
+<p class="dim" style="font-size:0.88rem;margin-bottom:0.75rem">Le champ <code>domain</code> dans la config projet sélectionne automatiquement le scorer heuristique approprié (<code>_code_score</code> vs <code>_text_score</code>) et les techniques d'augmentation compatibles.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>domain</th><th>Scorer activé</th><th>Projets typiques</th><th>Critères clés</th></tr></thead>
+<tbody>
+<tr><td><code>code</code></td><td><code>_code_score</code></td><td>Migrator (Java→Python), revue de code, tests</td><td>Mots-clés syntaxiques, longueur 50–1500 chars, vérification AST Python</td></tr>
+<tr><td><code>text</code></td><td><code>_text_score</code></td><td>HR (FAQ contrat), Legal (Q&amp;A droit), Sales (fiches produit)</td><td>Entropie de Shannon ≥ 4.0, longueur 100–4000 chars, absence de boilerplate</td></tr>
+</tbody>
+</table>
+</div>
+</div>
+
+<div class="card card-blue">
+<h3>Task types supportés</h3>
+<p class="dim" style="font-size:0.88rem;margin-bottom:0.75rem">Le champ <code>task_type</code> oriente la construction du prompt dans les paires finales et le scoring LLM en Étape 3 (<code>clean.py</code>). Il est passé au scorer via <code>config.get("task_type", "generation")</code>.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>task_type</th><th>Template de transform</th><th>Cas d'usage</th></tr></thead>
+<tbody>
+<tr><td><code>generation</code></td><td><code>doc_to_code</code></td><td>Générer du code à partir d'une description (ex: adapter python-quality-reviewer)</td></tr>
+<tr><td><code>migration</code></td><td><code>code_migration</code> ou <code>fuse</code></td><td>Traduire du code d'un langage à un autre (ex: Java→Python)</td></tr>
+<tr><td><code>translation</code></td><td><code>fuse</code> ou <code>semantic_match</code></td><td><code>fuse</code> si seule la langue source est disponible (LLM génère la cible) · <code>semantic_match</code> si les deux langues existent mais sans lien explicite (matching par description)</td></tr>
+<tr><td><code>review</code></td><td><code>doc_to_code</code></td><td>Revue de code, suggestions de qualité</td></tr>
+<tr><td><code>qa</code></td><td><code>qa</code></td><td>Questions-réponses : support client, FAQ RH, base légale</td></tr>
+</tbody>
+</table>
+</div>
+</div>
+
+<div class="card card-blue">
+<h3>Pair strategies supportées</h3>
+<p class="dim" style="font-size:0.88rem;margin-bottom:0.75rem">Le champ <code>pair_strategy</code> dans la config adapter détermine comment les records nettoyés sont assemblés en paires d'entraînement.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>pair_strategy</th><th>Mécanisme</th><th>Quand l'utiliser</th></tr></thead>
+<tbody>
+<tr><td><code>doc_to_code</code></td><td>1 record → 1 paire, champ <code>description</code> → prompt, champ <code>code</code> → completion</td><td>Données monolingues avec description + snippet (docs officielles, tutoriels)</td></tr>
+<tr><td><code>code_migration</code></td><td>Jointure par <code>task_name</code>, enregistrements Python + Java alignés nativement</td><td>Sources avec identifiant commun garanti (ex: Rosetta Code)</td></tr>
+<tr><td><code>fuse</code></td><td>Génération LLM : le LLM traduit le code source dans le langage cible (pair_fuser.py). Vérification software obligatoire (AST Python ou regex Java + ratio). Utilise <code>call_llm</code> via <code>pipeline/utils/llm.py</code>.</td><td>Sources monolingues sans équivalent natif dans l'autre langue — le LLM génère la traduction</td></tr>
+<tr><td><code>qa</code></td><td>1 record → 1 paire, champ <code>question</code> → prompt, champ <code>answer</code> → completion</td><td>Paires Q/R existantes : FAQ, base de connaissances, tickets support</td></tr>
+<tr><td><code>semantic_match</code></td><td>Matching cosinus sur descriptions bilingues — embed batch commun (espace vectoriel partagé), boost <code>concept_keywords</code> (+0,05/kw), bijection stricte (un target une fois), vérification software (AST Python / regex Java), seuil ≥ 0,75</td><td>Zéro LLM — 100% déterministe · Pour toute paire de langages avec sources doc bilingues (description + code)</td></tr>
+</tbody>
+</table>
+</div>
+</div>
+
+<div class="callout callout-green">
+  <span class="callout-icon">✓</span>
+  <div><strong>Collecteurs neutres :</strong> les collecteurs (<code>web_crawl</code>, <code>doc_crawl</code>, <code>manual</code>) ne savent pas dans quel projet ils opèrent. Ils produisent des records génériques. La config projet est le <strong>seul endroit</strong> où le comportement est défini — domaine, langue cible, template de paire, volume cible par adapter.</div>
+</div>
+
+<div class="card card-blue">
+<h3>Fichier de config — trusted_domains.yaml</h3>
+<p class="dim" style="font-size:0.88rem;margin-bottom:0.75rem">Fichier <code>config/trusted_domains.yaml</code> : liste des domaines autorisés pour la recherche automatique de sources bilingues (<code>source_discoverer.py</code>). Entièrement config-driven — ajouter un domaine = 1 ligne YAML, zéro modification de code.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Champ</th><th>Description</th><th>Valeurs</th></tr></thead>
+<tbody>
+<tr><td><code>domain</code></td><td>Nom du domaine à autoriser</td><td>ex: <code>baeldung.com</code></td></tr>
+<tr><td><code>tier</code></td><td>Niveau de confiance, influence la priorité de collecte</td><td><code>official</code> · <code>tutorial</code> · <code>community</code> · <code>code</code></td></tr>
+<tr><td><code>langs</code></td><td>Langages couverts par ce domaine</td><td>ex: <code>[java, python]</code></td></tr>
+</tbody>
+</table>
+</div>
+<div class="callout callout-blue" style="margin-top:0.75rem">
+  <span class="callout-icon">ℹ</span>
+  <div><strong>Green IT — zéro hardcode :</strong> aucun domaine n'est inscrit en dur dans le code source. Tout ajout ou retrait de source passe par ce fichier YAML, versionné avec le reste de la config projet.</div>
+</div>
+</div>
+
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<section class="section anchor" id="backend">
+<h2>3. Le moteur de comparaison — Embeddings</h2>
+
+<div class="summary-box">
+  <div class="summary-title">En résumé</div>
+  <p>Pour détecter si deux textes parlent du même sujet (même si les mots sont différents), le pipeline utilise des <strong>embeddings</strong> : chaque texte est converti en un vecteur numérique, et la proximité entre deux vecteurs indique leur ressemblance sémantique. Ce mécanisme est utilisé dans trois étapes du pipeline. Plusieurs moteurs sont disponibles en cascade : si l'un est indisponible, le suivant prend le relais automatiquement.</p>
+</div>
+
+<div class="backend-chain">
+  <div class="backend-item">
+    <div class="backend-prio prio-1">1</div>
+    <div class="backend-content">
+      <div class="backend-name">AWS Bedrock — Titan Embed Text v2 <span class="badge badge-green" style="margin-left:6px">Prioritaire</span></div>
+      <div class="backend-meta">Modèle <code>amazon.titan-embed-text-v2:0</code> · Vecteurs de dimension 1024 · Passe le filtre ZScaler Capgemini · 20 appels en parallèle · Recommandé sur réseau entreprise</div>
+    </div>
+  </div>
+  <div class="backend-item">
+    <div class="backend-prio prio-2">2</div>
+    <div class="backend-content">
+      <div class="backend-name">Ollama — nomic-embed-text</div>
+      <div class="backend-meta">Serveur local <code>localhost:11434</code> · Vecteurs 768 dimensions · Bloqué par ZScaler sur réseau Capgemini · Disponible hors réseau ou VPN split-tunnel</div>
+    </div>
+  </div>
+  <div class="backend-item">
+    <div class="backend-prio prio-3">3</div>
+    <div class="backend-content">
+      <div class="backend-name">sentence-transformers — nomic-embed-text v1.5</div>
+      <div class="backend-meta">Exécuté en local via Python · Vecteurs 768 dimensions · Nécessite <code>pip install sentence-transformers</code> · Bon de secours si Bedrock et Ollama sont inaccessibles</div>
+    </div>
+  </div>
+  <div class="backend-item">
+    <div class="backend-prio prio-4">4</div>
+    <div class="backend-content">
+      <div class="backend-name">TF-IDF (scikit-learn) <span class="badge badge-orange" style="margin-left:6px">Dernier recours</span></div>
+      <div class="backend-meta">Toujours disponible, sans installation supplémentaire · Qualité dégradée pour les comparaisons inter-langues · Le scoring de pertinence par adapter est désactivé automatiquement dans ce mode</div>
+    </div>
+  </div>
+</div>
+
+<div class="callout callout-orange">
+  <span class="callout-icon">⚠</span>
+  <div><strong>Mode TF-IDF et pertinence :</strong> le TF-IDF crée un vocabulaire spécifique à chaque corpus. Comparer un texte hors-corpus (la description d'un adapter) avec les records collectés produit des scores proches de zéro même pour des données pertinentes. Le pipeline le détecte et neutralise le filtre de pertinence (score fixé à 0.50 pour tous), plutôt que de rejeter des données valides par erreur.</div>
+</div>
+
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<section class="section anchor" id="etape1">
+<h2>4. Étape 1 — Nettoyage des données brutes (clean_raw.py)</h2>
+
+<div class="summary-box">
+  <div class="summary-title">En résumé</div>
+  <p>C'est l'étape la plus importante du pipeline. Elle prend les données collectées sur le web (20 000+ records bruts) et les passe à travers 7 filtres successifs. À la fin, chaque adapter ne conserve que ses données les plus pertinentes, sans doublons, dans le bon volume cible. Sur un projet type, environ 75% des données brutes sont filtrées — ce qui est normal et voulu : mieux vaut 1 000 données excellentes que 10 000 données de qualité inégale.</p>
+</div>
+
+<p style="margin-bottom:0.75rem"><span class="badge badge-blue">Entrée</span> <code>datalake/projects/&lt;projet&gt;/raw/*.jsonl</code> — Immutable après ingestion</p>
+<p style="margin-bottom:1rem"><span class="badge badge-green">Sortie</span> <code>datalake/projects/&lt;projet&gt;/processed/clean_raw/&lt;adapter&gt;.jsonl</code> — Un fichier par adapter</p>
+
+<!-- SOUS-ÉTAPE 1 -->
+<div class="card card-blue">
+<div class="step-header">
+  <div class="step-num num-blue">1</div>
+  <h3 style="margin:0">Déduplication exacte</h3>
+</div>
+<p class="dim" style="font-size:0.88rem;margin-bottom:0.75rem">Un empreinte numérique (hash MD5) est calculée pour chaque record. Si deux records ont exactement le même contenu, le second est supprimé. Simple, rapide, sans faux positifs.</p>
+
+<div class="before-after">
+<div>
+  <div class="ba-label ba-before">Avant — 2 records identiques</div>
+  <pre>{ "task_name": "fibonacci",
+  "lang": "Python",
+  "code": "def fib(n): ..." }
+
+<span class="diff-remove">{ "task_name": "fibonacci",  ← doublon
+  "lang": "Python",
+  "code": "def fib(n): ..." }</span></pre>
+</div>
+<div>
+  <div class="ba-label ba-after">Après — 1 seul record</div>
+  <pre>{ "task_name": "fibonacci",
+  "lang": "Python",
+  "code": "def fib(n): ..." }
+
+<span class="diff-note">← supprimé (doublon exact)</span></pre>
+  <div class="example-insight">
+    <span class="insight-change">Ce qui change :</span> le second record identique est supprimé — seule la première occurrence est conservée.<br>
+    <span class="insight-why">Pourquoi :</span> deux fois le même exemple n'apprend rien de plus au modèle ; cela gaspille de la capacité d'entraînement.<br>
+    <span class="insight-benefit">Ce que ça apporte :</span> évite que le modèle sur-apprenne un pattern spécifique au détriment de la généralisation.
+  </div>
+</div>
+</div>
+
+<div class="impact-box">
+  <div class="impact-nums"><span class="num-before">9 051</span><span class="num-arrow">→</span><span class="num-after">6 459</span></div>
+  <div class="impact-label">Exemple adapter java-to-python-translator — 2 592 doublons exacts supprimés</div>
+  <div class="progress-bar"><div class="progress-fill fill-green" style="width:71%"></div></div>
+  <div class="impact-note warn">~29% de doublons — fréquent quand plusieurs sources couvrent les mêmes algorithmes</div>
+</div>
+</div>
+
+<!-- SOUS-ÉTAPE 2 -->
+<div class="card card-blue">
+<div class="step-header">
+  <div class="step-num num-blue">2</div>
+  <h3 style="margin:0">Scoring heuristique — Qualité structurelle</h3>
+</div>
+<p class="dim" style="font-size:0.88rem;margin-bottom:0.75rem">Chaque record reçoit un score de 0 à 1 basé sur des critères objectifs adaptés au domaine. Le scorer est sélectionné automatiquement d'après le champ <code>domain</code> de la config projet. Les records sous le seuil 0,55 sont définitivement rejetés.</p>
+
+<div class="two-col">
+<div>
+<h4>Critères — domaine <code>code</code></h4>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Critère</th><th>Impact</th></tr></thead>
+<tbody>
+<tr><td>Code entre 50 et 1500 caractères</td><td class="ok">+0.40</td></tr>
+<tr><td>Mot-clé code présent (def, class, public, void, if, for…)</td><td class="ok">+0.20</td></tr>
+<tr><td>Description &gt; 20 caractères</td><td class="ok">+0.15</td></tr>
+<tr><td>3 lignes de code minimum (<code>\n</code> count ≥ 3)</td><td class="ok">+0.10</td></tr>
+<tr><td>Lang=python : syntaxe valide via <code>ast.parse()</code></td><td class="ok">+0.15</td></tr>
+<tr><td>Lang=java : ≥2 mots-clés Java structurels (public, class, void…)</td><td class="ok">+0.15</td></tr>
+<tr><td>Lang=java : accolades équilibrées ({=})</td><td class="ok">+0.05</td></tr>
+<tr><td>Lang=python : syntaxe invalide</td><td class="bad">−0.10</td></tr>
+<tr><td>Ressemble à un titre de page (regex 1ère ligne)</td><td class="bad">−0.15</td></tr>
+</tbody>
+</table>
+</div>
+</div>
+<div>
+<h4>Critères — domaine <code>text</code></h4>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Critère</th><th>Impact</th></tr></thead>
+<tbody>
+<tr><td>Longueur 100–4000 caractères</td><td class="ok">+0.40</td></tr>
+<tr><td>Entropie linguistique élevée (&gt;4.0)</td><td class="ok">+0.25</td></tr>
+<tr><td>Entropie moyenne (3.0–4.0)</td><td class="warn">+0.10</td></tr>
+<tr><td>Plusieurs phrases complètes (≥ 3)</td><td class="ok">+0.10</td></tr>
+<tr><td>Description / titre &gt; 20 caractères</td><td class="ok">+0.15</td></tr>
+<tr><td>Entropie faible &lt;3.0 (texte répétitif)</td><td class="bad">−0.15</td></tr>
+<tr><td>Boilerplate détecté (cookies, login…)</td><td class="bad">−0.30</td></tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+
+<h4 style="margin-top:1rem">Exemple avant/après — domaine <code>text</code> (FAQ juridique)</h4>
+<div class="before-after">
+<div>
+  <div class="ba-label ba-before">Record brut rejeté (score 0,10)</div>
+  <pre>{ "question": "Congés payés ?",
+  "answer": "Voir RH. Login. Menu.
+    Home. Cliquez ici.
+    All rights reserved." }</pre>
+  <p class="dim" style="font-size:0.82rem;margin-top:0.4rem">Rejeté : longueur &lt; 100 chars (+0.20), boilerplate "login" et "click here" (−0.30), entropie faible (−0.15) → score 0,10 &lt; 0,55</p>
+</div>
+<div>
+  <div class="ba-label ba-after">Record conservé (score 0,75)</div>
+  <pre>{ "question": "Délai de préavis
+    pour démission cadre ?",
+  "answer": "Pour un cadre, le délai
+    légal de préavis est de 3 mois,
+    sauf convention collective plus
+    favorable. Ce délai court à compter
+    de la notification écrite..." }</pre>
+  <p class="dim" style="font-size:0.82rem;margin-top:0.4rem">Conservé : longueur OK (+0.40), entropie 4.2 (+0.25), 3 phrases (+0.10) → score 0,75 ≥ 0,55</p>
+</div>
+</div>
+
+<h4 style="margin-top:1rem">Augmentation spécifique au domaine <code>text</code></h4>
+<p class="dim" style="font-size:0.88rem;margin-bottom:0.75rem">Quand le volume d'un adapter texte est insuffisant, deux techniques sont disponibles (les techniques AST comme <code>identifier_renaming</code> ne s'appliquent pas au texte) :</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Technique</th><th>Ce que ça fait</th><th>Vérification</th></tr></thead>
+<tbody>
+<tr><td><code>desc_paraphrase</code></td><td>Réordonne les phrases de la description ou modifie le début — le sens est préservé</td><td class="neutral">Vérification longueur minimale</td></tr>
+<tr><td><code>text_truncation</code></td><td>Conserve les 2/3 premiers caractères d'un texte long (champ <code>text</code>, <code>content</code> ou <code>prompt</code>)</td><td class="neutral">Seuil minimum 300 caractères après troncature</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout callout-blue">
+  <span class="callout-icon">ℹ</span>
+  <div><strong>Sélection automatique du scorer :</strong> le code source de <code>clean_raw.py</code> lit <code>domain</code> dans la config projet et appelle <code>_code_score</code> ou <code>_text_score</code> en conséquence (<code>scorer = _code_score if domain == "code" else _text_score</code>). Aucune modification du pipeline n'est nécessaire pour changer de domaine.</div>
+</div>
+
+<div class="callout callout-orange">
+  <span class="callout-icon">⚠</span>
+  <div><strong>Seuil de rejet : 0,55.</strong> Ce filtre est le plus sélectif de tout le pipeline. Il est intentionnellement strict pour s'assurer que seules les données structurellement solides passent aux étapes suivantes, plus coûteuses (embeddings Bedrock).</div>
+</div>
+</div>
+
+<!-- SOUS-ÉTAPE 3 -->
+<div class="card card-blue">
+<div class="step-header">
+  <div class="step-num num-blue">3</div>
+  <h3 style="margin:0">Déduplication sémantique</h3>
+</div>
+<p class="dim" style="font-size:0.88rem;margin-bottom:0.75rem">Deux records peuvent parler de la même chose avec des mots différents. La déduplication exacte ne les repère pas. Ici, on compare les vecteurs d'embedding : si deux records ont une similarité cosinus ≥ 0,92, l'un est supprimé. Les vecteurs calculés ici sont réutilisés aux étapes suivantes pour éviter de rappeler Bedrock.</p>
+
+<div class="before-after">
+<div>
+  <div class="ba-label ba-before">Avant — quasi-doublons</div>
+  <pre>"Write a Python function for Fibonacci"
+code: def fib(n): ...
+
+<span class="diff-remove">"Implement the Fibonacci sequence in Python"
+code: def fib(n): ...
+→ cosinus = 0.96 ≥ 0.92</span></pre>
+</div>
+<div>
+  <div class="ba-label ba-after">Après</div>
+  <pre>"Write a Python function for Fibonacci"
+code: def fib(n): ...
+
+<span class="diff-note">← supprimé (near-duplicate, cosinus 0.96)</span></pre>
+  <div class="example-insight">
+    <span class="insight-change">Ce qui change :</span> la deuxième description ("Implement…") est supprimée même si les mots sont différents — le code produit est identique.<br>
+    <span class="insight-why">Pourquoi :</span> deux descriptions quasi-identiques sur le même code constituent un doublon sémantique, invisible à la déduplication exacte.<br>
+    <span class="insight-benefit">Ce que ça apporte :</span> diversité réelle du dataset, sans sur-représentation cachée d'un même concept sous des formulations légèrement différentes.
+  </div>
+</div>
+</div>
+</div>
+
+<!-- SOUS-ÉTAPE 4 -->
+<div class="card card-blue">
+<div class="step-header">
+  <div class="step-num num-blue">4</div>
+  <h3 style="margin:0">Scoring de pertinence</h3>
+</div>
+<p class="dim" style="font-size:0.88rem;margin-bottom:0.75rem">Chaque record est comparé à la description textuelle de son adapter cible. Un record hors-sujet est identifié et réassigné ou supprimé. Le seuil est volontairement bas (0,05) car la comparaison code/prose ou question/description produit naturellement des scores faibles même pour des données pertinentes.</p>
+
+<div class="before-after">
+<div>
+  <div class="ba-label ba-before">Exemple — adapter junit-to-pytest</div>
+  <pre>Description adapter :
+"Convertit les tests JUnit en tests pytest..."
+
+Record A : "JUnit 5 @Test annotation example"
+→ cosinus = 0.23 ✓ conservé
+
+Record B : "Spring Boot DataSource config"
+→ cosinus = 0.02 ✗ rejeté (hors-sujet)</pre>
+</div>
+<div>
+  <div class="ba-label ba-after">Score composite</div>
+  <pre>score_final =
+  0.6 × score_heuristique
++ 0.4 × score_pertinence
+
+Ce score composite détermine
+quels records garder quand
+le volume dépasse la cible.</pre>
+</div>
+</div>
+</div>
+
+<!-- SOUS-ÉTAPE 5 -->
+<div class="card card-blue">
+<div class="step-header">
+  <div class="step-num num-blue">5</div>
+  <h3 style="margin:0">Contrôle de volume</h3>
+</div>
+<p class="dim" style="font-size:0.88rem;margin-bottom:0.75rem">Chaque adapter a un volume cible défini dans sa configuration. Si on a trop de données, les moins bonnes sont éliminées. Si on en a trop peu, des variantes synthétiques sont générées automatiquement — toujours vérifiées (syntaxiquement pour le code, par longueur pour le texte).</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Situation</th><th>Déclencheur</th><th>Action</th></tr></thead>
+<tbody>
+<tr><td>Volume suffisant</td><td>Entre 50% et 110% de la cible</td><td class="ok">Aucune action</td></tr>
+<tr><td>Volume excessif</td><td>Plus de 110% de la cible</td><td class="warn">On garde les meilleurs, le reste est supprimé</td></tr>
+<tr><td>Volume insuffisant</td><td>Moins de 50% de la cible</td><td class="bad">Augmentation synthétique déclenchée</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>Techniques d'augmentation disponibles</h4>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Technique</th><th>Domaine</th><th>Ce que ça fait</th><th>Vérification</th></tr></thead>
+<tbody>
+<tr><td><code>identifier_renaming</code></td><td><span class="badge badge-blue">code</span></td><td>Renomme les variables Python (x → var_0, result → var_1…). Même logique, noms différents.</td><td class="ok">Vérification syntaxique AST obligatoire</td></tr>
+<tr><td><code>loop_style</code></td><td><span class="badge badge-blue">code</span></td><td>Convertit un <code>for</code> en <code>while</code> équivalent (Python uniquement)</td><td class="ok">Vérification syntaxique AST obligatoire</td></tr>
+<tr><td><code>desc_paraphrase</code></td><td><span class="badge badge-blue">code</span> <span class="badge badge-purple">text</span></td><td>Réordonne les phrases de la description ou modifie le début</td><td class="neutral">Vérification longueur</td></tr>
+<tr><td><code>text_truncation</code></td><td><span class="badge badge-purple">text</span></td><td>Conserve les 2/3 premiers caractères d'un texte long</td><td class="neutral">Seuil min 300 caractères</td></tr>
+</tbody>
+</table>
+</div>
+</div>
+
+<!-- SOUS-ÉTAPE 6 -->
+<div class="card card-blue">
+<div class="step-header">
+  <div class="step-num num-blue">6</div>
+  <h3 style="margin:0">Analyse de couverture thématique</h3>
+</div>
+<p class="dim" style="font-size:0.88rem;margin-bottom:0.75rem">Un algorithme de clustering (K-means, 8 groupes par défaut) regroupe les records par thème. Si certains groupes sont sous-représentés (moins de 40% de la taille moyenne), ils sont signalés comme "gaps". Ces gaps guident l'augmentation synthétique : les records des clusters manquants sont priorisés pour générer des variantes, garantissant que le modèle verra une diversité thématique équilibrée.</p>
+
+<div class="before-after">
+<div>
+  <div class="ba-label ba-before">Exemple — adapter java-to-python</div>
+  <pre>Cluster 0 : Algorithmes de tri     → 120
+Cluster 1 : Structures de données  → 95
+Cluster 2 : OOP / classes          → 88
+Cluster 3 : Lambdas / streams      →  18  ← GAP
+Cluster 4 : Generics Java          →  12  ← GAP</pre>
+</div>
+<div>
+  <div class="ba-label ba-after">Action</div>
+  <pre>Les records des clusters 3 et 4
+sont priorisés lors de l'étape
+d'augmentation, pour rééquilibrer
+la distribution thématique avant
+le fine-tuning.</pre>
+</div>
+</div>
+</div>
+
+<!-- SOUS-ÉTAPE 7 -->
+<div class="card card-orange">
+<div class="step-header">
+  <div class="step-num num-orange">7</div>
+  <h3 style="margin:0">Réassignation cross-adapter</h3>
+</div>
+<p class="dim" style="font-size:0.88rem;margin-bottom:0.75rem">Exécuté en amont sur l'ensemble des adapters. Si un record collecté dans l'adapter A est sémantiquement plus proche de l'adapter B (avec une marge de +15 points de cosinus), il est automatiquement déplacé vers B. Cela corrige les erreurs d'attribution lors de la collecte.</p>
+
+<div class="before-after">
+<div>
+  <div class="ba-label ba-before">Exemple de réassignation</div>
+  <pre>Record : "Spring @Entity annotation"
+Présent dans : java-to-python-translator
+
+Similarité avec java-to-python     = 0.31
+Similarité avec jpa-hibernate      = 0.67
+→ Marge = 0.36 > 0.15</pre>
+</div>
+<div>
+  <div class="ba-label ba-after">Résultat</div>
+  <pre>Record déplacé vers :
+jpa-hibernate-to-sqlalchemy-migrator
+
+Champ de traçabilité ajouté :
+"_reassigned_from": "java-to-python-translator"</pre>
+</div>
+</div>
+</div>
+
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<section class="section anchor" id="etape2">
+<h2>5. Étape 2 — Formation des paires (transform.py)</h2>
+
+<div class="summary-box">
+  <div class="summary-title">En résumé</div>
+  <p>Après le nettoyage, chaque record contient des champs source (description, code, question, texte…) à assembler en paires d'entraînement : une paire = une instruction (prompt) + la réponse attendue (completion). Le template à utiliser est défini par <code>pair_strategy</code> dans la config adapter. Trois templates sont disponibles : <code>doc_to_code</code>, <code>code_migration</code> et <code>qa</code>.</p>
+</div>
+
+<div class="card card-purple">
+<h3>Stratégie doc_to_code — Jointure directe (code)</h3>
+<p class="dim" style="font-size:0.88rem;margin-bottom:0.75rem">Un record = une paire. La description du code devient le prompt, le code lui-même devient la completion. Utilisé pour les adapters qui génèrent du code depuis une description : <code>python-migration-quality-reviewer</code>, <code>migration-pipeline-orchestrator</code>. Template : <code>config/transforms/doc_to_code.yaml</code>, champs requis : <code>description</code> + <code>code</code> + <code>lang</code>.</p>
+
+<div class="two-col">
+<div>
+<h4>Record d'entrée</h4>
+<pre>{
+  "description": "Read a CSV file and
+    return a list of rows",
+  "code": "import csv\ndef read_csv(p):
+    with open(p) as f:
+        return list(csv.reader(f))",
+  "lang": "python"
+}</pre>
+</div>
+<div>
+<h4>Paire générée</h4>
+<pre>{
+  "prompt": "Write python code that
+    does the following:
+
+    Read a CSV file and return
+    a list of rows.",
+  "completion": "import csv\ndef read_csv(p):
+    with open(p) as f:
+        return list(csv.reader(f))",
+  "lang": "python"
+}</pre>
+<p class="dim" style="font-size:0.82rem;margin-top:0.4rem">Template : <code>Write {{lang}} code that does the following:\n\n{{input}}</code> — le champ <code>lang</code> vient du record source via <code>lang_field: lang</code> dans le YAML.</p>
+</div>
+</div>
+</div>
+
+<div class="card card-purple">
+<h3>Stratégie code_migration — Jointure par identifiant commun</h3>
+<p class="dim" style="font-size:0.88rem;margin-bottom:0.75rem">Pour les données Rosetta Code, chaque tâche existe dans plusieurs langages sous le même nom (<code>task_name</code>). On joint les records Python et Java ayant le même <code>task_name</code> pour créer une paire de migration. C'est la méthode la plus fiable car l'alignement est garanti par la source elle-même.</p>
+
+<div class="two-col">
+<div>
+<h4>Records d'entrée</h4>
+<pre>{ "task_name": "fibonacci",
+  "lang": "Python",
+  "code": "def fib(n): ..." }
+
+{ "task_name": "fibonacci",
+  "lang": "Java",
+  "code": "public static int fib(int n)..." }</pre>
+</div>
+<div>
+<h4>Paire générée</h4>
+<pre>{
+  "prompt": "Migrate the following
+    Python code to Java.\n\n
+    ```Python\ndef fib(n):\n    ...```",
+  "completion": "public static int
+    fib(int n) { ... }",
+  "meta": {
+    "task_name": "fibonacci",
+    "src_lang": "Python",
+    "tgt_lang": "Java"
+  }
+}</pre>
+<p class="dim" style="font-size:0.82rem;margin-top:0.4rem">Template : <code>Migrate the following {{src_lang}} code to {{tgt_lang}}.\n\n```{{src_lang}}\n{{input}}\n```</code></p>
+</div>
+</div>
+
+<div class="callout callout-orange">
+  <span class="callout-icon">⚠</span>
+  <div><strong>Limitation :</strong> si la source propose plusieurs variantes d'un algorithme dans le même langage, seule la première est utilisée. Les autres sont perdues à cette étape mais peuvent être récupérées par augmentation en étape 1.</div>
+</div>
+</div>
+
+<div class="card card-purple">
+<h3>Stratégie qa — Paires question/réponse directes</h3>
+<p class="dim" style="font-size:0.88rem;margin-bottom:0.75rem">Un record = une paire. La question devient directement le prompt, la réponse devient la completion. Template le plus simple : aucun paramètre requis, optionnellement un champ <code>domain</code> pour adapter le wording. Template : <code>config/transforms/qa.yaml</code>, champs requis : <code>question</code> + <code>answer</code>.</p>
+<p class="dim" style="font-size:0.88rem;margin-bottom:0.75rem">Cas d'usage : support client, FAQ RH, base légale Q&amp;A, documentation technique sous forme de questions fréquentes.</p>
+
+<div class="two-col">
+<div>
+<h4>Record d'entrée</h4>
+<pre>{
+  "question": "Quel est le délai légal
+    de préavis pour un licenciement
+    d'un cadre avec 5 ans d'ancienneté ?",
+  "answer": "Pour un cadre avec 5 ans
+    d'ancienneté, le délai légal de
+    préavis est de 3 mois (art. L1237-1
+    du Code du travail), sauf convention
+    collective plus favorable."
+}</pre>
+</div>
+<div>
+<h4>Paire générée</h4>
+<pre>{
+  "prompt": "Quel est le délai légal
+    de préavis pour un licenciement
+    d'un cadre avec 5 ans d'ancienneté ?",
+  "completion": "Pour un cadre avec 5 ans
+    d'ancienneté, le délai légal de
+    préavis est de 3 mois (art. L1237-1
+    du Code du travail), sauf convention
+    collective plus favorable."
+}</pre>
+</div>
+</div>
+
+<div class="callout callout-green">
+  <span class="callout-icon">✓</span>
+  <div><strong>Template minimaliste :</strong> contrairement à <code>doc_to_code</code> (qui nécessite <code>lang</code>), le template <code>qa</code> n'a aucun <code>params_required</code>. L'instruction est la question elle-même — aucun texte d'instruction supplémentaire n'est injecté, ce qui préserve le style naturel des Q&amp;R.</div>
+</div>
+</div>
+
+<div class="card card-purple">
+<h3>Stratégie semantic_pair_match — Matching cosinus sur descriptions</h3>
+<p class="dim" style="font-size:0.88rem;margin-bottom:0.75rem">Contrairement à <code>code_migration</code> (jointure par identifiant commun) ou <code>fuse</code> (matching sur le contenu brut), <code>semantic_pair_match</code> aligne les records bilingues en comparant leurs <em>descriptions en langage naturel</em>. La description de "string concatenation" en Java et en Python ont une haute similarité cosinus parce qu'elles expliquent le même concept — même si les mots exacts et la syntaxe diffèrent. Fichier : <code>agents/semantic_pair_matcher.py</code>. Template : <code>config/transforms/semantic_pair_match.yaml</code>.</p>
+
+<div class="two-col">
+<div>
+<h4>Algorithme</h4>
+<ol style="padding-left:1.25rem;font-size:0.88rem;line-height:2.2">
+  <li>Embed toutes les descriptions en un seul batch (espace vectoriel partagé)</li>
+  <li>Calcul cosinus + boost <code>concept_keywords</code> (+0,05 par keyword commun)</li>
+  <li>Bijection stricte — un record target ne peut être apparié qu'une seule fois</li>
+  <li>Vérification software : AST Python côté source, regex Java côté target</li>
+  <li>Seuil minimum : <code>min_similarity: 0.75</code> (configurable dans le YAML)</li>
+</ol>
+</div>
+<div>
+<h4>Config <code>semantic_pair_match.yaml</code></h4>
+<pre>match_by: semantic_description
+min_similarity: 0.75
+boost_concept_keywords: true
+verification:
+  source_lang: ast_python
+  target_lang: regex_java
+bijection: strict</pre>
+<div class="callout callout-blue" style="margin-top:0.75rem">
+  <span class="callout-icon">ℹ</span>
+  <div style="font-size:0.85rem">Le paramètre <code>concept_keywords</code> dans <code>languages.yaml</code> booste les matches en ajoutant +0,05 par keyword commun entre les deux descriptions. Ex : "concatenation" présent dans les deux → +0,05.</div>
+</div>
+</div>
+</div>
+
+<div class="before-after" style="margin-top:1rem">
+<div>
+  <div class="ba-label ba-before">Records sources séparés</div>
+  <pre>JAVA :
+{ "description": "La méthode concat()
+    ajoute une chaîne à la fin d'une
+    autre chaîne en Java",
+  "code": "String s = \"Hello\".concat(\" World\");",
+  "lang": "java" }
+
+PYTHON :
+{ "description": "La concaténation de
+    chaînes combine deux strings en Python",
+  "code": "s = \"Hello\" + \" World\"",
+  "lang": "python" }</pre>
+</div>
+<div>
+  <div class="ba-label ba-after">Paire bilingue formée</div>
+  <pre>{
+  "prompt": "Migrate the following
+    Java code to Python.\n\n
+    ```Java\nString s =
+    \"Hello\".concat(\" World\");\n```",
+  "completion": "s = \"Hello\" + \" World\"",
+  "source_lang": "java",
+  "target_lang": "python",
+  "source_desc": "La méthode concat()
+    ajoute une chaîne...",
+  "target_desc": "La concaténation
+    combine deux strings...",
+  "similarity": 0.8312,
+  "collector_type": "semantic_matched"
+}</pre>
+<p class="dim" style="font-size:0.82rem;margin-top:0.4rem">Note : <code>similarity</code> = cosinus brut + keyword_boost cumulés. Le champ est <code>"similarity"</code> (pas <code>cos_sim</code>) — produit par <code>SemanticPairMatcher.match()</code>.</p>
+</div>
+</div>
+
+<div class="callout callout-green" style="margin-top:0.75rem">
+  <span class="callout-icon">✓</span>
+  <div><strong>Zéro LLM — 100% déterministe :</strong> contrairement à la stratégie <code>fuse</code> qui appelle un LLM pour <em>générer</em> le code cible, <code>semantic_pair_match</code> n'appelle jamais de LLM — il aligne des paires existantes via embedding + cosinus. Résultat reproductible à chaque run à même graine. Coût d'exécution : uniquement les embeddings Bedrock (batch unique).</div>
+</div>
+</div>
+
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<section class="section anchor" id="etape2b">
+<h2>6. Étape 2bis — Génération LLM (pair_fuser.py)</h2>
+
+<div class="summary-box">
+  <div class="summary-title">En résumé</div>
+  <p>Quand les données source sont <strong>monolingues</strong> (uniquement du Java, sans équivalent Python natif), <code>pair_fuser.py</code> utilise un LLM pour générer la traduction dans le langage cible. Le LLM est utilisé <em>uniquement pour la génération</em> — toutes les décisions d'acceptation ou de rejet sont prises par software (AST pour Python, regex pour Java, vérification de ratio). Zéro matching cosinus ici : le matching sémantique sur descriptions est le rôle de <code>semantic_pair_matcher.py</code> (section 5).</p>
+</div>
+
+<div class="callout callout-orange">
+  <span class="callout-icon">⚠</span>
+  <div><strong>Deux composants distincts :</strong> <code>pair_fuser.py</code> (génération LLM) et <code>semantic_pair_matcher.py</code> (matching cosinus sur descriptions) font des choses très différentes. Ne pas les confondre. Le choix entre les deux est piloté par le champ <code>pair_strategy</code> dans la config adapter : <code>fuse</code> → pair_fuser, <code>semantic_match</code> → semantic_pair_matcher.</div>
+</div>
+
+<div class="card card-blue">
+<h3>Algorithme pair_fuser — étape par étape</h3>
+
+<div class="two-col">
+<div>
+<h4>Comment ça fonctionne</h4>
+<ol style="padding-left:1.25rem;font-size:0.88rem;line-height:2.2">
+  <li>Charger les records <code>source_lang</code> depuis <code>processed/clean_raw/</code></li>
+  <li>Pour chaque record : construire le prompt de traduction LLM</li>
+  <li>Appeler le LLM via <code>pipeline/utils/llm.py</code> (<code>temperature=0.1</code>)</li>
+  <li>Extraire le code généré depuis la réponse (bloc fencé ou texte brut)</li>
+  <li>Vérification software : ratio longueur (min 0,15 · max 8,0)</li>
+  <li>Vérification software : syntaxe target_lang (AST Python / regex Java)</li>
+  <li>Si OK → paire acceptée avec <code>collector_type: "fused"</code></li>
+</ol>
+</div>
+<div>
+<h4>Paramètres de vérification</h4>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Critère</th><th>Valeur</th></tr></thead>
+<tbody>
+<tr><td>Ratio min len(completion)/len(source)</td><td class="ok">0,15</td></tr>
+<tr><td>Ratio max len(completion)/len(source)</td><td class="warn">8,0</td></tr>
+<tr><td>Longueur minimale code généré</td><td class="ok">30 chars</td></tr>
+<tr><td>Rate limit entre appels LLM</td><td class="neutral">0,2 s</td></tr>
+<tr><td>Temperature LLM</td><td class="neutral">0,1</td></tr>
+</tbody>
+</table>
+</div>
+<div class="callout callout-blue" style="margin-top:0.75rem">
+  <span class="callout-icon">ℹ</span>
+  <div style="font-size:0.85rem">La vérification Java utilise des regex heuristics (mots-clés structurels + accolades équilibrées) car aucun compilateur Java n'est disponible en local. La vérification Python utilise <code>ast.parse()</code> — 100% fiable.</div>
+</div>
+</div>
+</div>
+
+<div class="before-after" style="margin-top:1rem">
+<div>
+  <div class="ba-label ba-before">Record source Java (clean_raw)</div>
+  <pre>{
+  "description":
+    "Singly linked list — push",
+  "code": "public class LinkedList {\n
+    Node head;\n
+    public void push(int data) {\n
+        Node n = new Node(data);\n
+        n.next = head;\n
+        head = n;\n    }\n}",
+  "lang": "java"
+}</pre>
+</div>
+<div>
+  <div class="ba-label ba-after">Paire générée + vérifiée</div>
+  <pre>{
+  "prompt":
+    "public class LinkedList {\n
+    Node head;\n
+    public void push(int data)...",
+<span class="diff-add">  "completion":
+    "class LinkedList:\n
+    def __init__(self):\n
+        self.head = None\n
+    def push(self, data):\n
+        node = {'data': data,\n
+                'next': self.head}\n
+        self.head = node",</span>
+<span class="diff-add">  "source_lang": "java",
+  "target_lang": "python",
+  "collector_type": "fused"</span>
+}</pre>
+  <div class="example-insight">
+    <span class="insight-change">Ce qui change :</span> le code Java avec classes et nodes est traduit en Python avec une structure dict — même logique, syntaxe différente.<br>
+    <span class="insight-why">Pourquoi :</span> c'est exactement ce que le modèle devra faire en production : recevoir du Java, produire du Python idiomatique.<br>
+    <span class="insight-benefit">Ce que ça apporte :</span> une paire d'entraînement directement exploitable pour le fine-tuning migration, vérifiée syntaxiquement avant acceptation.
+  </div>
+</div>
+</div>
+
+<div class="impact-box" style="margin-top:0.75rem">
+  <div class="impact-nums"><span class="num-before">500 records Java</span><span class="num-arrow">→</span><span class="num-after">~420 paires</span></div>
+  <div class="impact-label">Taux d'acceptation typique : ~84% (rejet syntax + ratio ~16%)</div>
+  <div class="progress-bar"><div class="progress-fill fill-blue" style="width:84%"></div></div>
+  <div class="impact-note warn">~16% rejetés — code généré syntaxiquement invalide ou ratio hors limites</div>
+</div>
+</div>
+
+<div class="card card-blue">
+<h3>Composant AWA — source_discoverer.py</h3>
+<p class="dim" style="font-size:0.88rem;margin-bottom:0.75rem">Quand les sources bilingues disponibles sont insuffisantes pour produire assez de paires, <code>source_discoverer.py</code> cherche automatiquement de nouvelles sources sur le web selon les <code>concept_keywords</code> du projet. Il opère en amont de la formation des paires et retourne un YAML de sources proposées — sans modifier les données déjà collectées (raw/ reste immutable). La validation humaine est obligatoire avant intégration dans la config projet.</p>
+
+<div class="two-col">
+<div>
+<h4>Fonctionnement</h4>
+<ol style="padding-left:1.25rem;font-size:0.88rem;line-height:2.2">
+  <li>Lecture des <code>concept_keywords</code> + <code>adapter_keywords</code> (extraits de la description adapter)</li>
+  <li>Recherche multi-moteur : <strong>SearXNG</strong> (local, multi-engine) → <strong>DuckDuckGo</strong> → <strong>Brave Search API</strong></li>
+  <li>Filtrage des URLs par <code>config/trusted_domains.yaml</code> (pas de filtre <code>site:</code> dans la requête)</li>
+  <li>Vérification que la page contient du code (regex sur balises HTML + mots-clés langage)</li>
+  <li>Déduplication vs sources déjà connues en <code>source_configs</code></li>
+  <li>Output : YAML de nouvelles sources proposées pour validation humaine</li>
+</ol>
+</div>
+<div>
+<h4>Domaines de confiance</h4>
+<p class="dim" style="font-size:0.85rem;margin-bottom:0.5rem">Pilotés par <code>config/trusted_domains.yaml</code> — ajouter un domaine = 1 ligne YAML, zéro code.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Tier</th><th>Exemples</th></tr></thead>
+<tbody>
+<tr><td><span class="badge badge-green">official</span></td><td>docs.oracle.com, docs.python.org</td></tr>
+<tr><td><span class="badge badge-blue">tutorial</span></td><td>baeldung.com, programiz.com, datacamp.com</td></tr>
+<tr><td><span class="badge badge-purple">community</span></td><td>developpez.com, geeksforgeeks.org</td></tr>
+<tr><td><span class="badge badge-orange">code</span></td><td>rosettacode.org, github.com/TheAlgorithms</td></tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+
+<div class="callout callout-orange" style="margin-top:0.75rem">
+  <span class="callout-icon">⚠</span>
+  <div><strong>Validation humaine requise :</strong> <code>source_discoverer.py</code> produit un YAML de propositions — il ne modifie pas automatiquement la config projet. Un humain valide les nouvelles sources avant qu'elles soient ajoutées à <code>source_configs</code> et consommées par le pipeline de collecte.</div>
+</div>
+</div>
+
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<section class="section anchor" id="etape3">
+<h2>7. Étape 3 — Nettoyage des paires (clean.py)</h2>
+
+<div class="summary-box">
+  <div class="summary-title">En résumé</div>
+  <p>Les paires formées aux étapes 2 et 2bis passent un dernier cycle de nettoyage avant l'entraînement. Cette étape détecte les quasi-doublons au niveau des paires (deux paires qui enseignent la même chose), filtre les paires trop courtes ou déséquilibrées, attribue un score de qualité final, et divise le dataset en deux lots : 90% pour l'entraînement, 10% pour la validation.</p>
+</div>
+
+<div class="card card-green">
+<div class="step-header">
+  <div class="step-num num-green">1</div>
+  <h3 style="margin:0">Déduplication — Exacte + MinHash</h3>
+</div>
+<p class="dim" style="font-size:0.88rem;margin-bottom:0.5rem"><strong>Phase exacte :</strong> empreinte MD5 sur le couple prompt+completion.</p>
+<p class="dim" style="font-size:0.88rem;margin-bottom:0.75rem"><strong>Phase MinHash :</strong> compare les séquences de 5 mots consécutifs entre toutes les paires (5-grams). Si deux paires partagent 85%+ de ces séquences, l'une est supprimée. Cette méthode capture les paires quasi-identiques même si quelques mots ont changé.</p>
+
+<div class="impact-box">
+  <div class="impact-nums"><span class="num-before">950</span><span class="num-arrow">→</span><span class="num-after">870</span></div>
+  <div class="impact-label">Après déduplication exacte + MinHash</div>
+  <div class="progress-bar"><div class="progress-fill fill-green" style="width:91%"></div></div>
+</div>
+</div>
+
+<div class="card card-green">
+<div class="step-header">
+  <div class="step-num num-green">2</div>
+  <h3 style="margin:0">Filtrage par règles métier</h3>
+</div>
+<p class="dim" style="font-size:0.88rem;margin-bottom:0.75rem">Règles configurables dans le fichier de config du projet. Elles garantissent que chaque paire est dans la fenêtre de contexte du modèle, équilibrée entre prompt et completion, et ne contient pas de données sensibles.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Règle</th><th>Exemple (domaine code)</th><th>Motif de rejet</th></tr></thead>
+<tbody>
+<tr><td>Longueur minimale totale</td><td>50 tokens</td><td><code>too_short</code></td></tr>
+<tr><td>Longueur maximale totale</td><td>2048 tokens</td><td><code>too_long</code></td></tr>
+<tr><td>La completion doit faire au moins 30% du prompt</td><td>ratio 0,3</td><td><code>bad_ratio</code></td></tr>
+<tr><td>La completion ne doit pas faire plus de 10× le prompt</td><td>ratio 10,0</td><td><code>bad_ratio</code></td></tr>
+<tr><td>Mots interdits dans le contenu</td><td>password, secret, api_key, TODO, FIXME</td><td><code>blacklisted</code></td></tr>
+</tbody>
+</table>
+</div>
+</div>
+
+<div class="card card-green">
+<div class="step-header">
+  <div class="step-num num-green">3</div>
+  <h3 style="margin:0">Score qualité des paires</h3>
+</div>
+<p class="dim" style="font-size:0.88rem;margin-bottom:0.75rem">Si un modèle local (mlx_lm.server) est disponible, il note chaque paire de 0 à 10. Le prompt de scoring inclut le <code>domain</code> et le <code>task_type</code> de la config projet pour contextualiser l'évaluation. Sinon, un score heuristique rapide est utilisé. Seules les paires avec un score ≥ 0,70 sont conservées.</p>
+
+<div class="two-col">
+<div>
+<h4>Score heuristique (quand pas de modèle local)</h4>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Critère</th><th>Points</th></tr></thead>
+<tbody>
+<tr><td>Score de base</td><td>0,50</td></tr>
+<tr><td>Ratio tokens entre 0,5 et 3,0</td><td class="ok">+0,20</td></tr>
+<tr><td>Completion de plus de 3 lignes</td><td class="ok">+0,15</td></tr>
+<tr><td>Mot-clé code dans la completion</td><td class="ok">+0,15</td></tr>
+</tbody>
+</table>
+</div>
+<p class="footnote">Score max = 1,0. Seuil d'acceptation : 0,70</p>
+</div>
+<div>
+<h4>Score LLM local (si disponible)</h4>
+<pre>Le modèle local reçoit un extrait
+de la paire et répond avec une
+note de 0 à 10 :
+
+"Rate the quality of this
+{domain}/{task_type} training pair
+from 0 to 10. Consider: accuracy,
+completeness, consistency."
+
+→ Normalisé en 0–1.</pre>
+</div>
+</div>
+</div>
+
+<div class="card card-green">
+<div class="step-header">
+  <div class="step-num num-green">4</div>
+  <h3 style="margin:0">Split train / valid</h3>
+</div>
+<p class="dim" style="font-size:0.88rem;margin-bottom:0.75rem">Mélange aléatoire avec une graine fixe (seed=42, toujours reproductible) puis division : 90% pour l'entraînement, 10% pour la validation. Le jeu de validation permet d'évaluer objectivement le modèle sur des données qu'il n'a jamais vues pendant l'entraînement.</p>
+
+<div class="impact-box">
+  <div class="impact-nums"><span class="num-before">780 paires</span><span class="num-arrow">→</span><span class="num-after">702 train + 78 valid</span></div>
+  <div class="impact-label">Split 90/10, seed=42 (reproductible)</div>
+  <div class="progress-bar"><div class="progress-fill fill-green" style="width:90%"></div></div>
+</div>
+</div>
+
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<section class="section anchor" id="params">
+<h2>8. Paramètres de réglage</h2>
+
+<div class="summary-box">
+  <div class="summary-title">En résumé</div>
+  <p>Tous les seuils de filtrage sont configurables dans <code>config/projects/&lt;id&gt;.yaml</code>. Les valeurs ci-dessous sont les valeurs par défaut et celles utilisées pour un projet code (ex: Migrator). Un projet texte (juridique, RH) nécessite notamment d'ajuster <code>min_tokens</code> à la baisse et de vérifier que <code>domain</code> est bien sur <code>text</code>.</p>
+</div>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Paramètre</th><th>Valeur par défaut</th><th>Exemple Migrator</th><th>Effet si on l'augmente</th><th>Recommandation</th></tr></thead>
+<tbody>
+<tr><td><code>QUALITY_THRESHOLD</code></td><td>0,55</td><td>0,55</td><td>Filtre plus agressif — moins de données mais meilleures</td><td class="ok">0,50–0,60</td></tr>
+<tr><td><code>AUGMENT_THRESHOLD</code></td><td>0,65</td><td>0,65</td><td>Seuls les records de qualité élevée sont augmentés</td><td class="ok">Garder 0,10 au-dessus du seuil de qualité</td></tr>
+<tr><td><code>SEM_DEDUP_THRESHOLD</code></td><td>0,92</td><td>0,92</td><td>Moins de near-duplicates conservés (plus strict)</td><td class="warn">Ne pas descendre sous 0,88</td></tr>
+<tr><td><code>RELEVANCE_THRESHOLD</code></td><td>0,05</td><td>0,05</td><td>Filtre plus de données hors-sujet</td><td class="ok">Laisser bas sauf domaine très spécialisé</td></tr>
+<tr><td><code>VOLUME_RATIO_HIGH</code></td><td>1,10</td><td>1,10</td><td>Autorise plus de données en surplus avant trim</td><td class="ok">1,05–1,20</td></tr>
+<tr><td><code>VOLUME_RATIO_LOW</code></td><td>0,50</td><td>0,50</td><td>Déclenche l'augmentation plus tôt</td><td class="warn">0,60 si sources fiables</td></tr>
+<tr><td><code>MAX_AUG_PER_RECORD</code></td><td>2</td><td>2</td><td>Plus de variantes par record source</td><td class="ok">1–3 maximum</td></tr>
+<tr><td><code>N_CLUSTERS_DEFAULT</code></td><td>8</td><td>8</td><td>Analyse thématique plus fine</td><td class="warn">Ajuster si &lt;50 records</td></tr>
+<tr><td><code>estimated_pairs</code></td><td>500</td><td>300–1060</td><td>Cible de volume par adapter</td><td class="ok">Basé sur la stratégie qualité du projet</td></tr>
+<tr><td><code>_DEFAULT_THRESHOLD</code> (semantic_matcher)</td><td>0,75</td><td>0,75</td><td>Moins de paires mais mieux alignées sémantiquement</td><td class="warn">Ne pas descendre sous 0,65 — surpassable via <code>min_similarity</code> dans le YAML</td></tr>
+<tr><td><code>_MIN_RATIO</code> / <code>_MAX_RATIO</code> (fuser)</td><td>0,15 / 8,0</td><td>0,15 / 8,0</td><td>Filtre le code généré trop court ou aberrant</td><td class="ok">Garder ces valeurs — protège contre les hallucinations LLM</td></tr>
+<tr><td><code>min_tokens</code> (clean)</td><td>30</td><td>50</td><td>Rejette les paires encore plus courtes</td><td class="ok">50 pour code, 30 pour texte</td></tr>
+<tr><td><code>max_tokens</code> (clean)</td><td>2048</td><td>2048</td><td>Accepte des paires plus longues</td><td class="warn">Aligner avec la fenêtre contexte du modèle de base</td></tr>
+<tr><td><code>valid_ratio</code> (clean)</td><td>0,10</td><td>0,10</td><td>Plus de données réservées à la validation</td><td class="ok">0,10–0,15</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="card card-blue" style="margin-top:1.5rem">
+<h3>Exposition UI — endpoints du pipeline</h3>
+<p class="dim" style="font-size:0.88rem;margin-bottom:0.75rem">Le frontend SvelteKit expose les deux étapes du pipeline de nettoyage comme actions distinctes, permettant de les exécuter séparément ou séquentiellement.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Étape</th><th>Libellé UI</th><th>Endpoint</th><th>Action</th></tr></thead>
+<tbody>
+<tr><td>Étape 1</td><td>Pipeline nettoyage — Données brutes</td><td><code>POST /api/data/clean-raw</code></td><td>Lance <code>clean_raw.py</code> sur le projet sélectionné</td></tr>
+<tr><td>Étape 2</td><td>Pipeline nettoyage — Paires</td><td><code>POST /api/data/pipeline</code></td><td>Lance <code>transform.py</code> + <code>pair_fuser.py</code> + <code>clean.py</code></td></tr>
+</tbody>
+</table>
+</div>
+<div class="callout callout-blue" style="margin-top:0.75rem">
+  <span class="callout-icon">ℹ</span>
+  <div><strong>Bouton "🧠 Matcher sémantique" :</strong> disponible dans la section "Collecte AWA" de l'UI, à côté du bouton "⚡ Fusionner". Il déclenche <code>agents/semantic_pair_matcher.py</code> et affiche les paires proposées avant confirmation.</div>
+</div>
+</div>
+
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<section class="section anchor" id="antigigo">
+<h2>9. Protection qualité — Stratégie Anti-GIGO</h2>
+
+<div class="summary-box">
+  <div class="summary-title">En résumé</div>
+  <p><em>GIGO = Garbage In, Garbage Out.</em> Un modèle d'IA ne peut pas produire de bons résultats s'il a appris sur de mauvaises données. Notre pipeline implémente une <strong>défense en profondeur</strong> : chaque étape protège contre une menace spécifique. Aucune couche n'est suffisante seule — c'est leur combinaison qui garantit la qualité finale.</p>
+</div>
+
+<div class="card card-red">
+<div class="table-wrap">
+<table>
+<thead><tr><th>Où</th><th>Menace protégée</th><th>Mécanisme</th><th>Garantie</th></tr></thead>
+<tbody>
+<tr><td><span class="badge badge-blue">Étape 1 — ①</span></td><td>Doublons exacts (même source collectée 2×)</td><td>Hash MD5</td><td class="ok">Zéro doublon exact en sortie</td></tr>
+<tr><td><span class="badge badge-blue">Étape 1 — ②</span></td><td>Navigation HTML, fragments sans sens, code cassé, boilerplate texte</td><td>Scorer heuristique domain-aware, seuil 0,55</td><td class="ok">Qualité structurelle minimale garantie</td></tr>
+<tr><td><span class="badge badge-blue">Étape 1 — ③</span></td><td>Paraphrases du même contenu (même sens, description légèrement différente)</td><td>Similarité cosinus ≥ 0,92</td><td class="ok">Diversité sémantique garantie</td></tr>
+<tr><td><span class="badge badge-blue">Étape 1 — ④</span></td><td>Données hors-sujet de l'adapter</td><td>Comparaison vs description adapter</td><td class="ok">Cohérence thématique vérifiée</td></tr>
+<tr><td><span class="badge badge-blue">Étape 1 — ⑤</span></td><td>Déséquilibre de volume entre adapters</td><td>Trim + augmentation vérifiée (AST pour code, longueur pour texte)</td><td class="ok">Volume dans la plage cible pour chaque adapter</td></tr>
+<tr><td><span class="badge badge-blue">Étape 1 — ⑥</span></td><td>Angles morts thématiques</td><td>K-means, détection gaps &lt; 40%</td><td class="ok">Gaps documentés et priorisés pour l'augmentation</td></tr>
+<tr><td><span class="badge badge-orange">Étape 1 — ⑦</span></td><td>Mauvaise attribution adapter lors de la collecte</td><td>Réassignation cross-adapter, marge &gt; 15%</td><td class="ok">Chaque record dans l'adapter le plus adapté</td></tr>
+<tr><td><span class="badge badge-blue">Augmentation</span></td><td>Augmentation qui injecterait du code syntaxiquement invalide</td><td>Vérification AST obligatoire post-transformation (code uniquement)</td><td class="ok">Zéro code invalide injecté</td></tr>
+<tr><td><span class="badge badge-purple">Étape 2bis (pair_fuser)</span></td><td>Code généré syntaxiquement invalide ou trop court</td><td>Vérif. AST Python / regex Java + ratio min 0,15 max 8,0 — rejet automatique si non conforme</td><td class="ok">Zéro code invalide injecté dans les paires</td></tr>
+<tr><td><span class="badge badge-purple">Étape 2 (semantic_matcher)</span></td><td>Paires bilingues mal alignées sémantiquement</td><td>Seuil cosinus ≥ 0,75 + keyword_boost + bijection stricte (un target une seule fois)</td><td class="ok">Correspondance sémantique garantie par description</td></tr>
+<tr><td><span class="badge badge-green">Étape 3 — ①</span></td><td>Quasi-doublons au niveau des paires finales</td><td>MinHash 5-grams, seuil Jaccard 0,85</td><td class="ok">Diversité des paires d'entraînement</td></tr>
+<tr><td><span class="badge badge-green">Étape 3 — ②</span></td><td>Paires trop courtes, hors contexte, contenant des données sensibles</td><td>Règles token-based + blacklist</td><td class="ok">Toutes les paires dans la fenêtre contexte du modèle, sans données sensibles</td></tr>
+<tr><td><span class="badge badge-green">Étape 3 — ③</span></td><td>Paires de faible qualité qui passeraient les filtres précédents</td><td>Score heuristique ou LLM local (domain+task_type aware), seuil 0,70</td><td class="ok">Qualité minimale garantie par paire finale</td></tr>
+</tbody>
+</table>
+</div>
+</div>
+
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<section class="section anchor" id="exemples">
+<h2>10. Exemples concrets</h2>
+
+<h3>10.1 — Cycle complet : domaine code (Rosetta Code → paire de migration)</h3>
+
+<div class="card card-blue">
+<h4>Record brut collecté (Rosetta Code)</h4>
+<pre>{
+  "task_name":  "linked list",
+  "lang":       "java",
+  "code":       "public class LinkedList {\n    Node head;\n    static class Node {\n        int data;\n        Node next;\n        Node(int d) { data = d; next = null; }\n    }\n    public void push(int new_data) {\n        Node new_node = new Node(new_data);\n        new_node.next = head;\n        head = new_node;\n    }\n}",
+  "source_url": "https://rosettacode.org/wiki/Linked_list"
+}</pre>
+</div>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Étape</th><th>Action</th><th>Résultat</th><th>Score</th></tr></thead>
+<tbody>
+<tr><td>Étape 1 — ①</td><td>Hash MD5</td><td class="ok">Unique — conservé</td><td class="neutral">—</td></tr>
+<tr><td>Étape 1 — ②</td><td>Score heuristique (domain=code)</td><td class="ok">Longueur OK, mots-clés présents, 3+ lignes</td><td class="ok">0,70</td></tr>
+<tr><td>Étape 1 — ③</td><td>Dédup sémantique</td><td class="ok">Aucun near-duplicate trouvé</td><td class="neutral">—</td></tr>
+<tr><td>Étape 1 — ④</td><td>Pertinence adapter java-to-python</td><td class="ok">cosinus = 0,31 &gt; 0,05</td><td class="ok">0,31</td></tr>
+<tr><td>Étape 1 — ⑤</td><td>Contrôle volume</td><td class="ok">Volume dans la plage cible</td><td class="neutral">—</td></tr>
+<tr><td>Étape 2 (transform.py)</td><td>Jointure par <code>task_name="linked list"</code> — record Java + record Python → paire code_migration</td><td class="ok">Match direct sur identifiant — pas de cosinus ici</td><td class="neutral">—</td></tr>
+<tr><td>Étape 3 — ①</td><td>Dédup exacte + MinHash</td><td class="ok">Unique</td><td class="neutral">—</td></tr>
+<tr><td>Étape 3 — ②</td><td>Règles : 87 tokens, ratio 0,9</td><td class="ok">Conservé</td><td class="neutral">—</td></tr>
+<tr><td>Étape 3 — ③</td><td>Score qualité heuristique</td><td class="ok">Ratio OK, 3+ lignes, mots-clés</td><td class="ok">0,80</td></tr>
+<tr><td>Étape 3 — ④</td><td>Split train/valid</td><td class="ok">→ train.jsonl</td><td class="neutral">—</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="card card-green" style="margin-top:1rem">
+<h4>Paire finale dans train.jsonl (adapter java-to-python-translator — strategy: code_migration)</h4>
+<pre>{
+  "prompt": "Migrate the following Java code to Python.\n\n```Java\npublic class LinkedList {\n    Node head;\n    static class Node {\n        int data; Node next;\n        Node(int d) { data=d; next=null; }\n    }\n    public void push(int new_data) {\n        Node n = new Node(new_data);\n        n.next = head; head = n;\n    }\n}\n```",
+  "completion": "class LinkedList:\n    class Node:\n        def __init__(self, data):\n            self.data = data\n            self.next = None\n    def __init__(self):\n        self.head = None\n    def push(self, data):\n        n = self.Node(data)\n        n.next = self.head\n        self.head = n",
+  "meta": {
+    "task_name": "linked list",
+    "src_lang": "Java",
+    "tgt_lang": "Python"
+  }
+}</pre>
+<p class="dim" style="font-size:0.82rem;margin-top:0.4rem">Pour un adapter Java→Python avec <code>pair_strategy: code_migration</code>, le <strong>prompt = code Java</strong> et la <strong>completion = code Python</strong>. La jointure est faite par <code>task_name</code> via <code>transform.py</code>.</p>
+</div>
+
+<h3 style="margin-top:2rem">10.2 — Exemples de rejet à chaque étape</h3>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Record / Paire</th><th>Rejeté à</th><th>Raison</th></tr></thead>
+<tbody>
+<tr><td>Doublon exact d'un algorithme déjà vu</td><td>Étape 1 — ①</td><td class="bad">Hash MD5 déjà vu</td></tr>
+<tr><td>Fragment HTML : "Home | Menu | Search | Login"</td><td>Étape 1 — ② (code)</td><td class="bad">Score 0,00 — navigation, aucun mot-clé code</td></tr>
+<tr><td>Page web : "Cliquez ici. All rights reserved. Cookie policy."</td><td>Étape 1 — ② (text)</td><td class="bad">Score 0,10 — boilerplate −0,30, entropie faible −0,15</td></tr>
+<tr><td>Variante reformulée d'un algorithme existant</td><td>Étape 1 — ③</td><td class="bad">Cosinus 0,95 avec un record existant</td></tr>
+<tr><td>Doc Spring Security JWT dans adapter junit-to-pytest</td><td>Étape 1 — ④ / ⑦</td><td class="bad">cosinus 0,02 vs description adapter → réassigné ou supprimé</td></tr>
+<tr><td>Descriptions Python / Java sur des concepts trop différents</td><td>Étape 2bis</td><td class="bad">cosinus descriptions 0,48 &lt; 0,70</td></tr>
+<tr><td>Paire prompt:"add(a,b)" / completion:"return a+b"</td><td>Étape 3 — ②</td><td class="bad">too_short : 8 tokens &lt; 50</td></tr>
+<tr><td>Paire contenant "TODO: implement this"</td><td>Étape 3 — ②</td><td class="bad">blacklisted (TODO)</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3 style="margin-top:2rem">10.3 — Exemple d'augmentation réussie (domaine code)</h3>
+
+<div class="before-after">
+<div>
+  <div class="ba-label ba-before">Record source (score 0,72 ≥ seuil augmentation 0,65)</div>
+  <pre><span class="diff-remove">def bubble_sort(arr):
+    n = len(arr)
+    for i in range(n):
+        for j in range(n-i-1):
+            if arr[j] > arr[j+1]:
+                arr[j], arr[j+1] = arr[j+1], arr[j]</span></pre>
+</div>
+<div>
+  <div class="ba-label ba-after">Variant généré — identifier_renaming (AST-vérifié ✓)</div>
+  <pre><span class="diff-add">def var_0(var_1):
+    var_2 = len(var_1)
+    for var_3 in range(var_2):
+        for var_4 in range(var_2-var_3-1):
+            if var_1[var_4] > var_1[var_4+1]:
+                var_1[var_4], var_1[var_4+1] = var_1[var_4+1], var_1[var_4]</span>
+<span class="diff-note">_aug_type: identifier_renaming — AST-vérifié ✓</span></pre>
+  <div class="example-insight">
+    <span class="insight-change">Ce qui change :</span> <code>bubble_sort</code>, <code>arr</code>, <code>n</code>, <code>i</code>, <code>j</code> sont remplacés par <code>var_0</code>, <code>var_1</code>… — la logique est identique, seuls les noms changent.<br>
+    <span class="insight-why">Pourquoi :</span> le modèle ne doit pas associer un algorithme à des noms de variables spécifiques d'une source, mais à sa structure logique.<br>
+    <span class="insight-benefit">Ce que ça apporte :</span> robustesse — le modèle apprend à reconnaître et produire des patterns algorithmiques indépendamment des conventions de nommage.
+  </div>
+</div>
+</div>
+
+<h3 style="margin-top:2rem">10.4 — Exemple domaine texte (FAQ juridique)</h3>
+
+<div class="card card-blue">
+<h4>Record brut collecté (FAQ RH)</h4>
+<pre>{
+  "question": "Quel est le délai légal de préavis pour
+    la démission d'un cadre ?",
+  "answer": "Pour un cadre, le délai légal de préavis
+    est de 3 mois à compter de la notification
+    écrite de la démission à l'employeur. Ce délai
+    peut être réduit par accord entre les parties.
+    Une convention collective plus favorable prime
+    sur la disposition légale (art. L1237-1 CT)."
+}</pre>
+</div>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Étape</th><th>Action</th><th>Résultat</th><th>Score</th></tr></thead>
+<tbody>
+<tr><td>Étape 1 — ①</td><td>Hash MD5</td><td class="ok">Unique — conservé</td><td class="neutral">—</td></tr>
+<tr><td>Étape 1 — ②</td><td>Score heuristique (domain=text)</td><td class="ok">Longueur 287 chars (+0,40), entropie 4,3 (+0,25), 3 phrases (+0,10), description OK (+0,15)</td><td class="ok">0,90</td></tr>
+<tr><td>Étape 1 — ③</td><td>Dédup sémantique</td><td class="ok">Aucun near-duplicate</td><td class="neutral">—</td></tr>
+<tr><td>Étape 1 — ④</td><td>Pertinence adapter legal-qa</td><td class="ok">cosinus = 0,42 &gt; 0,05</td><td class="ok">0,42</td></tr>
+<tr><td>Étape 1 — ⑤</td><td>Contrôle volume</td><td class="ok">Volume dans la plage cible</td><td class="neutral">—</td></tr>
+<tr><td>Étape 2 (qa)</td><td>Template qa : question → prompt, answer → completion</td><td class="ok">Paire directe formée</td><td class="neutral">—</td></tr>
+<tr><td>Étape 3 — ①</td><td>Dédup exacte + MinHash</td><td class="ok">Unique</td><td class="neutral">—</td></tr>
+<tr><td>Étape 3 — ②</td><td>Règles : 62 tokens, ratio 1,4</td><td class="ok">Conservé</td><td class="neutral">—</td></tr>
+<tr><td>Étape 3 — ③</td><td>Score qualité heuristique</td><td class="ok">Ratio OK, 3+ lignes</td><td class="ok">0,85</td></tr>
+<tr><td>Étape 3 — ④</td><td>Split train/valid</td><td class="ok">→ train.jsonl</td><td class="neutral">—</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="card card-green" style="margin-top:1rem">
+<h4>Paire finale dans train.jsonl (adapter legal-qa)</h4>
+<pre>{
+  "prompt": "Quel est le délai légal de préavis pour la démission d'un cadre ?",
+  "completion": "Pour un cadre, le délai légal de préavis est de 3 mois à compter de la notification écrite de la démission à l'employeur. Ce délai peut être réduit par accord entre les parties. Une convention collective plus favorable prime sur la disposition légale (art. L1237-1 CT).",
+  "collector_type": "qa",
+  "pair_strategy": "qa",
+  "domain": "text",
+  "task_type": "qa"
+}</pre>
+</div>
+
+</section>
+
+<hr>
+
+<div style="text-align:center;padding:2rem 0;color:#8b949e;font-size:0.82rem">
+  <p>Document mis à jour le 4 juin 2026 · Pipeline MLOps v1.1 · Capgemini — Usage interne</p>
+  <p style="margin-top:0.3rem">Sources : <code>pipeline/clean_raw.py</code> · <code>pipeline/transform.py</code> · <code>agents/pair_fuser.py</code> · <code>agents/semantic_pair_matcher.py</code> · <code>agents/source_discoverer.py</code> · <code>pipeline/clean.py</code> · <code>pipeline/utils/embeddings.py</code> · <code>config/transforms/qa.yaml</code> · <code>config/transforms/semantic_pair_match.yaml</code> · <code>config/trusted_domains.yaml</code></p>
+</div>
+
+</div>
+</body>
+</html>

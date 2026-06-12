@@ -145,14 +145,33 @@ export type RawRecord = Record<string, unknown> & {
   _rescued_from_step?: string;
 };
 
+export interface AdapterDiagnostic {
+  adapter_name: string;
+  accepted: number;
+  pairs_total: number;
+  rejection_rate: number;
+  avg_llm_score: number | null;
+  recommendation: string;
+}
+
+export interface ScoreBucket {
+  range: string;
+  count: number;
+}
+
 export interface QualitySummary {
   project_id: string;
   raw_total: number;
   auto_rejected: number;
   qualified: number;
+  n_train: number;
+  n_valid: number;
   flagged_by_human: number;
   rescued: number;
+  avg_llm_score: number | null;
   rejection_by_step: Record<string, number>;
+  per_adapter: AdapterDiagnostic[];
+  score_distribution: ScoreBucket[];
   pipeline_ran: boolean;
 }
 

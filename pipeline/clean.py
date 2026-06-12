@@ -12,11 +12,48 @@ from typing import Any
 import yaml
 
 from pipeline.utils.jsonl import read_jsonl, write_jsonl, count_tokens
+from pipeline.utils.llm import call_llm
 from pipeline.utils.logger import get_logger, log_metric
 
 logger = get_logger("mlops.clean")
 
 _MLX_SERVER_URL = "http://localhost:8080"
+
+# Languages for which py_compile syntax check applies
+_PYTHON_LANGS = {"python", "py", ""}
+
+
+def _syntax_check(code: str, lang: str) -> tuple[bool, str]:
+    """Check syntax of a code snippet. Returns (valid, error_message)."""
+    if not code.strip():
+        return False, "empty"
+    lang = (lang or "").lower().strip()
+
+    if lang in _PYTHON_LANGS:
+        import py_compile, tempfile, os  # noqa: PLC0415,E401
+        with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False, encoding="utf-8") as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            py_compile.compile(tmp, doraise=True)
+            return True, ""
+        except py_compile.PyCompileError as e:
+            return False, str(e)
+        finally:
+            os.unlink(tmp)
+
+    try:
+        import tree_sitter_languages  # noqa: PLC0415
+        from tree_sitter import Language, Parser  # noqa: PLC0415
+        lang_obj = tree_sitter_languages.get_language(lang)
+        parser = Parser()
+        parser.set_language(lang_obj)
+        tree = parser.parse(code.encode())
+        if tree.root_node.has_error:
+            return False, "tree-sitter parse error"
+        return True, ""
+    except Exception:
+        return True, ""  # unknown lang or tree-sitter unavailable → pass through
 
 
 def _load_project_config(project: str) -> dict[str, Any]:
@@ -134,30 +171,95 @@ class DataCleaner:
         log_metric("filtered_removed", len(rejected))
         return kept, rejected
 
+    def syntax_filter(
+        self,
+        pairs: list[dict[str, Any]],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Filter pairs whose completion fails syntax check. Returns (kept, rejected)."""
+        kept, rejected = [], []
+        src_lang = self.config.get("transform", {}).get("params", {}).get("src_lang", "")
+        tgt_lang = self.config.get("transform", {}).get("params", {}).get("tgt_lang", "")
+
+        for p in pairs:
+            completion = p.get("completion", "")
+            # Determine language of the completion from meta or project config
+            lang = p.get("target_lang") or p.get("lang") or tgt_lang or src_lang
+            valid, err = _syntax_check(completion, lang)
+            if valid:
+                kept.append(p)
+            else:
+                rejected.append({**p, "reject_reason": f"syntax_error: {err}"})
+
+        logger.info("Syntax filter: %d kept, %d rejected", len(kept), len(rejected))
+        log_metric("syntax_rejected", len(rejected))
+        return kept, rejected
+
     def score_pairs(
         self,
         pairs: list[dict[str, Any]],
         use_llm: bool = True,
     ) -> list[dict[str, Any]]:
-        """Add quality_score field to each pair."""
+        """Score pairs: heuristic first, then LLM judge if available."""
+        # Step 1 — heuristic (always)
+        scored = self._heuristic_score(pairs)
+
         if not use_llm:
-            return self._heuristic_score(pairs)
-
-        if not _mlx_server_available():
-            logger.warning("mlx_lm.server not available, falling back to heuristics")
-            return self._heuristic_score(pairs)
-
-        try:
-            import httpx  # noqa: PLC0415
-
-            scored = []
-            for p in pairs:
-                score = self._mlx_score(p, httpx)
-                scored.append({**p, "quality_score": score})
             return scored
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("LLM scoring failed (%s), falling back to heuristics", exc)
-            return self._heuristic_score(pairs)
+
+        # Step 2 — LLM judge via Bedrock (cascade: only on heuristically-passing pairs)
+        threshold_heuristic = 0.5
+        to_llm = [p for p in scored if p.get("quality_score", 0) >= threshold_heuristic]
+        skip = [p for p in scored if p.get("quality_score", 0) < threshold_heuristic]
+
+        if not to_llm:
+            return scored
+
+        logger.info("LLM judge: scoring %d/%d pairs (skipping %d below heuristic threshold)",
+                    len(to_llm), len(pairs), len(skip))
+
+        llm_scored = []
+        failed = 0
+        for p in to_llm:
+            llm_s = self._llm_judge_score(p)
+            if llm_s is None:
+                failed += 1
+                llm_scored.append(p)  # keep heuristic score
+            else:
+                # Weighted blend: 30% heuristic + 70% LLM judge
+                blended = 0.3 * p["quality_score"] + 0.7 * llm_s
+                llm_scored.append({**p, "quality_score": round(blended, 3),
+                                   "llm_score": round(llm_s, 3)})
+
+        if failed:
+            logger.warning("LLM judge: %d calls failed, kept heuristic score for those", failed)
+
+        return skip + llm_scored
+
+    def _llm_judge_score(self, pair: dict[str, Any]) -> float | None:
+        """Call Bedrock/LLM to semantically score a pair. Returns 0-1 or None on failure."""
+        src_lang = pair.get("source_lang") or self.config.get("transform", {}).get("params", {}).get("src_lang", "code")
+        tgt_lang = pair.get("target_lang") or self.config.get("transform", {}).get("params", {}).get("tgt_lang", "code")
+        domain = self.config.get("domain", "code")
+
+        prompt = (
+            f"You are a strict {domain} code migration quality judge.\n"
+            f"Rate the following {src_lang}→{tgt_lang} training pair from 0 to 10:\n"
+            f"- 0-3: incorrect translation (logic errors, wrong constructs)\n"
+            f"- 4-6: partially correct (minor issues, non-idiomatic)\n"
+            f"- 7-9: correct and idiomatic\n"
+            f"- 10: perfect\n\n"
+            f"Reply with a single integer ONLY.\n\n"
+            f"SOURCE ({src_lang}):\n```\n{pair.get('prompt', '')[:600]}\n```\n\n"
+            f"TRANSLATION ({tgt_lang}):\n```\n{pair.get('completion', '')[:600]}\n```"
+        )
+        try:
+            response = call_llm(prompt, max_tokens=4, temperature=0.0)
+            if not response:
+                return None
+            score = float(response.strip().split()[0])
+            return min(1.0, max(0.0, score / 10.0))
+        except Exception:  # noqa: BLE001
+            return None
 
     def _heuristic_score(self, pairs: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Fast scoring without LLM: token ratio, length, structural signals."""
@@ -259,19 +361,37 @@ def main() -> None:
     parser.add_argument("--project", required=True)
     parser.add_argument("--score", type=lambda x: x.lower() == "true", default=True)
     parser.add_argument("--threshold", type=float, default=0.7)
+    parser.add_argument("--input", default=None,
+                        help="Override input path (default: merge all processed/pairs/<adapter>.jsonl)")
     args = parser.parse_args()
 
     config = _load_project_config(args.project)
-    input_path = Path(f"datalake/projects/{args.project}/raw/pairs_raw.jsonl")
     train_path = Path(f"datalake/projects/{args.project}/fine-tuning-ready/train.jsonl")
     valid_path = Path(f"datalake/projects/{args.project}/fine-tuning-ready/valid.jsonl")
 
-    raw = read_jsonl(input_path)
-    logger.info("Loaded %d raw pairs from %s", len(raw), input_path)
+    if args.input:
+        input_path = Path(args.input)
+        raw = read_jsonl(input_path)
+        logger.info("Loaded %d raw pairs from %s", len(raw), input_path)
+    else:
+        pairs_dir = Path(f"datalake/projects/{args.project}/processed/pairs")
+        raw = []
+        if pairs_dir.exists():
+            for f in sorted(pairs_dir.glob("*.jsonl")):
+                records = read_jsonl(f)
+                raw.extend(records)
+                logger.info("Loaded %d pairs from %s", len(records), f.name)
+        if not raw:
+            raise FileNotFoundError(
+                f"No pairs found in {pairs_dir}. Run pipeline/transform.py first."
+            )
+        logger.info("Total: %d pairs from %s", len(raw), pairs_dir)
 
     cleaner = DataCleaner(config)
     deduped = cleaner.deduplicate(raw)
     kept, _ = cleaner.filter_by_rules(deduped)
+    kept, syntax_rejected = cleaner.syntax_filter(kept)
+    logger.info("After syntax filter: %d pairs", len(kept))
     scored = cleaner.score_pairs(kept, use_llm=args.score)
     accepted = [p for p in scored if p.get("quality_score", 1.0) >= args.threshold]
 

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { getProjects, getQualitySummary, getRejected, getSample, flagRecord, rescueRecord, startPipeline } from '$lib/api';
-  import type { Project, QualitySummary, RawRecord } from '$lib/types';
+  import { getProjects, getQualitySummary, getRejected, getSample, flagRecord, rescueRecord } from '$lib/api';
+  import type { Project, QualitySummary, RawRecord, AdapterDiagnostic } from '$lib/types';
 
   // ── State ──────────────────────────────────────────────────────────────────
   let projects: Project[] = $state([]);
@@ -34,8 +34,6 @@
   let detailNote = $state('');
   let detailCorrections: Record<string, string> = $state({});
 
-  // Pipeline launch
-  let pipelineLoading = $state(false);
 
   const STEPS = ['all', 'schema', 'syntax', 'text_quality', 'dedup', 'relevance'] as const;
   const STEP_LABELS: Record<string, string> = {
@@ -81,16 +79,6 @@
       sampleTotal = r.total;
     } catch (e) { error = (e as Error).message; }
     finally { sampleLoading = false; }
-  }
-
-  async function launchPipeline() {
-    if (!selectedProject) return;
-    pipelineLoading = true;
-    try {
-      await startPipeline({ project_id: selectedProject });
-      await loadSummary();
-    } catch (e) { error = (e as Error).message; }
-    finally { pipelineLoading = false; }
   }
 
   function openDetail(item: RawRecord, idx: number, mode: 'flag' | 'rescue') {
@@ -155,7 +143,7 @@
 </script>
 
 <div class="topbar">
-  <span class="topbar-title">Revue humaine</span>
+  <span class="topbar-title">Contrôle qualité</span>
   <div style="display:flex; gap:10px; align-items:center">
     <select bind:value={selectedProject} onchange={loadSummary} class="input">
       {#each projects as p}<option value={p.id}>{p.name ?? p.id}</option>{/each}
@@ -174,14 +162,9 @@
   {:else if !summary || !summary.pipeline_ran}
     <div class="card info" style="margin-bottom:20px; padding:20px">
       <div class="card-title">Pipeline qualité non encore exécuté</div>
-      <p style="color:var(--text-dim); font-size:13px; margin-bottom:16px">
-        Le pipeline qualité analyse automatiquement toutes les données collectées : validation du schéma,
-        syntaxe du code, qualité textuelle, déduplication et scoring de pertinence LLM.
-        Seules les données <strong>qualifiées</strong> seront utilisées pour le fine-tuning.
+      <p style="color:var(--text-dim); font-size:13px">
+        Lance le pipeline depuis l'onglet <strong>Pipeline nettoyage</strong> pour accéder au contrôle qualité.
       </p>
-      <button class="btn btn-primary" disabled={pipelineLoading} onclick={launchPipeline}>
-        {pipelineLoading ? 'Lancement…' : '▶ Lancer le pipeline qualité'}
-      </button>
     </div>
   {:else}
     <!-- ── Summary cards ─────────────────────────────────────────────────── -->
@@ -230,7 +213,7 @@
     <!-- ── Tabs ──────────────────────────────────────────────────────────── -->
     <div class="tab-bar" style="margin-bottom:16px">
       <button class="tab-btn" class:active={activeTab === 'rejected'} onclick={() => activeTab = 'rejected'}>
-        ✕ Rejetées auto
+        ⚡ Diagnostic des rejets
         {#if summary.auto_rejected > 0}<span class="tab-badge red">{summary.auto_rejected}</span>{/if}
       </button>
       <button class="tab-btn" class:active={activeTab === 'sample'} onclick={() => activeTab = 'sample'}>
@@ -239,74 +222,79 @@
       </button>
     </div>
 
-    <!-- ── Rejected tab ──────────────────────────────────────────────────── -->
+    <!-- ── Diagnostic tab ───────────────────────────────────────────────── -->
     {#if activeTab === 'rejected'}
-      <div style="display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap">
-        <span class="text-muted" style="font-size:12px">Filtrer par étape :</span>
-        {#each STEPS as s}
-          <button class="step-filter-btn" class:active={rejectedStep === s}
-            onclick={() => { rejectedStep = s; rejectedPage = 0; }}>
-            {STEP_LABELS[s]}
-            {#if s !== 'all' && summary.rejection_by_step[s]}
-              <span class="mini-count">{summary.rejection_by_step[s]}</span>
-            {/if}
-          </button>
-        {/each}
-      </div>
-
-      {#if rejectedLoading}
-        <p class="text-muted">Chargement…</p>
-      {:else if rejectedItems.length === 0}
-        <p class="text-muted">Aucun enregistrement rejeté pour ce filtre.</p>
-      {:else}
-        <p class="text-muted" style="font-size:12px; margin-bottom:8px">
-          {rejectedTotal} rejeté{rejectedTotal > 1 ? 's' : ''} — vous pouvez en rescaper si le rejet est un faux positif.
-        </p>
-        <div class="record-list">
-          {#each rejectedItems as item, i}
-            {@const gi = rejectedPage * PAGE_SIZE + i}
-            {@const [lLabel, lVal, rLabel, rVal] = displayCols(item)}
-            {@const lang = langBadge(item)}
-            {@const schema = schemaLabel(item)}
-            {@const reason = rejectReason(item)}
-            <div class="record-card card">
-              <div class="record-header">
-                <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap">
-                  <span class="mono text-muted" style="font-size:11px">#{gi}</span>
-                  <span class="schema-badge schema-{schema}">{schema}</span>
-                  {#if lang}<span class="schema-badge lang-badge">{lang}</span>{/if}
-                  {#if item.adapter_name}<span class="schema-badge adapter-badge">{item.adapter_name}</span>{/if}
-                  {#if reason}<span class="reject-reason">⊗ {reason}</span>{/if}
+      <!-- Distribution des scores LLM -->
+      {#if summary.score_distribution && summary.score_distribution.length > 0}
+        {@const maxCount = Math.max(...summary.score_distribution.map(b => b.count), 1)}
+        <div class="card" style="margin-bottom:16px; padding:16px">
+          <div class="card-title" style="margin-bottom:4px">Distribution des scores LLM (juge Claude Sonnet)</div>
+          <p class="text-muted" style="font-size:12px; margin-bottom:12px">
+            Seuil d'acceptation actuel : <strong style="color:var(--accent)">0.70</strong> —
+            {summary.score_distribution.filter(b => parseFloat(b.range) >= 0.7).reduce((s, b) => s + b.count, 0)} paires acceptées sur {summary.qualified}
+          </p>
+          <div class="score-hist">
+            {#each summary.score_distribution as bucket}
+              {@const pct = bucket.count / maxCount * 100}
+              {@const score = parseFloat(bucket.range.split('-')[0])}
+              {@const color = score >= 0.7 ? 'var(--green)' : score >= 0.5 ? 'var(--yellow)' : 'var(--red)'}
+              <div class="hist-col">
+                <div class="hist-bar-wrap">
+                  <div class="hist-bar" style="height:{Math.max(2, pct)}%; background:{color}"></div>
+                  {#if score === 0.7}
+                    <div class="hist-threshold" title="Seuil 0.70"></div>
+                  {/if}
                 </div>
-                {#if item.source_url}
-                  <a href={String(item.source_url)} target="_blank" rel="noopener noreferrer" class="source-link">↗ source</a>
-                {/if}
+                <div class="hist-label">{bucket.range.split('-')[0]}</div>
+                <div class="hist-count">{bucket.count}</div>
               </div>
-              <div class="record-cols">
-                <div class="record-col">
-                  <div class="col-label">{lLabel}</div>
-                  <pre class="record-text">{lVal.slice(0, 400)}{lVal.length > 400 ? '…' : ''}</pre>
-                </div>
-                <div class="record-col">
-                  <div class="col-label">{rLabel}</div>
-                  <pre class="record-text">{rVal.slice(0, 400)}{rVal.length > 400 ? '…' : ''}</pre>
-                </div>
-              </div>
-              <div class="record-actions">
-                <button class="btn btn-ghost" style="color:var(--accent); font-size:12px"
-                  onclick={() => openDetail(item, gi, 'rescue')}>
-                  ↩ Rescaper (faux positif)
-                </button>
-              </div>
-            </div>
-          {/each}
-        </div>
-        <div class="pagination">
-          <button class="btn btn-ghost" disabled={rejectedPage === 0} onclick={() => { rejectedPage--; }}>← Préc.</button>
-          <span class="text-muted" style="font-size:13px">Page {rejectedPage + 1} / {Math.max(1, Math.ceil(rejectedTotal / PAGE_SIZE))}</span>
-          <button class="btn btn-ghost" disabled={(rejectedPage + 1) * PAGE_SIZE >= rejectedTotal} onclick={() => { rejectedPage++; }}>Suiv. →</button>
+            {/each}
+          </div>
         </div>
       {/if}
+
+      <!-- Diagnostic par adapter -->
+      <div class="card-title" style="margin-bottom:10px">Diagnostic par adapter</div>
+      <div class="diag-grid">
+        {#each (summary.per_adapter ?? []) as adapter}
+          {@const acceptPct = adapter.pairs_total > 0 ? adapter.accepted / adapter.pairs_total * 100 : 0}
+          {@const rejectPct = 100 - acceptPct}
+          {@const severity = adapter.rejection_rate > 0.7 ? 'high' : adapter.rejection_rate > 0.4 ? 'medium' : 'low'}
+          {@const sevColor = severity === 'high' ? 'var(--red)' : severity === 'medium' ? 'var(--yellow)' : 'var(--green)'}
+          <div class="diag-card card">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:8px">
+              <div style="font-size:13px; font-weight:600; color:var(--text)">{adapter.adapter_name.replace(/-/g, '​-')}</div>
+              <span class="sev-badge" style="background:{sevColor}20; color:{sevColor}">
+                {Math.round(adapter.rejection_rate * 100)}% rejeté
+              </span>
+            </div>
+
+            <!-- Barre bicolore accepté/rejeté -->
+            <div class="bicolor-bar" title="{adapter.accepted} acceptées / {adapter.pairs_total - adapter.accepted} rejetées">
+              <div class="bicolor-accept" style="width:{acceptPct}%"></div>
+              <div class="bicolor-reject" style="width:{rejectPct}%"></div>
+            </div>
+            <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-dim); margin-top:3px">
+              <span style="color:var(--green)">✓ {adapter.accepted} acceptées</span>
+              <span style="color:var(--red)">✕ {adapter.pairs_total - adapter.accepted} rejetées</span>
+            </div>
+
+            {#if adapter.avg_llm_score !== null}
+              <div style="margin-top:8px; font-size:12px; color:var(--text-dim)">
+                Score LLM moyen :
+                <strong style="color:{adapter.avg_llm_score >= 0.75 ? 'var(--green)' : adapter.avg_llm_score >= 0.6 ? 'var(--yellow)' : 'var(--red)'}">
+                  {adapter.avg_llm_score.toFixed(2)}
+                </strong>
+              </div>
+            {/if}
+
+            <div class="rec-box" style="border-color:{sevColor}40; margin-top:10px">
+              <span class="rec-icon">→</span>
+              {adapter.recommendation}
+            </div>
+          </div>
+        {/each}
+      </div>
     {/if}
 
     <!-- ── Sample tab ────────────────────────────────────────────────────── -->
@@ -340,21 +328,18 @@
             {@const [lLabel, lVal, rLabel, rVal] = displayCols(item)}
             {@const lang = langBadge(item)}
             {@const schema = schemaLabel(item)}
-            {@const score = item._relevance_score}
+            {@const score = (item.llm_score ?? item.quality_score ?? null) as number | null}
             <div class="record-card card">
               <div class="record-header">
                 <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap">
                   <span class="mono text-muted" style="font-size:11px">#{i}</span>
                   <span class="schema-badge schema-{schema}">{schema}</span>
                   {#if lang}<span class="schema-badge lang-badge">{lang}</span>{/if}
-                  {#if item.adapter_name}<span class="schema-badge adapter-badge">{item.adapter_name}</span>{/if}
+                  {#if item.adapter_name}<span class="schema-badge adapter-badge">{String(item.adapter_name).split('-')[0]}</span>{/if}
                   {#if score != null}<span class="quality-badge" style="color:{score >= 0.8 ? 'var(--green)' : score >= 0.7 ? 'var(--yellow)' : 'var(--red)'}">
                     ⬤ {(score * 100).toFixed(0)}%
                   </span>{/if}
                 </div>
-                {#if item.source_url}
-                  <a href={String(item.source_url)} target="_blank" rel="noopener noreferrer" class="source-link">↗ source</a>
-                {/if}
               </div>
               <div class="record-cols">
                 <div class="record-col">
@@ -484,6 +469,29 @@
   .field-label { font-size:11px; color:var(--text-muted); font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
   .textarea { background:var(--surface-2); color:var(--text); border:1px solid var(--border); border-radius:var(--radius); padding:7px; font-family:var(--font-mono); font-size:12px; resize:vertical; width:100%; }
   .banner-error { background:var(--red-dim); border:1px solid rgba(247,84,84,.3); border-radius:var(--radius); padding:10px 14px; font-size:13px; color:var(--red); }
+
+  /* Score histogram */
+  .score-hist { display:flex; align-items:flex-end; gap:4px; height:80px; }
+  .hist-col { display:flex; flex-direction:column; align-items:center; flex:1; height:100%; position:relative; }
+  .hist-bar-wrap { flex:1; width:100%; display:flex; align-items:flex-end; position:relative; }
+  .hist-bar { width:100%; border-radius:2px 2px 0 0; transition:height .3s; min-height:2px; }
+  .hist-threshold { position:absolute; top:0; bottom:0; left:50%; width:2px; background:var(--accent); opacity:0.6; border-radius:1px; }
+  .hist-label { font-size:9px; color:var(--text-dim); margin-top:2px; }
+  .hist-count { font-size:9px; color:var(--text-muted); }
+
+  /* Diagnostic grid */
+  .diag-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:12px; margin-bottom:20px; }
+  .diag-card { padding:14px 16px; display:flex; flex-direction:column; gap:4px; }
+  .sev-badge { font-size:10px; font-weight:700; padding:2px 8px; border-radius:999px; white-space:nowrap; flex-shrink:0; }
+
+  /* Bicolor bar */
+  .bicolor-bar { display:flex; height:6px; border-radius:3px; overflow:hidden; background:var(--surface-2); margin-top:8px; }
+  .bicolor-accept { background:var(--green); transition:width .3s; }
+  .bicolor-reject { background:var(--red); opacity:.6; transition:width .3s; }
+
+  /* Recommendation box */
+  .rec-box { background:var(--surface-2); border:1px solid var(--border); border-radius:var(--radius); padding:7px 10px; font-size:11px; color:var(--text-dim); display:flex; gap:6px; align-items:flex-start; }
+  .rec-icon { color:var(--accent); font-weight:700; flex-shrink:0; }
 
   /* Card types from global CSS */
   .card.info { border-left:3px solid var(--accent); }

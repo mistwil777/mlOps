@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Audit de Situation — Projet MLOps Migrator</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:#0d1117;color:#c9d1d9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;font-size:15px;line-height:1.7;overflow-x:hidden}
+h1{font-size:1.8rem;font-weight:700;color:#f0f6fc;letter-spacing:-0.5px;line-height:1.3}
+h2{font-size:1.3rem;font-weight:600;color:#f0f6fc;margin:2.5rem 0 1rem;padding-bottom:0.4rem;border-bottom:1px solid #21262d}
+h3{font-size:1.05rem;font-weight:600;color:#79c0ff;margin:1.5rem 0 0.6rem}
+h4{font-size:0.9rem;font-weight:600;color:#a5d6ff;margin:1rem 0 0.4rem}
+a{color:#58a6ff;text-decoration:none}
+a:hover{text-decoration:underline}
+code{font-family:'JetBrains Mono','Fira Code',Consolas,monospace;font-size:0.82em;background:#161b22;padding:0.1em 0.35em;border-radius:4px;word-break:break-word}
+pre{font-family:'JetBrains Mono','Fira Code',Consolas,monospace;font-size:0.8em;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:0.9rem 1rem;white-space:pre-wrap;word-break:break-word;overflow-wrap:break-word;line-height:1.5;margin:0.75rem 0}
+pre code{background:none;padding:0;font-size:1em}
+.container{max-width:1060px;margin:0 auto;padding:2rem 1.25rem}
+.header{background:linear-gradient(135deg,#0d1117 0%,#161b22 100%);border-bottom:1px solid #21262d;padding:2rem 0}
+.header .container{display:flex;flex-direction:column;gap:0.75rem}
+.header-meta{display:flex;gap:0.5rem;flex-wrap:wrap}
+.badge{display:inline-flex;align-items:center;padding:0.2rem 0.55rem;border-radius:20px;font-size:0.72rem;font-weight:600;white-space:nowrap}
+.badge-blue{background:#1f3358;color:#79c0ff;border:1px solid #1f6feb}
+.badge-green{background:#1a3a2a;color:#56d364;border:1px solid #238636}
+.badge-orange{background:#3d2608;color:#f0883e;border:1px solid #bd5b00}
+.badge-purple{background:#2d1f4e;color:#d2a8ff;border:1px solid #6e40c9}
+.badge-red{background:#3d1a1a;color:#ff7b72;border:1px solid #da3633}
+.badge-gray{background:#21262d;color:#8b949e;border:1px solid #30363d}
+.toc{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:1.25rem 1.5rem;margin:1.5rem 0}
+.toc-title{font-size:0.75rem;font-weight:700;color:#8b949e;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.75rem}
+.toc-list{list-style:none;display:grid;grid-template-columns:1fr 1fr;gap:0.2rem 2rem}
+@media(max-width:580px){.toc-list{grid-template-columns:1fr}}
+.toc-list li{font-size:0.875rem;padding:0.1rem 0}
+.toc-list a{color:#58a6ff}
+.section{margin:2.5rem 0}
+.card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:1.25rem;margin:0.75rem 0;overflow:hidden}
+.card-blue{border-left:3px solid #1f6feb}
+.card-green{border-left:3px solid #238636}
+.card-orange{border-left:3px solid #bd5b00}
+.card-purple{border-left:3px solid #6e40c9}
+.card-red{border-left:3px solid #da3633}
+.summary-box{background:#1c2128;border:1px solid #388bfd;border-radius:8px;padding:1rem 1.25rem;margin:0 0 1.25rem 0}
+.summary-box .summary-title{font-size:0.72rem;font-weight:700;color:#58a6ff;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.4rem}
+.summary-box p{font-size:0.92rem;color:#c9d1d9;line-height:1.6}
+.table-wrap{overflow-x:auto;margin:0.75rem 0;width:100%}
+table{width:100%;border-collapse:collapse;font-size:0.84rem;table-layout:auto}
+th{background:#21262d;color:#8b949e;text-align:left;padding:0.55rem 0.75rem;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;border-bottom:2px solid #30363d;white-space:nowrap}
+td{padding:0.55rem 0.75rem;border-bottom:1px solid #21262d;vertical-align:top;word-break:break-word;overflow-wrap:break-word}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#1c2128}
+.ok{color:#56d364}
+.warn{color:#f0883e}
+.bad{color:#ff7b72}
+.neutral{color:#8b949e}
+.progress-bar{height:7px;background:#21262d;border-radius:4px;overflow:hidden;margin:5px 0}
+.progress-fill{height:100%;border-radius:4px}
+.fill-green{background:linear-gradient(90deg,#238636,#56d364)}
+.fill-orange{background:linear-gradient(90deg,#bd5b00,#f0883e)}
+.fill-blue{background:linear-gradient(90deg,#1f6feb,#58a6ff)}
+.fill-red{background:linear-gradient(90deg,#da3633,#ff7b72)}
+.callout{border-radius:8px;padding:0.9rem 1rem;margin:0.75rem 0;display:flex;gap:0.75rem;align-items:flex-start}
+.callout-icon{flex-shrink:0;font-size:1rem;margin-top:0.1rem}
+.callout-blue{background:#1f3358;border-left:3px solid #1f6feb}
+.callout-orange{background:#3d2608;border-left:3px solid #bd5b00}
+.callout-green{background:#1a3a2a;border-left:3px solid #238636}
+.callout-red{background:#3d1a1a;border-left:3px solid #da3633}
+.callout p,.callout div{font-size:0.88rem;line-height:1.55}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin:0.75rem 0}
+@media(max-width:660px){.two-col{grid-template-columns:1fr}}
+.flow-wrap{overflow-x:auto;margin:1rem 0}
+.flow-wrap svg{display:block;min-width:320px;max-width:100%}
+hr{border:none;border-top:1px solid #21262d;margin:2.5rem 0}
+.anchor{scroll-margin-top:72px}
+p+p{margin-top:0.6rem}
+.dim{color:#8b949e}
+.verdict{font-size:1.05rem;font-weight:600;padding:1rem 1.25rem;border-radius:8px;margin:1rem 0}
+.verdict-red{background:#3d1a1a;border:1px solid #da3633;color:#ff7b72}
+.verdict-orange{background:#3d2608;border:1px solid #bd5b00;color:#f0883e}
+.verdict-green{background:#1a3a2a;border:1px solid #238636;color:#56d364}
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:0.75rem;margin:1rem 0}
+.kpi{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:0.9rem 1rem;text-align:center}
+.kpi-value{font-size:1.5rem;font-weight:700;color:#f0f6fc}
+.kpi-label{font-size:0.75rem;color:#8b949e;margin-top:0.2rem}
+.kpi-bad .kpi-value{color:#ff7b72}
+.kpi-warn .kpi-value{color:#f0883e}
+.kpi-ok .kpi-value{color:#56d364}
+.step-list{list-style:none;counter-reset:steps}
+.step-list li{counter-increment:steps;position:relative;padding-left:2.5rem;margin:0.75rem 0}
+.step-list li::before{content:counter(steps);position:absolute;left:0;top:0.1rem;width:24px;height:24px;border-radius:50%;background:#1f3358;color:#79c0ff;border:1px solid #1f6feb;display:flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:700}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="container">
+    <div class="header-meta">
+      <span class="badge badge-red">AUDIT CRITIQUE</span>
+      <span class="badge badge-blue">MLOps Migrator</span>
+      <span class="badge badge-green">4 juin 2026</span>
+      <span class="badge badge-purple">Capgemini - Defense</span>
+    </div>
+    <h1>Audit de Situation Complet - Projet MLOps Migrator</h1>
+    <p style="color:#8b949e;max-width:720px;margin-top:0.4rem;font-size:0.95rem">
+      Cartographie exhaustive, verification croisee des donnees, identification des problemes bloquants
+      et plan d'action pour le projet de fine-tuning local destine a la migration Java vers Python.
+    </p>
+  </div>
+</div>
+
+<div class="container">
+
+<!-- EXECUTIVE SUMMARY -->
+<div class="summary-box" style="border-color:#da3633;background:#2d1117">
+  <div class="summary-title" style="color:#ff7b72">Resume executif - Alerte critique</div>
+  <p>
+    <strong style="color:#ff7b72">Le projet ne peut PAS entrainer un modele de migration Java vers Python en l'etat.</strong>
+    Sur 2 800 paires prates pour le fine-tuning, <strong>zero</strong> est une veritable paire de traduction Java vers Python.
+    Toutes les paires actuelles sont de type <em>doc_to_code</em> monolingue Python ("Write python code...").
+    Trois problemes critiques bloquent la production : (1) incoherence de direction dans la configuration,
+    (2) absence totale de paires bilingues malgre 505 taches Rosetta Code matchables,
+    (3) le pair_fuser n'a jamais ete execute pour les adapters qui le requierent.
+  </p>
+</div>
+
+<nav class="toc">
+  <div class="toc-title">Table des matieres</div>
+  <ol class="toc-list">
+    <li><a href="#cartographie">1. Cartographie de l'application</a></li>
+    <li><a href="#donnees">2. Etat actuel des donnees</a></li>
+    <li><a href="#sources">3. Analyse des sources par adapter</a></li>
+    <li><a href="#problemes">4. Problemes identifies</a></li>
+    <li><a href="#plan">5. Plan d'action recommande</a></li>
+    <li><a href="#positif">6. Ce qui fonctionne bien</a></li>
+  </ol>
+</nav>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<h2 id="cartographie" class="anchor">1. Cartographie de l'application</h2>
+
+<h3>1.1 Architecture globale</h3>
+
+<div class="card card-blue">
+<p>L'infrastructure MLOps se compose de 5 couches principales interconnectees :</p>
+<div class="table-wrap">
+<table>
+<tr><th>Couche</th><th>Composants</th><th>Etat</th></tr>
+<tr><td><strong>Collecte</strong></td><td>rosetta_collector, doc_collector, web_collector (AWA)</td><td class="ok">Operationnel</td></tr>
+<tr><td><strong>Pipeline</strong></td><td>clean_raw.py, pair_fuser.py, transform.py, clean.py</td><td class="warn">Partiellement execute</td></tr>
+<tr><td><strong>Configuration</strong></td><td>migrator.yaml, languages.yaml, transforms/*.yaml, collectors/registry.yaml</td><td class="bad">Incoherences critiques</td></tr>
+<tr><td><strong>API / UI</strong></td><td>FastAPI (api/routers/data.py) + SvelteKit frontend</td><td class="ok">Operationnel</td></tr>
+<tr><td><strong>Entrainement</strong></td><td>MLX-LM (LoRA/QLoRA), MLflow tracking, DVC versioning</td><td class="neutral">Non demarre</td></tr>
+</table>
+</div>
+</div>
+
+<h3>1.2 Flux de donnees - Diagramme</h3>
+
+<div class="flow-wrap">
+<svg viewBox="0 0 960 420" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto">
+  <!-- Background -->
+  <rect width="960" height="420" fill="#0d1117"/>
+
+  <!-- Sources -->
+  <rect x="20" y="30" width="140" height="45" rx="6" fill="#1f3358" stroke="#1f6feb"/>
+  <text x="90" y="57" text-anchor="middle" fill="#79c0ff" font-size="11" font-weight="600">Rosetta Code</text>
+  <text x="90" y="70" text-anchor="middle" fill="#8b949e" font-size="9">multilang_wiki</text>
+
+  <rect x="20" y="90" width="140" height="45" rx="6" fill="#1f3358" stroke="#1f6feb"/>
+  <text x="90" y="117" text-anchor="middle" fill="#79c0ff" font-size="11" font-weight="600">Doc Sites</text>
+  <text x="90" y="130" text-anchor="middle" fill="#8b949e" font-size="9">doc_crawl</text>
+
+  <rect x="20" y="150" width="140" height="45" rx="6" fill="#1f3358" stroke="#1f6feb"/>
+  <text x="90" y="177" text-anchor="middle" fill="#79c0ff" font-size="11" font-weight="600">GitHub / Web</text>
+  <text x="90" y="190" text-anchor="middle" fill="#8b949e" font-size="9">web_crawl</text>
+
+  <!-- Arrow to raw -->
+  <path d="M160,52 L210,140" stroke="#30363d" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
+  <path d="M160,112 L210,140" stroke="#30363d" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
+  <path d="M160,172 L210,155" stroke="#30363d" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
+
+  <!-- raw/ -->
+  <rect x="210" y="120" width="120" height="55" rx="8" fill="#161b22" stroke="#30363d" stroke-width="2"/>
+  <text x="270" y="145" text-anchor="middle" fill="#f0f6fc" font-size="11" font-weight="600">raw/</text>
+  <text x="270" y="162" text-anchor="middle" fill="#56d364" font-size="10">98 fichiers</text>
+  <text x="270" y="174" text-anchor="middle" fill="#8b949e" font-size="9">15 550 records</text>
+
+  <!-- Arrow to clean_raw -->
+  <path d="M330,147 L380,147" stroke="#58a6ff" stroke-width="2" fill="none" marker-end="url(#arr)"/>
+  <text x="355" y="140" text-anchor="middle" fill="#58a6ff" font-size="8">clean_raw.py</text>
+
+  <!-- clean_raw/ -->
+  <rect x="380" y="120" width="130" height="55" rx="8" fill="#161b22" stroke="#30363d" stroke-width="2"/>
+  <text x="445" y="145" text-anchor="middle" fill="#f0f6fc" font-size="11" font-weight="600">clean_raw/</text>
+  <text x="445" y="162" text-anchor="middle" fill="#56d364" font-size="10">6 fichiers</text>
+  <text x="445" y="174" text-anchor="middle" fill="#8b949e" font-size="9">4 048 records</text>
+
+  <!-- Split: two paths from clean_raw -->
+  <!-- Path A: doc_to_code (direct transform) -->
+  <path d="M510,135 L570,80" stroke="#f0883e" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
+  <text x="540" y="95" text-anchor="middle" fill="#f0883e" font-size="8">transform.py</text>
+  <text x="540" y="105" text-anchor="middle" fill="#8b949e" font-size="7">doc_to_code</text>
+
+  <!-- Path B: fuse (LLM generation) -->
+  <path d="M510,160 L570,210" stroke="#d2a8ff" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
+  <text x="540" y="195" text-anchor="middle" fill="#d2a8ff" font-size="8">pair_fuser.py</text>
+  <text x="540" y="205" text-anchor="middle" fill="#ff7b72" font-size="7">NON EXECUTE</text>
+
+  <!-- pairs/ (doc_to_code result) -->
+  <rect x="570" y="55" width="130" height="55" rx="8" fill="#161b22" stroke="#bd5b00" stroke-width="2"/>
+  <text x="635" y="78" text-anchor="middle" fill="#f0f6fc" font-size="11" font-weight="600">pairs/</text>
+  <text x="635" y="93" text-anchor="middle" fill="#f0883e" font-size="9">3 711 paires</text>
+  <text x="635" y="105" text-anchor="middle" fill="#ff7b72" font-size="8">100% monolingue Python</text>
+
+  <!-- pairs/ (fuse result - empty) -->
+  <rect x="570" y="195" width="130" height="55" rx="8" fill="#161b22" stroke="#da3633" stroke-width="2" stroke-dasharray="5,3"/>
+  <text x="635" y="218" text-anchor="middle" fill="#f0f6fc" font-size="11" font-weight="600">pairs/ (fuse)</text>
+  <text x="635" y="233" text-anchor="middle" fill="#ff7b72" font-size="9">0 paires bilingues</text>
+  <text x="635" y="245" text-anchor="middle" fill="#8b949e" font-size="8">fuser jamais lance</text>
+
+  <!-- Arrow to clean -->
+  <path d="M700,82 L760,130" stroke="#30363d" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
+
+  <!-- clean.py -->
+  <rect x="760" y="115" width="120" height="55" rx="8" fill="#161b22" stroke="#30363d" stroke-width="2"/>
+  <text x="820" y="138" text-anchor="middle" fill="#f0f6fc" font-size="11" font-weight="600">fine-tuning-ready/</text>
+  <text x="820" y="153" text-anchor="middle" fill="#f0883e" font-size="10">2 800 paires</text>
+  <text x="820" y="165" text-anchor="middle" fill="#ff7b72" font-size="8">INUTILISABLES</text>
+
+  <!-- Arrow to model -->
+  <path d="M880,142 L920,142" stroke="#da3633" stroke-width="2" fill="none" stroke-dasharray="5,3" marker-end="url(#arr)"/>
+
+  <!-- Model (blocked) -->
+  <rect x="920" y="125" width="30" height="30" rx="4" fill="#3d1a1a" stroke="#da3633" stroke-dasharray="4,2"/>
+  <text x="935" y="145" text-anchor="middle" fill="#ff7b72" font-size="14">X</text>
+
+  <!-- Legend -->
+  <rect x="20" y="280" width="920" height="130" rx="8" fill="#161b22" stroke="#30363d"/>
+  <text x="40" y="305" fill="#8b949e" font-size="10" font-weight="600">LEGENDE</text>
+
+  <rect x="40" y="315" width="12" height="12" fill="#1f3358" stroke="#1f6feb"/>
+  <text x="58" y="325" fill="#c9d1d9" font-size="10">Sources de donnees (collecteurs)</text>
+
+  <rect x="40" y="335" width="12" height="12" fill="#161b22" stroke="#30363d" stroke-width="2"/>
+  <text x="58" y="345" fill="#c9d1d9" font-size="10">Etapes pipeline (operationnelles)</text>
+
+  <rect x="40" y="355" width="12" height="12" fill="#161b22" stroke="#da3633" stroke-width="2" stroke-dasharray="4,2"/>
+  <text x="58" y="365" fill="#c9d1d9" font-size="10">Etapes bloquees ou vides</text>
+
+  <line x1="40" y1="383" x2="65" y2="383" stroke="#58a6ff" stroke-width="2"/>
+  <text x="72" y="387" fill="#c9d1d9" font-size="10">Flux operationnel</text>
+
+  <line x1="40" y1="398" x2="65" y2="398" stroke="#da3633" stroke-width="2" stroke-dasharray="5,3"/>
+  <text x="72" y="402" fill="#c9d1d9" font-size="10">Flux bloque</text>
+
+  <!-- Right legend column -->
+  <text x="400" y="325" fill="#ff7b72" font-size="10" font-weight="600">PROBLEME CENTRAL :</text>
+  <text x="400" y="345" fill="#c9d1d9" font-size="10">Les 4 adapters avec pair_strategy=fuse n'ont pas ete fusionnes.</text>
+  <text x="400" y="365" fill="#c9d1d9" font-size="10">Les paires actuelles sont doc_to_code monolingue Python.</text>
+  <text x="400" y="385" fill="#c9d1d9" font-size="10">La direction config (Python-Java) contredit l'objectif (Java-Python).</text>
+  <text x="400" y="405" fill="#ff7b72" font-size="10">=> Le modele apprendrait la mauvaise tache.</text>
+
+  <!-- Arrow marker -->
+  <defs>
+    <marker id="arr" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6" fill="none" stroke="#58a6ff" stroke-width="1"/>
+    </marker>
+  </defs>
+</svg>
+</div>
+
+<h3>1.3 Strategies de formation de paires</h3>
+
+<div class="table-wrap">
+<table>
+<tr><th>Strategie</th><th>Description</th><th>Adapters concernes</th><th>Etat</th></tr>
+<tr>
+  <td><code>doc_to_code</code></td>
+  <td>Description textuelle en input, code en output. Format : "Write X code that does..."</td>
+  <td>python-migration-quality-reviewer, migration-pipeline-orchestrator</td>
+  <td class="warn">Produit des paires monolingues, pas de migration</td>
+</tr>
+<tr>
+  <td><code>fuse</code></td>
+  <td>LLM traduit le code source vers la langue cible, verification software</td>
+  <td>java-to-python-translator, junit-to-pytest-translator, spring-config, jpa-hibernate</td>
+  <td class="bad">Jamais execute</td>
+</tr>
+<tr>
+  <td><code>code_migration</code></td>
+  <td>Appariement par task_name (Rosetta Code) : meme algorithme dans 2 langues</td>
+  <td>Disponible via transform.py mais non utilise en production</td>
+  <td class="bad">Config inversee (Python->Java au lieu de Java->Python)</td>
+</tr>
+</table>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<h2 id="donnees" class="anchor">2. Etat actuel des donnees Migrator</h2>
+
+<h3>2.1 Vue d'ensemble du funnel</h3>
+
+<div class="kpi-grid">
+  <div class="kpi kpi-ok">
+    <div class="kpi-value">15 550</div>
+    <div class="kpi-label">Records bruts (raw/)</div>
+  </div>
+  <div class="kpi kpi-warn">
+    <div class="kpi-value">4 048</div>
+    <div class="kpi-label">Apres nettoyage (clean_raw/)</div>
+  </div>
+  <div class="kpi kpi-warn">
+    <div class="kpi-value">3 711</div>
+    <div class="kpi-label">Paires formees (pairs/)</div>
+  </div>
+  <div class="kpi kpi-bad">
+    <div class="kpi-value">2 800</div>
+    <div class="kpi-label">Fine-tuning-ready</div>
+  </div>
+  <div class="kpi kpi-bad">
+    <div class="kpi-value">0</div>
+    <div class="kpi-label">Paires bilingues Java-Python</div>
+  </div>
+  <div class="kpi kpi-ok">
+    <div class="kpi-value">505</div>
+    <div class="kpi-label">Paires Rosetta matchables</div>
+  </div>
+</div>
+
+<h3>2.2 Tableau detaille par adapter</h3>
+
+<div class="table-wrap">
+<table>
+<tr>
+  <th>Adapter</th>
+  <th>Strategie</th>
+  <th>Raw</th>
+  <th>Clean_raw</th>
+  <th>Pairs</th>
+  <th>Cible</th>
+  <th>%</th>
+  <th>Qualite</th>
+</tr>
+<tr>
+  <td>java-to-python-translator</td>
+  <td><code>fuse</code></td>
+  <td>8 199</td>
+  <td>990</td>
+  <td class="bad">862 (monolingue!)</td>
+  <td>900</td>
+  <td class="bad">0%*</td>
+  <td class="bad">Non exploitable</td>
+</tr>
+<tr>
+  <td>jpa-hibernate-to-sqlalchemy</td>
+  <td><code>fuse</code></td>
+  <td>3 423</td>
+  <td>1 166</td>
+  <td class="bad">1 159 (monolingue!)</td>
+  <td>1 060</td>
+  <td class="bad">0%*</td>
+  <td class="bad">Non exploitable</td>
+</tr>
+<tr>
+  <td>junit-to-pytest-translator</td>
+  <td><code>fuse</code></td>
+  <td>2 021</td>
+  <td>461</td>
+  <td class="bad">436 (monolingue!)</td>
+  <td>600</td>
+  <td class="bad">0%*</td>
+  <td class="bad">Non exploitable</td>
+</tr>
+<tr>
+  <td>spring-config-to-python</td>
+  <td><code>fuse</code></td>
+  <td>841</td>
+  <td>745</td>
+  <td class="bad">618 (monolingue!)</td>
+  <td>1 000</td>
+  <td class="bad">0%*</td>
+  <td class="bad">Non exploitable</td>
+</tr>
+<tr>
+  <td>python-migration-quality-reviewer</td>
+  <td><code>doc_to_code</code></td>
+  <td>871</td>
+  <td>544</td>
+  <td class="warn">507</td>
+  <td>1 000</td>
+  <td class="warn">50%</td>
+  <td class="warn">Correct pour le use case</td>
+</tr>
+<tr>
+  <td>migration-pipeline-orchestrator</td>
+  <td><code>doc_to_code</code></td>
+  <td>195</td>
+  <td>142</td>
+  <td class="warn">129</td>
+  <td>300</td>
+  <td class="warn">43%</td>
+  <td class="warn">Correct pour le use case</td>
+</tr>
+</table>
+</div>
+
+<p class="dim">* 0% de paires bilingues exploitables. Les paires presentes sont de format doc_to_code (description -> code Python)
+et non des paires de traduction (code Java -> code Python).</p>
+
+<h3>2.3 Distribution des langues dans les donnees brutes</h3>
+
+<div class="table-wrap">
+<table>
+<tr><th>Langue</th><th>Records bruts</th><th>%</th><th>Records clean_raw</th></tr>
+<tr><td>Python</td><td>13 598</td><td>87.4%</td><td>~3 900 (estimation)</td></tr>
+<tr><td>Java</td><td>1 862</td><td>12.0%</td><td>~148 (estimation)</td></tr>
+<tr><td>Non tague</td><td>90</td><td>0.6%</td><td>-</td></tr>
+</table>
+</div>
+
+<div class="callout callout-red">
+  <span class="callout-icon">!</span>
+  <div>
+    <strong>Desequilibre critique Python/Java : ratio 7:1.</strong>
+    Pour un modele de traduction Java vers Python, le corpus d'entree devrait etre majoritairement Java.
+    L'ecrasante majorite des records vient de documentations Python (docs.python.org, SQLAlchemy, pytest, etc.).
+    Les records Java representent seulement 12% du corpus.
+  </div>
+</div>
+
+<h3>2.4 Verdict sur les paires actuelles</h3>
+
+<div class="verdict verdict-red">
+  VERDICT : Les 2 800 paires fine-tuning-ready sont INUTILISABLES pour l'objectif de migration Java vers Python.
+</div>
+
+<div class="card card-red">
+<h4>Analyse des paires presentes</h4>
+<p>Examen des 5 premieres paires de <code>java-to-python-translator.jsonl</code> :</p>
+<ul style="margin:0.5rem 0 0 1rem;font-size:0.88rem">
+  <li><strong>Format</strong> : "Write python code that does the following: [description]" -> [code Python]</li>
+  <li><strong>source_lang</strong> : vide (pas de marquage bilingue)</li>
+  <li><strong>target_lang</strong> : vide</li>
+  <li><strong>meta.lang</strong> : "python" uniquement</li>
+  <li><strong>Contenu Java dans le prompt</strong> : 0 sur 862 paires</li>
+  <li><strong>Paires de type "Migrate the following..."</strong> : 0</li>
+</ul>
+<p style="margin-top:0.5rem">Ces paires enseigneraient au modele a generer du code Python depuis une description,
+PAS a traduire du Java en Python. C'est une tache completement differente.</p>
+</div>
+
+<h3>2.5 Donnees Rosetta Code (potentiel inexploite)</h3>
+
+<div class="card card-blue">
+<p>Les collecteurs Rosetta Code ont correctement recupere <strong>1 071 records</strong> dans 7 fichiers :</p>
+<ul style="margin:0.5rem 0 0 1rem;font-size:0.88rem">
+  <li><strong>535 records Python</strong> (525 taches uniques)</li>
+  <li><strong>536 records Java</strong> (526 taches uniques)</li>
+  <li><strong>505 taches presentes dans les DEUX langues</strong> = 505 paires bilingues potentielles</li>
+</ul>
+<p style="margin-top:0.5rem">Ce sont des paires naturellement bilingues (meme algorithme dans 2 langues).
+Elles n'ont jamais ete transformees en paires d'entrainement car :</p>
+<ol style="margin:0.5rem 0 0 1.5rem;font-size:0.88rem">
+  <li>Le transform <code>code_migration</code> est configure en Python->Java (direction inversee)</li>
+  <li>Le pair_fuser n'a jamais ete lance</li>
+  <li>Les records Rosetta sont noyes dans le consolidated.jsonl sans traitement specifique</li>
+</ol>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<h2 id="sources" class="anchor">3. Analyse des sources par adapter</h2>
+
+<h3>3.1 java-to-python-translator (900 paires cible)</h3>
+
+<div class="table-wrap">
+<table>
+<tr><th>Source</th><th>Type</th><th>Bilingue?</th><th>Paires est.</th><th>Etat</th></tr>
+<tr><td>Rosetta Code - fibonacci</td><td>multilang_wiki</td><td class="ok">OUI</td><td>120</td><td class="warn">Collecte, non transforme</td></tr>
+<tr><td>Rosetta Code - linked list</td><td>multilang_wiki</td><td class="ok">OUI</td><td>100</td><td class="warn">Collecte, non transforme</td></tr>
+<tr><td>Rosetta Code - sort</td><td>multilang_wiki</td><td class="ok">OUI</td><td>90</td><td class="warn">Collecte, non transforme</td></tr>
+<tr><td>Rosetta Code - classes</td><td>multilang_wiki</td><td class="ok">OUI</td><td>110</td><td class="warn">Collecte, non transforme</td></tr>
+<tr><td>Python 3 official docs</td><td>doc_crawl</td><td class="bad">NON</td><td>100</td><td class="ok">Collecte</td></tr>
+<tr><td>Java 21 official docs</td><td>doc_crawl</td><td class="bad">NON</td><td>100</td><td class="ok">Collecte</td></tr>
+<tr><td>TheAlgorithms Python</td><td>web_crawl</td><td class="bad">NON (mais matchable)</td><td>100</td><td class="ok">Collecte</td></tr>
+<tr><td>TheAlgorithms Java</td><td>web_crawl</td><td class="bad">NON (mais matchable)</td><td>100</td><td class="ok">Collecte</td></tr>
+</table>
+</div>
+
+<div class="callout callout-orange">
+  <span class="callout-icon">!</span>
+  <div>
+    <strong>Sources monolingues dominantes.</strong> Sur 8 sources, seules 4 (Rosetta Code) sont naturellement bilingues.
+    Les docs Python/Java produisent des records monolingues qui ne peuvent PAS former des paires de traduction
+    sans passer par le pair_fuser (LLM).
+    <br><br>
+    <strong>Sources bilingues manquantes recommandees :</strong>
+    <ul style="margin-top:0.3rem">
+      <li>RealPython Java-to-Python migration guides</li>
+      <li>Baeldung Java tutorials (matchable avec Python equivalents)</li>
+      <li>GitHub repos bilingues (Spring Boot -> FastAPI migrations reelles)</li>
+      <li>GeeksforGeeks (meme probleme en Java ET Python)</li>
+      <li>LeetCode solutions (disponibles dans les 2 langues)</li>
+    </ul>
+  </div>
+</div>
+
+<h3>3.2 junit-to-pytest-translator (600 paires cible)</h3>
+
+<div class="table-wrap">
+<table>
+<tr><th>Source</th><th>Type</th><th>Bilingue?</th><th>Paires est.</th><th>Etat</th></tr>
+<tr><td>pytest official docs</td><td>doc_crawl</td><td class="bad">NON (Python only)</td><td>120</td><td class="ok">Collecte</td></tr>
+<tr><td>JUnit 5 official docs</td><td>doc_crawl</td><td class="bad">NON (Java only)</td><td>100</td><td class="ok">Collecte</td></tr>
+<tr><td>Python unittest stdlib</td><td>doc_crawl</td><td class="bad">NON</td><td>70</td><td class="ok">Collecte</td></tr>
+<tr><td>GitHub - JUnit to pytest</td><td>web_crawl</td><td class="warn">Potentiel</td><td>150</td><td class="neutral">Non verifie</td></tr>
+<tr><td>GitHub - java test to python</td><td>web_crawl</td><td class="warn">Potentiel</td><td>80</td><td class="neutral">Non verifie</td></tr>
+<tr><td>TheAlgorithms Java tests</td><td>web_crawl</td><td class="bad">NON (Java only)</td><td>70</td><td class="ok">Collecte</td></tr>
+</table>
+</div>
+
+<p class="dim">Aucune source n'est naturellement bilingue pour cet adapter. Le pair_fuser est indispensable
+mais n'a jamais ete execute. Sources naturellement bilingues manquantes : repos avec des dossiers
+<code>test/java/</code> ET <code>test/python/</code> (ex: projets migres de Spring Boot vers FastAPI).</p>
+
+<h3>3.3 spring-config-to-python-config (1000 paires cible)</h3>
+
+<div class="table-wrap">
+<table>
+<tr><th>Source</th><th>Type</th><th>Bilingue?</th><th>Paires est.</th><th>Etat</th></tr>
+<tr><td>Spring Boot properties ref</td><td>doc_crawl</td><td class="bad">NON (Java config)</td><td>180</td><td class="ok">Collecte</td></tr>
+<tr><td>Pydantic Settings docs</td><td>doc_crawl</td><td class="bad">NON (Python config)</td><td>120</td><td class="ok">Collecte</td></tr>
+<tr><td>FastAPI Settings</td><td>doc_crawl</td><td class="bad">NON</td><td>80</td><td class="ok">Collecte</td></tr>
+<tr><td>Flask Configuration</td><td>doc_crawl</td><td class="bad">NON</td><td>70</td><td class="ok">Collecte</td></tr>
+<tr><td>python-dotenv docs</td><td>doc_crawl</td><td class="bad">NON</td><td>50</td><td class="ok">Collecte</td></tr>
+<tr><td>GitHub Spring to FastAPI</td><td>web_crawl</td><td class="warn">Potentiel</td><td>150</td><td class="neutral">Non verifie</td></tr>
+<tr><td>12 Factor App</td><td>doc_crawl</td><td class="bad">NON</td><td>40</td><td class="ok">Collecte</td></tr>
+<tr><td>Dev.to migration articles</td><td>web_crawl</td><td class="warn">Potentiel</td><td>80</td><td class="neutral">Non verifie</td></tr>
+<tr><td>Paires manuelles</td><td>manual</td><td class="ok">OUI (par construction)</td><td>250</td><td class="bad">0 fournies</td></tr>
+</table>
+</div>
+
+<h3>3.4 jpa-hibernate-to-sqlalchemy (1060 paires cible)</h3>
+
+<p>Meme constat : sources monolingues (SQLAlchemy docs = Python, Hibernate docs = Java),
+pair_fuser non execute, 200 paires manuelles annoncees mais 0 fournies.</p>
+
+<h3>3.5 python-migration-quality-reviewer (1000 paires cible, doc_to_code)</h3>
+
+<p class="ok">Cet adapter utilise <code>doc_to_code</code> correctement. Les paires monolingues Python sont
+adaptees a son use case (evaluer la qualite du code Python). 507 paires presentes sur 1000 cibles = 50%.</p>
+
+<h3>3.6 migration-pipeline-orchestrator (300 paires cible, doc_to_code)</h3>
+
+<p class="ok">Idem : <code>doc_to_code</code> avec des exemples de LangGraph/orchestration.
+129 paires presentes sur 300 cibles = 43%.</p>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<h2 id="problemes" class="anchor">4. Problemes identifies</h2>
+
+<h3>4.1 Problemes CRITIQUES (bloquants)</h3>
+
+<div class="card card-red">
+<h4>P1 - Incoherence de direction dans la configuration</h4>
+<div class="table-wrap">
+<table>
+<tr><th>Source</th><th>Dit</th><th>Direction implicite</th></tr>
+<tr><td>Adapter names (migrator.yaml)</td><td>"java-to-python-translator"</td><td class="ok">Java -> Python</td></tr>
+<tr><td>Adapter descriptions</td><td>"recoit en entree le corps Java... genere un fichier Python"</td><td class="ok">Java -> Python</td></tr>
+<tr><td>CLAUDE.md</td><td>"Current scope: Migrator (Python->Java migration)"</td><td class="bad">Python -> Java</td></tr>
+<tr><td>config/languages.yaml (python-java)</td><td>source_lang: python, target_lang: java</td><td class="bad">Python -> Java</td></tr>
+<tr><td>migrator.yaml transform.params</td><td>src_lang: python, tgt_lang: java</td><td class="bad">Python -> Java</td></tr>
+<tr><td>User brief</td><td>"migration Java->Python"</td><td class="ok">Java -> Python</td></tr>
+</table>
+</div>
+<p style="margin-top:0.5rem"><strong>Impact</strong> : Si le pair_fuser etait lance en l'etat, il prendrait les records Python
+et genererait du Java. Le modele apprendrait a traduire Python vers Java = l'inverse de l'objectif.</p>
+<p><strong>Correction</strong> : Ajouter un entry <code>java-python</code> dans languages.yaml avec source_lang=java, target_lang=python.
+Modifier migrator.yaml transform.params : src_lang=java, tgt_lang=python.</p>
+</div>
+
+<div class="card card-red">
+<h4>P2 - Pair_fuser jamais execute sur les 4 adapters fuse</h4>
+<p>Les 4 adapters avec <code>pair_strategy: fuse</code> representent 3 560 paires cibles (73% du total).
+Aucun n'a ete fuse. Les paires presentes dans <code>processed/pairs/</code> pour ces adapters sont
+des paires <code>doc_to_code</code> erronees, generees par le mauvais chemin du pipeline.</p>
+<p><strong>Impact</strong> : Pas d'entrainement possible sur le coeur du projet (traduction de code).</p>
+</div>
+
+<div class="card card-red">
+<h4>P3 - Donnees fine-tuning-ready = 100% monolingue Python, inutilisables</h4>
+<p>Les 2 800 paires dans <code>fine-tuning-ready/</code> sont toutes du format :</p>
+<pre><code>{"prompt": "Write python code that does the following:\n\n[description]", "completion": "[code Python]"}</code></pre>
+<p>Un modele entraine sur ces donnees apprendrait a generer du Python depuis une description anglaise,
+pas a migrer du Java vers du Python.</p>
+</div>
+
+<h3>4.2 Problemes MAJEURS (non bloquants mais degradants)</h3>
+
+<div class="card card-orange">
+<h4>P4 - Desequilibre Python/Java dans le corpus brut</h4>
+<p>Ratio Python:Java = 7.3:1 (13 598 vs 1 862). Pour un modele de traduction Java->Python,
+on a besoin de plus de code Java en entree (source) que de code Python (cible, qui peut etre genere).
+Le corpus est domine par la documentation Python ce qui est l'inverse du besoin.</p>
+</div>
+
+<div class="card card-orange">
+<h4>P5 - Paires manuelles annoncees mais absentes</h4>
+<p>La configuration declare 810 paires manuelles au total :</p>
+<ul style="margin:0.3rem 0 0 1rem;font-size:0.88rem">
+  <li>python-migration-quality-reviewer : 360 paires manuelles</li>
+  <li>spring-config : 250 paires manuelles</li>
+  <li>jpa-hibernate : 200 paires manuelles</li>
+</ul>
+<p>Aucune n'a ete fournie. Le collecteur <code>manual</code> dans le registry a <code>module: null</code>.</p>
+</div>
+
+<div class="card card-orange">
+<h4>P6 - clean_raw ne preserve pas assez de records Java</h4>
+<p>Sur 8 199 records bruts pour java-to-python-translator, seuls 990 survivent au clean_raw.
+Parmi ceux-ci, seulement 4 sont en Java. Le filtre heuristique est calibre pour le code Python
+(validation AST Python, mots-cles Python) et penalise systematiquement les records Java.</p>
+</div>
+
+<div class="card card-orange">
+<h4>P7 - Modele ZScaler-bloque non telecharge</h4>
+<p>Le modele cible Qwen2.5-Coder-14B-Instruct-4bit n'est pas disponible localement.
+Le proxy ZScaler bloque les telechargements HuggingFace. Le pair_fuser a besoin d'un LLM
+pour generer les traductions (meme si la decision d'acceptation est software-only).</p>
+</div>
+
+<h3>4.3 Problemes architecturaux</h3>
+
+<div class="card card-orange">
+<h4>P8 - Pipeline clean.py deconnecte du multi-adapter</h4>
+<p>Le fichier <code>pipeline/clean.py</code> (DataCleaner) lit depuis <code>raw/pairs_raw.jsonl</code> —
+un seul fichier. Il ne connait pas la structure multi-adapter et ignore les fichiers per-adapter
+dans <code>processed/pairs/</code>. Il devrait agreger tous les fichiers de pairs/ par adapter.</p>
+</div>
+
+<div class="card card-orange">
+<h4>P9 - Absence de verifieur Java dans pair_fuser</h4>
+<p>Le pair_fuser a un verifieur Python (AST parse) et un verifieur Java (regex heuristique :
+mots-cles + accolades equilibrees). Le verifieur Java est beaucoup moins fiable que le Python.
+Pour un projet centre sur la generation de Python depuis Java, c'est le verifieur Python
+qui est critique (verification du code genere) = correct. Mais le verifieur Java est trop
+basique pour valider le code source d'entree.</p>
+</div>
+
+<h3>4.4 Dette technique</h3>
+
+<div class="table-wrap">
+<table>
+<tr><th>Element</th><th>Probleme</th><th>Impact</th></tr>
+<tr>
+  <td><code>CLAUDE.md</code></td>
+  <td>Dit "Python->Java migration" = sens inverse</td>
+  <td class="warn">Confusion pour tout contributeur/IA</td>
+</tr>
+<tr>
+  <td><code>consolidated.jsonl</code></td>
+  <td>10 514 records qui dupliquent le contenu des 97 autres fichiers raw</td>
+  <td class="warn">+10 MB inutile, risque double-comptage</td>
+</tr>
+<tr>
+  <td><code>pairs_raw.jsonl</code> (raw/)</td>
+  <td>3 714 records legacy au format prompt/completion dans raw/</td>
+  <td class="warn">Schema incoherent avec les collecteurs neutres</td>
+</tr>
+<tr>
+  <td><code>_heuristic_score</code> dans clean_raw</td>
+  <td>Score calibre pour Python, penalise Java (code_score cherche def, import, class mais pas les structures Java correctement)</td>
+  <td class="warn">Records Java filtres a tort</td>
+</tr>
+<tr>
+  <td>Embeddings backend</td>
+  <td>TF-IDF fallback quand Ollama/Bedrock indisponible => relevance scoring saute</td>
+  <td class="neutral">Mineur si ZScaler corrige</td>
+</tr>
+</table>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<h2 id="plan" class="anchor">5. Plan d'action recommande</h2>
+
+<h3>5.1 Actions IMMEDIATES (avant telechargement modele)</h3>
+
+<ol class="step-list">
+<li>
+  <strong>Corriger la direction dans languages.yaml</strong><br>
+  <span class="dim">Effort : 5 min | Impact : critique</span><br>
+  Ajouter un pair <code>java-python</code> : <code>source_lang: java, target_lang: python</code>.<br>
+  Modifier migrator.yaml : <code>lang_pair: java-python</code> sur les 4 adapters fuse.
+  Modifier transform params : <code>src_lang: java, tgt_lang: python</code>.
+</li>
+<li>
+  <strong>Corriger CLAUDE.md</strong><br>
+  <span class="dim">Effort : 1 min | Impact : preventif</span><br>
+  Remplacer "Python->Java migration" par "Java->Python migration".
+</li>
+<li>
+  <strong>Supprimer les paires actuelles de fine-tuning-ready/</strong><br>
+  <span class="dim">Effort : 1 min | Impact : securite</span><br>
+  Ces paires sont inutilisables et pourraient etre lancees par erreur.
+</li>
+<li>
+  <strong>Collecter plus de code Java via Rosetta Code</strong><br>
+  <span class="dim">Effort : 30 min | Impact : fort</span><br>
+  Lancer rosetta_collector avec topics supplementaires : "tree", "graph", "matrix",
+  "string manipulation", "file", "database", "network", "pattern", "concurrency".
+  Objectif : passer de 505 a 800+ taches matchables.
+</li>
+<li>
+  <strong>Lancer le transform code_migration sur les records Rosetta (direction corrigee)</strong><br>
+  <span class="dim">Effort : 5 min | Impact : fort</span><br>
+  Apres correction de la direction, <code>python -m pipeline.transform --project migrator</code>
+  produira directement ~505 paires bilingues Java->Python sans LLM.
+</li>
+<li>
+  <strong>Ajuster le scoring heuristique pour Java</strong><br>
+  <span class="dim">Effort : 30 min | Impact : moyen</span><br>
+  Ajouter a <code>_code_score</code> : detection de <code>public static void main</code>,
+  <code>System.out</code>, <code>@Override</code>, <code>throws</code>, etc.
+  Ajouter une branche <code>lang == "java"</code> avec validation regex structurelle au lieu de AST.
+</li>
+</ol>
+
+<h3>5.2 Actions APRES whitelist ZScaler / telechargement modele</h3>
+
+<ol class="step-list">
+<li>
+  <strong>Lancer le pair_fuser sur les 4 adapters fuse</strong><br>
+  <span class="dim">Effort : 2-4h (LLM generation) | Impact : critique</span><br>
+  Prerequis : LLM local disponible (Qwen2.5-Coder ou equivalent).
+  Le pair_fuser prendra les records Java de clean_raw et generera des traductions Python,
+  verifiees par AST parse Python.
+</li>
+<li>
+  <strong>Collecter des sources naturellement bilingues supplementaires</strong><br>
+  <span class="dim">Effort : 2h | Impact : fort</span><br>
+  <ul style="margin:0.3rem 0 0 1rem">
+    <li>GeeksforGeeks : meme probleme en Java + Python</li>
+    <li>GitHub repos bilingues reels (Spring Boot -> FastAPI migrations)</li>
+    <li>LeetCode solutions : disponibles en Java et Python</li>
+    <li>HackerRank challenges : implementations bilingues</li>
+  </ul>
+</li>
+<li>
+  <strong>Produire les paires manuelles declarees (810)</strong><br>
+  <span class="dim">Effort : significatif (jours) | Impact : moyen-fort</span><br>
+  Priorite : spring-config (cas complexes OAuth2/multi-profil) et jpa-hibernate (heritage JPA).
+</li>
+<li>
+  <strong>Re-executer le pipeline complet clean -> transform -> clean -> split</strong><br>
+  <span class="dim">Effort : 1h | Impact : critique</span><br>
+  Une fois les vrais paires bilingues produites.
+</li>
+<li>
+  <strong>Evaluer le modele sur la baseline Nova Pro</strong><br>
+  <span class="dim">Effort : 2h | Impact : obligatoire avant deploiement</span><br>
+  Utiliser /eval-model avec comparaison contre la baseline AWS declaree.
+</li>
+</ol>
+
+<h3>5.3 Matrice impact/effort</h3>
+
+<div class="table-wrap">
+<table>
+<tr><th>Action</th><th>Effort</th><th>Impact</th><th>Priorite</th></tr>
+<tr><td>Corriger direction config</td><td class="ok">5 min</td><td class="bad">Critique</td><td><strong>1</strong></td></tr>
+<tr><td>Corriger CLAUDE.md</td><td class="ok">1 min</td><td class="warn">Moyen</td><td><strong>2</strong></td></tr>
+<tr><td>Purger fine-tuning-ready</td><td class="ok">1 min</td><td class="warn">Securite</td><td><strong>3</strong></td></tr>
+<tr><td>Transform Rosetta (apres correction)</td><td class="ok">5 min</td><td class="ok">Fort (505 paires)</td><td><strong>4</strong></td></tr>
+<tr><td>Collecter plus Rosetta topics</td><td class="warn">30 min</td><td class="ok">Fort</td><td><strong>5</strong></td></tr>
+<tr><td>Ajuster scoring pour Java</td><td class="warn">30 min</td><td class="warn">Moyen</td><td><strong>6</strong></td></tr>
+<tr><td>Pair_fuser (post-modele)</td><td class="bad">2-4h</td><td class="bad">Critique</td><td><strong>7</strong></td></tr>
+<tr><td>Sources bilingues suppl.</td><td class="warn">2h</td><td class="ok">Fort</td><td><strong>8</strong></td></tr>
+<tr><td>Paires manuelles</td><td class="bad">Jours</td><td class="warn">Moyen</td><td><strong>9</strong></td></tr>
+</table>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<h2 id="positif" class="anchor">6. Ce qui fonctionne bien</h2>
+
+<h3>6.1 Composants solides - ne pas toucher</h3>
+
+<div class="card card-green">
+<h4>Architecture agnostique du pipeline</h4>
+<p>Le design est config-driven et sans hardcode projet/langue. Les collecteurs produisent des records
+neutres (<code>{task_name, lang, code}</code> ou <code>{description, code, lang}</code>),
+les templates de transformation sont parametriques, le registry de collecteurs est extensible YAML-only.
+Ajouter un nouveau projet ou une nouvelle paire de langues ne necessite aucune modification de code Python.</p>
+</div>
+
+<div class="card card-green">
+<h4>Collecteurs bien implementes</h4>
+<ul style="margin:0.3rem 0 0 1rem;font-size:0.88rem">
+  <li><strong>rosetta_collector</strong> : extraction propre du wikitext MediaWiki, gestion rate-limit, dedup au write</li>
+  <li><strong>doc_collector</strong> : crawl BFS avec profondeur limitee, skip patterns, extraction Shiki/hljs/Pygments, mode Playwright anti-bot</li>
+  <li><strong>Registry-based dispatch</strong> : ajout de collecteur = 1 entry YAML, zero code</li>
+</ul>
+</div>
+
+<div class="card card-green">
+<h4>Pipeline clean_raw sophistique</h4>
+<p>7 etapes bien sequencees : exact dedup, heuristic scoring, semantic dedup, relevance scoring,
+volume control, coverage clustering, cross-adapter reassignment. Augmentation CV-inspired
+(identifier renaming, loop style swap, desc paraphrase). Logique sound, juste le calibrage
+des seuils Java a ajuster.</p>
+</div>
+
+<div class="card card-green">
+<h4>Pair_fuser bien concu</h4>
+<p>Design correct : LLM pour la generation uniquement, toute decision d'acceptation par software
+(AST parse, ratio verification). Rate limiting, extraction robuste de code blocks, parametrage
+via languages.yaml. Il suffit de corriger la direction et de le lancer.</p>
+</div>
+
+<div class="card card-green">
+<h4>API et UI completes</h4>
+<p>L'API FastAPI couvre tout le workflow : collect, fuse, review, pipeline, health, lineage, search, browse.
+Le frontend SvelteKit offre 6 onglets (Sante, Collecte, Ingestion, Pipeline, Controle qualite, Recherche).
+Endpoints SSE pour le suivi temps reel des jobs.</p>
+</div>
+
+<div class="card card-green">
+<h4>Green IT et souverainete</h4>
+<ul style="margin:0.3rem 0 0 1rem;font-size:0.88rem">
+  <li>Zero appel cloud en inference production (MLX local / Ollama)</li>
+  <li>Embeddings cascade : Ollama > Bedrock > TF-IDF (graceful degradation)</li>
+  <li>Batch size optimise pour M4 Pro 48GB</li>
+  <li>Reuse des configs, pas de redondance</li>
+</ul>
+</div>
+
+<h3>6.2 Decisions architecturales correctes</h3>
+
+<div class="two-col">
+  <div class="card card-blue">
+    <h4>Multi-adapter par projet</h4>
+    <p>6 adapters specialises plutot qu'un monolithe. Chaque adapter a un perimetre precis,
+    des sources de donnees dediees, et un role clair dans le pipeline de migration.</p>
+  </div>
+  <div class="card card-blue">
+    <h4>Separation generation / validation</h4>
+    <p>Le pair_fuser genere via LLM mais accepte/rejette via software deterministe.
+    Le quality_reviewer valide la qualite semantique. Bonne separation des responsabilites.</p>
+  </div>
+  <div class="card card-blue">
+    <h4>Collecte naturelle > generation</h4>
+    <p>Priorite aux sources naturellement bilingues (Rosetta Code, repos bilingues)
+    plutot qu'a la generation synthetique LLM. Le LLM n'intervient que quand les sources
+    naturelles sont insuffisantes (strategie fuse).</p>
+  </div>
+  <div class="card card-blue">
+    <h4>Immutabilite du raw/</h4>
+    <p>Les fichiers raw sont timestampes et jamais ecrases. Lineage complete tracee en SQLite.
+    Audit trail intact pour la compliance Defense.</p>
+  </div>
+</div>
+
+<hr>
+
+<h2>Resume des actions immediates</h2>
+
+<div class="callout callout-red">
+  <span class="callout-icon">!</span>
+  <div>
+    <strong>A faire MAINTENANT (15 minutes) :</strong>
+    <ol style="margin:0.5rem 0 0 1rem">
+      <li>Ajouter <code>java-python: {source_lang: java, target_lang: java}</code> dans <code>config/languages.yaml</code></li>
+      <li>Modifier <code>migrator.yaml</code> : transform.params.src_lang=java, tgt_lang=python, lang_pair_key=java-python</li>
+      <li>Modifier les 4 adapters fuse : <code>lang_pair: java-python</code></li>
+      <li>Corriger CLAUDE.md : "Java->Python migration"</li>
+      <li>Vider <code>fine-tuning-ready/</code> (donnees inutilisables)</li>
+    </ol>
+    <p style="margin-top:0.5rem">Apres ces corrections, lancer <code>python -m pipeline.transform --project migrator</code>
+    pour obtenir ~505 vraies paires bilingues depuis Rosetta Code.</p>
+  </div>
+</div>
+
+<p style="color:#8b949e;font-size:0.82rem;margin-top:3rem;text-align:center">
+  Audit genere le 4 juin 2026 — Projet MLOps Migrator — Capgemini / Usage interne
+</p>
+
+</div>
+</body>
+</html>

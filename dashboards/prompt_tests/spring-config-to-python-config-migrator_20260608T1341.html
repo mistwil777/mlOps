@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8">
+<title>Prompt Test — spring-config-to-python-config-migrator</title>
+<style>
+body{font-family:monospace;margin:2em;color:#1a1a2e}
+table{border-collapse:collapse;width:100%;margin:1em 0}
+th,td{border:1px solid #ccc;padding:8px;text-align:left}
+th{background:#003366;color:#fff}
+pre{background:#f5f5f5;padding:6px;font-size:10pt}
+h2{color:#003366} h3{margin-top:1.5em}
+.badge{background:#2e7d32;color:#fff;padding:2px 8px;border-radius:3px;font-size:9pt}
+</style></head><body>
+<h1>Test comparatif de prompts</h1>
+<p><strong>Adapter:</strong> spring-config-to-python-config-migrator &nbsp;|&nbsp;
+   <strong>Direction:</strong> python → java &nbsp;|&nbsp;
+   <strong>Samples:</strong> 10 &nbsp;|&nbsp;
+   <strong>Date:</strong> 2026-06-08</p>
+<p><strong>Gagnant:</strong> <span class="badge">Baseline</span>
+   (avg LLM judge = 0.410)</p>
+
+<h2>Résumé</h2>
+<table>
+  <tr><th>Variant</th><th>Syntaxe OK</th><th>Score LLM moyen</th><th>Paires scorées</th></tr>
+  <tr style="background:#e8f5e9"><td><strong>Baseline 🏆</strong></td><td>100%</td><td>0.410 / 1.0</td><td>10/10</td></tr><tr><td><strong>Few-shot example</strong></td><td>100%</td><td>0.410 / 1.0</td><td>10/10</td></tr><tr><td><strong>Migration context</strong></td><td>100%</td><td>0.340 / 1.0</td><td>10/10</td></tr><tr><td><strong>Strict output fmt</strong></td><td>100%</td><td>0.340 / 1.0</td><td>10/10</td></tr>
+</table>
+
+<h2>Détails par sample</h2>
+<h3>Baseline (v1_baseline)</h3><table><tr><td>Sample 1</td><td>Syntax: ✓</td><td>LLM score: 0.30</td><td><pre style='max-width:500px;overflow:auto'>import java.util.Optional;
+
+public class ImplicitDualSettings {
+    private final boolean var7;
+    private final boolean var6;
+    private final boolean var4;
+    private final boolean var5;
+
+    pub</pre></td></tr><tr><td>Sample 2</td><td>Syntax: ✓</td><td>LLM score: 0.30</td><td><pre style='max-width:500px;overflow:auto'>```java
+import java.util.Arrays;
+import java.util.List;
+import java.util.Optional;
+
+class SettingsError extends RuntimeException {
+    public SettingsError(String message) {
+        super(message);
+  </pre></td></tr><tr><td>Sample 3</td><td>Syntax: ✓</td><td>LLM score: 0.70</td><td><pre style='max-width:500px;overflow:auto'>import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.PropertySource;
+
+@Configuration
+@P</pre></td></tr><tr><td>Sample 4</td><td>Syntax: ✓</td><td>LLM score: 0.30</td><td><pre style='max-width:500px;overflow:auto'>import java.util.List;
+
+public class Var2 {
+    private int var8;
+    private int var6 = 0;
+
+    public int getVar8() {
+        return var8;
+    }
+
+    public void setVar8(int var8) {
+        this.var</pre></td></tr><tr><td>Sample 5</td><td>Syntax: ✓</td><td>LLM score: 0.40</td><td><pre style='max-width:500px;overflow:auto'>import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.PropertySource;
+
+</pre></td></tr><tr><td>Sample 6</td><td>Syntax: ✓</td><td>LLM score: 0.30</td><td><pre style='max-width:500px;overflow:auto'>import com.azure.identity.DefaultAzureCredentialBuilder;
+import com.microsoft.azure.keyvault.KeyVaultClient;
+import com.microsoft.azure.keyvault.models.SecretBundle;
+import com.microsoft.azure.keyvaul</pre></td></tr><tr><td>Sample 7</td><td>Syntax: ✓</td><td>LLM score: 0.60</td><td><pre style='max-width:500px;overflow:auto'>import java.nio.file.Path;
+import java.nio.file.Paths;
+
+public class DirectoryLayout {
+    public static void main(String[] args) {
+        Path secretsDir = Paths.get("secrets");
+        Path appKeyD</pre></td></tr><tr><td>Sample 8</td><td>Syntax: ✓</td><td>LLM score: 0.40</td><td><pre style='max-width:500px;overflow:auto'>import java.util.*;
+
+class Nested {
+    private Map<String, Integer> that;
+
+    public Nested(Map<String, Integer> that) {
+        this.that = that;
+    }
+
+    public Map<String, Integer> getThat() {
+</pre></td></tr><tr><td>Sample 9</td><td>Syntax: ✓</td><td>LLM score: 0.30</td><td><pre style='max-width:500px;overflow:auto'>import java.util.Map;
+
+public class Settings {
+
+    private String var_7;
+    private Var2 var_9;
+    private static final Var4 var_8 = new Var4("config.toml");
+
+    public static class Var2 {
+       </pre></td></tr><tr><td>Sample 10</td><td>Syntax: ✓</td><td>LLM score: 0.50</td><td><pre style='max-width:500px;overflow:auto'>import java.util.Scanner;
+import picocli.CommandLine;
+import picocli.CommandLine.Option;
+import picocli.CommandLine.Parameters;
+
+enum Fruit {
+    PEAR(0), KIWI(1), LIME(2);
+
+    private final int valu</pre></td></tr></table><h3>Few-shot example (v3_few_shot)</h3><table><tr><td>Sample 1</td><td>Syntax: ✓</td><td>LLM score: 0.30</td><td><pre style='max-width:500px;overflow:auto'>import java.util.Optional;
+
+public class ImplicitDualSettings {
+    private Boolean var_7;
+    private Boolean var_6 = false;
+    private Boolean var_4 = false;
+    private Boolean var_5 = true;
+
+    </pre></td></tr><tr><td>Sample 2</td><td>Syntax: ✓</td><td>LLM score: 0.40</td><td><pre style='max-width:500px;overflow:auto'>import java.util.Map;
+import java.util.HashMap;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.Optional;
+
+class SettingsError extends Exception {
+    public SettingsError(String m</pre></td></tr><tr><td>Sample 3</td><td>Syntax: ✓</td><td>LLM score: 0.50</td><td><pre style='max-width:500px;overflow:auto'>import java.util.Optional;
+
+public class Settings {
+    private static final boolean CASE_SENSITIVE = true;
+
+    private String redisHost = Optional.ofNullable(System.getenv("REDIS_HOST")).orElse("loc</pre></td></tr><tr><td>Sample 4</td><td>Syntax: ✓</td><td>LLM score: 0.30</td><td><pre style='max-width:500px;overflow:auto'>import java.util.List;
+
+public class Var2 {
+    private int var8;
+    private int var6 = 0;
+
+    public Var2(int var8) {
+        this.var8 = var8;
+    }
+
+    public int getVar8() {
+        return var8</pre></td></tr><tr><td>Sample 5</td><td>Syntax: ✓</td><td>LLM score: 0.60</td><td><pre style='max-width:500px;overflow:auto'>// Java
+
+import java.util.HashMap;
+import java.util.Map;
+
+public class Config {
+    private String hello;
+    private Nested nested;
+
+    public Config() {
+        this.hello = "World";
+        this.n</pre></td></tr><tr><td>Sample 6</td><td>Syntax: ✓</td><td>LLM score: 0.30</td><td><pre style='max-width:500px;overflow:auto'>import com.azure.identity.DefaultAzureCredentialBuilder;
+import com.microsoft.azure.keyvault.KeyVaultClient;
+import com.microsoft.azure.keyvault.models.KeyVaultSecret;
+import com.microsoft.azure.keyva</pre></td></tr><tr><td>Sample 7</td><td>Syntax: ✓</td><td>LLM score: 0.60</td><td><pre style='max-width:500px;overflow:auto'>// Java
+import java.io.File;
+
+public class DirectoryLayout {
+    public static void main(String[] args) {
+        File secretsDir = new File("secrets");
+        secretsDir.mkdir();
+
+        File appDi</pre></td></tr><tr><td>Sample 8</td><td>Syntax: ✓</td><td>LLM score: 0.40</td><td><pre style='max-width:500px;overflow:auto'>import java.util.*;
+
+class Nested {
+    private Map<String, Integer> that;
+
+    public Nested(Map<String, Integer> that) {
+        this.that = that;
+    }
+
+    public Map<String, Integer> getThat() {
+</pre></td></tr><tr><td>Sample 9</td><td>Syntax: ✓</td><td>LLM score: 0.40</td><td><pre style='max-width:500px;overflow:auto'>import java.util.Map;
+
+public class Var2 {
+    private String nestedField;
+
+    public Var2(String nestedField) {
+        this.nestedField = nestedField;
+    }
+
+    public String getNestedField() {
+  </pre></td></tr><tr><td>Sample 10</td><td>Syntax: ✓</td><td>LLM score: 0.30</td><td><pre style='max-width:500px;overflow:auto'>import java.util.EnumSet;
+
+public class Main {
+    public enum Fruit {
+        pear, kiwi, lime
+    }
+
+    public static class Settings {
+        private Fruit fruit;
+        private String pet;
+
+    </pre></td></tr></table><h3>Migration context (v2_migration_context)</h3><table><tr><td>Sample 1</td><td>Syntax: ✓</td><td>LLM score: 0.30</td><td><pre style='max-width:500px;overflow:auto'>import java.util.Optional;
+
+public class ImplicitDualSettings {
+    private final Optional<Boolean> var7;
+    private final boolean var6;
+    private final boolean var4;
+    private final boolean var5</pre></td></tr><tr><td>Sample 2</td><td>Syntax: ✓</td><td>LLM score: 0.30</td><td><pre style='max-width:500px;overflow:auto'>import java.util.Map;
+import java.util.Optional;
+
+public class Main {
+    public static void main(String[] args) {
+        Git git = new Git(args);
+        assert git.toMap().equals(Map.of("clone", nu</pre></td></tr><tr><td>Sample 3</td><td>Syntax: ✓</td><td>LLM score: 0.70</td><td><pre style='max-width:500px;overflow:auto'>import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.PropertySource;
+
+@Configuration
+@P</pre></td></tr><tr><td>Sample 4</td><td>Syntax: ✓</td><td>LLM score: 0.30</td><td><pre style='max-width:500px;overflow:auto'>import java.util.List;
+
+public class Config {
+    public static class NestedConfig {
+        private int var8;
+        private int var6 = 0;
+
+        public int getVar8() {
+            return var8;
+  </pre></td></tr><tr><td>Sample 5</td><td>Syntax: ✓</td><td>LLM score: 0.30</td><td><pre style='max-width:500px;overflow:auto'>import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.stereotype.Component;
+
+@Component
+@ConfigurationProperties(prefix = "config")
+public class Config</pre></td></tr><tr><td>Sample 6</td><td>Syntax: ✓</td><td>LLM score: 0.30</td><td><pre style='max-width:500px;overflow:auto'>import com.azure.identity.DefaultAzureCredentialBuilder;
+import com.microsoft.azure.keyvault.KeyVaultClient;
+import com.microsoft.azure.keyvault.models.SecretBundle;
+import com.microsoft.azure.keyvaul</pre></td></tr><tr><td>Sample 7</td><td>Syntax: ✓</td><td>LLM score: 0.30</td><td><pre style='max-width:500px;overflow:auto'>import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+
+public class DirectoryLayout {
+    public static void main(String[]</pre></td></tr><tr><td>Sample 8</td><td>Syntax: ✓</td><td>LLM score: 0.30</td><td><pre style='max-width:500px;overflow:auto'>import java.util.*;
+
+class Nested {
+    private Map<String, Integer> that;
+
+    public Nested(Map<String, Integer> that) {
+        this.that = that;
+    }
+
+    public Map<String, Integer> getThat() {
+</pre></td></tr><tr><td>Sample 9</td><td>Syntax: ✓</td><td>LLM score: 0.30</td><td><pre style='max-width:500px;overflow:auto'>import java.util.Properties;
+
+public class Settings {
+    private static final Properties properties = new Properties();
+    
+    static {
+        try {
+            properties.load(Settings.class.getR</pre></td></tr><tr><td>Sample 10</td><td>Syntax: ✓</td><td>LLM score: 0.30</td><td><pre style='max-width:500px;overflow:auto'>import java.util.Scanner;
+
+enum Fruit {
+    PEAR(0), KIWI(1), LIME(2);
+    
+    private final int value;
+    
+    Fruit(int value) {
+        this.value = value;
+    }
+    
+    public int getValue() {
+</pre></td></tr></table><h3>Strict output fmt (v4_strict_output)</h3><table><tr><td>Sample 1</td><td>Syntax: ✓</td><td>LLM score: 0.30</td><td><pre style='max-width:500px;overflow:auto'>import java.util.Optional;
+
+interface Var0 {}
+interface Var1<T> {}
+interface Var2<T> {}
+interface Var3 {}
+
+class ImplicitDualSettings implements Var0 {
+    private final boolean cliParseArgs = true;
+ </pre></td></tr><tr><td>Sample 2</td><td>Syntax: ✓</td><td>LLM score: 0.30</td><td><pre style='max-width:500px;overflow:auto'>import java.util.HashMap;
+import java.util.Map;
+
+class SettingsError extends Exception {
+    public SettingsError(String message) {
+        super(message);
+    }
+}
+
+class CliPositionalArg<T> {
+    pri</pre></td></tr><tr><td>Sample 3</td><td>Syntax: ✓</td><td>LLM score: 0.40</td><td><pre style='max-width:500px;overflow:auto'>import java.util.Properties;
+
+public class Settings {
+    private static final Properties properties = new Properties();
+    private static final boolean CASE_SENSITIVE = true;
+
+    static {
+        p</pre></td></tr><tr><td>Sample 4</td><td>Syntax: ✓</td><td>LLM score: 0.30</td><td><pre style='max-width:500px;overflow:auto'>import java.util.List;
+
+interface Var0 {}
+interface Var1 {}
+interface Var3 {}
+interface Var4 {
+    void tomlFile(List<String> files);
+}
+interface Var5 {
+    Var1 apply(Class<? extends Var1> settingsCl</pre></td></tr><tr><td>Sample 5</td><td>Syntax: ✓</td><td>LLM score: 0.40</td><td><pre style='max-width:500px;overflow:auto'>import java.util.HashMap;
+import java.util.Map;
+
+public class Config {
+    private String hello = "World";
+    private NestedConfig nested = new NestedConfig();
+
+    public static class NestedConfig {</pre></td></tr><tr><td>Sample 6</td><td>Syntax: ✓</td><td>LLM score: 0.30</td><td><pre style='max-width:500px;overflow:auto'>import java.util.function.Supplier;
+import com.azure.identity.DefaultAzureCredentialBuilder;
+import com.microsoft.azure.spring.cloud.config.AzureKeyVaultConfigClient;
+import com.microsoft.azure.spring</pre></td></tr><tr><td>Sample 7</td><td>Syntax: ✓</td><td>LLM score: 0.40</td><td><pre style='max-width:500px;overflow:auto'>import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+
+public class DirectoryLayout {
+    public static void main(String[]</pre></td></tr><tr><td>Sample 8</td><td>Syntax: ✓</td><td>LLM score: 0.40</td><td><pre style='max-width:500px;overflow:auto'>import java.util.*;
+
+class Nested {
+    private Map<String, Integer> that;
+
+    public Nested(Map<String, Integer> that) {
+        this.that = that;
+    }
+
+    public Map<String, Integer> getThat() {
+</pre></td></tr><tr><td>Sample 9</td><td>Syntax: ✓</td><td>LLM score: 0.30</td><td><pre style='max-width:500px;overflow:auto'>import java.util.List;
+
+public class Settings {
+
+    private String var_7;
+    private Var2 var_9;
+    private static final Var4 var_8 = new Var4("config.toml");
+
+    public static class Var2 {
+      </pre></td></tr><tr><td>Sample 10</td><td>Syntax: ✓</td><td>LLM score: 0.30</td><td><pre style='max-width:500px;overflow:auto'>import java.util.Arrays;
+import java.util.List;
+import java.util.Optional;
+
+enum Fruit {
+    pear(0),
+    kiwi(1),
+    lime(2);
+
+    private final int value;
+
+    Fruit(int value) {
+        this.value</pre></td></tr></table>
+</body></html>

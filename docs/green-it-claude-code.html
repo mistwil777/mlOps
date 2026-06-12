@@ -14,8 +14,6 @@
     }
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.75;font-size:16px}
-
-    /* NAVBAR STICKY */
     .navbar{position:sticky;top:0;z-index:100;background:var(--green-dark);padding:0 24px;display:flex;align-items:center;gap:0;box-shadow:0 2px 12px rgba(0,0,0,0.3)}
     .navbar-brand{color:var(--green-light);font-weight:800;font-size:1rem;padding:14px 20px 14px 0;border-right:1px solid rgba(255,255,255,0.15);margin-right:8px;white-space:nowrap}
     .level-filter{display:flex;gap:4px;padding:8px 0;flex-wrap:wrap}
@@ -27,8 +25,6 @@
     .level-btn.expert{background:#e63946;color:white}
     .toc-btn{margin-left:auto;color:rgba(255,255,255,0.7);background:none;border:1px solid rgba(255,255,255,0.2);border-radius:8px;padding:6px 14px;cursor:pointer;font-size:0.8rem;white-space:nowrap}
     .toc-btn:hover{background:rgba(255,255,255,0.1)}
-
-    /* HERO */
     .hero{background:linear-gradient(135deg,var(--green-dark) 0%,var(--green-mid) 50%,var(--green-accent) 100%);color:white;padding:72px 40px 56px;text-align:center;position:relative;overflow:hidden}
     .hero::before{content:"";position:absolute;inset:0;background:url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23ffffff' fill-opacity='0.04'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/svg%3E")}
     .hero-badge{display:inline-block;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);border-radius:20px;padding:4px 16px;font-size:0.78rem;letter-spacing:2px;text-transform:uppercase;margin-bottom:20px}
@@ -40,8 +36,6 @@
     .lb-b{background:var(--green-light);color:var(--green-dark)}
     .lb-i{background:var(--orange);color:#3d1a00}
     .lb-e{background:var(--red);color:white}
-
-    /* TOC MODAL */
     .toc-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;align-items:center;justify-content:center}
     .toc-overlay.open{display:flex}
     .toc-modal{background:white;border-radius:16px;padding:32px 40px;max-width:700px;width:95%;max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3)}
@@ -56,17 +50,11 @@
     .toc-ol .i{background:#fff3e0;color:#e65100}
     .toc-ol .e{background:#fce4ec;color:#880e4f}
     @media(max-width:600px){.toc-ol{columns:1}}
-
-    /* LEVEL TAGS on sections */
     .section-tag{display:inline-block;padding:3px 10px;border-radius:12px;font-size:0.72rem;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;vertical-align:middle;margin-left:10px}
     .tag-b{background:var(--green-pale);color:var(--green-dark)}
     .tag-i{background:#fff3e0;color:#e65100}
     .tag-e{background:#fce4ec;color:#880e4f}
-
-    /* CONTAINER */
     .container{max-width:1100px;margin:0 auto;padding:0 24px}
-
-    /* SECTIONS */
     section{padding:56px 0;transition:opacity 0.3s}
     section.hidden{display:none}
     section:nth-child(even){background:var(--green-pale)}
@@ -75,8 +63,6 @@
     h3{color:var(--green-mid);font-size:1.2rem;margin:28px 0 10px}
     h4{color:var(--green-accent);font-size:.97rem;margin:18px 0 7px;font-weight:600}
     p{margin-bottom:14px}
-
-    /* CARDS */
     .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:20px;margin:28px 0}
     .card{background:var(--card);border-radius:14px;padding:24px;box-shadow:var(--shadow);border-top:4px solid var(--green-light);transition:transform .2s}
     .card:hover{transform:translateY(-3px)}
@@ -87,12 +73,8 @@
     .card-icon{font-size:2.2rem;margin-bottom:10px}
     .card h4{margin:0 0 7px;font-size:1.05rem;color:var(--text)}
     .card p{color:var(--text-light);font-size:.9rem;margin:0}
-
-    /* DEF BOX */
     .def-box{background:linear-gradient(135deg,#f0fdf4,#dcfce7);border-left:5px solid var(--green-accent);border-radius:0 12px 12px 0;padding:18px 22px;margin:20px 0}
     .def-title{font-weight:700;color:var(--green-dark);font-size:.78rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:7px}
-
-    /* CALLOUT */
     .callout{border-radius:12px;padding:18px 22px;margin:20px 0;display:flex;gap:14px;align-items:flex-start}
     .ci{font-size:1.4rem;flex-shrink:0}
     .callout.warning{background:#fff3cd;border:1px solid #ffc107}
@@ -101,66 +83,42 @@
     .callout.success{background:var(--green-pale);border:1px solid var(--green-light)}
     .callout.purple{background:var(--purple-pale);border:1px solid var(--purple)}
     .cb strong{display:block;margin-bottom:3px}
-
-    /* CODE */
     pre{background:var(--code-bg);color:#a8ff78;border-radius:12px;padding:22px;overflow-x:auto;font-size:.85rem;line-height:1.6;margin:18px 0;position:relative}
     .fn{position:absolute;top:8px;right:14px;font-size:.72rem;color:#888;font-family:monospace}
     code{background:#e8f5e9;color:var(--green-dark);padding:2px 5px;border-radius:4px;font-size:.88em;font-family:'JetBrains Mono','Fira Code',monospace}
     pre code{background:none;color:inherit;padding:0;border-radius:0}
     .kw{color:#ff79c6}.str{color:#f1fa8c}.com{color:#6272a4;font-style:italic}.key{color:#8be9fd}.val{color:#50fa7b}.num{color:#bd93f9}
-
-    /* DIAGRAM */
     .diagram-wrap{background:var(--card);border-radius:14px;padding:28px;margin:28px 0;box-shadow:var(--shadow);overflow-x:auto}
     .diagram-wrap figcaption{text-align:center;font-size:.82rem;color:var(--text-light);margin-top:14px}
-
-    /* TABLE */
     .table-wrap{overflow-x:auto;margin:20px 0}
     table{width:100%;border-collapse:collapse;font-size:.88rem}
     th{background:var(--green-mid);color:white;padding:11px 14px;text-align:left}
     td{padding:9px 14px;border-bottom:1px solid var(--border)}
     tr:nth-child(even) td{background:#f6fff8}
     tr:hover td{background:var(--green-pale)}
-
-    /* STEPS */
-    .steps{counter-reset:step;list-style:none;padding:0}
-    .steps li{counter-increment:step;padding:14px 18px 14px 56px;position:relative;margin:10px 0;background:var(--card);border-radius:12px;box-shadow:var(--shadow)}
-    .steps li::before{content:counter(step);position:absolute;left:14px;top:50%;transform:translateY(-50%);background:var(--green-mid);color:white;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.82rem}
-
-    /* COMPARE */
     .compare{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin:20px 0}
     .compare-bad,.compare-good{border-radius:12px;padding:20px}
     .compare-bad{background:#fff5f5;border:2px solid #fc8181}
     .compare-good{background:#f0fff4;border:2px solid var(--green-light)}
     .compare-bad h4{color:var(--red)}
     .compare-good h4{color:var(--green-mid)}
-    @media(max-width:640px){.compare{grid-template-columns:1fr}}
-
-
-    /* PROGRESS */
+    @media(max-width:640px){.compare{grid-template-columns:1}}
     .pb-wrap{margin:12px 0}
     .pb-label{display:flex;justify-content:space-between;font-size:.83rem;margin-bottom:5px}
     .pb{height:11px;border-radius:6px;background:#e0e0e0;overflow:hidden}
     .pb-fill{height:100%;border-radius:6px;background:linear-gradient(90deg,var(--green-light),var(--green-accent))}
-
-    /* CHECKLIST */
     .checklist{list-style:none;padding:0}
     .checklist li{padding:7px 0 7px 30px;position:relative;border-bottom:1px dashed var(--border)}
     .checklist li::before{content:"✓";position:absolute;left:0;color:var(--green-accent);font-weight:700}
     .checklist li.todo::before{content:"○";color:#ccc}
-
-    /* TAG */
     .tag{display:inline-block;padding:2px 9px;border-radius:20px;font-size:.73rem;font-weight:600;margin:2px}
     .tag.green{background:var(--green-pale);color:var(--green-dark)}
     .tag.orange{background:#fff3e0;color:#e65100}
     .tag.blue{background:#e3f2fd;color:#0d47a1}
     .tag.red{background:#fce4ec;color:#880e4f}
     .tag.purple{background:var(--purple-pale);color:var(--purple)}
-
-    /* FOOTER */
     footer{background:var(--green-dark);color:rgba(255,255,255,.7);text-align:center;padding:28px;font-size:.83rem}
     footer strong{color:var(--green-light)}
-
-    /* BACK TO TOP */
     .back-top{position:fixed;bottom:28px;right:28px;background:var(--green-mid);color:white;border:none;border-radius:50%;width:44px;height:44px;font-size:1.2rem;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,0.25);transition:opacity .3s}
     .back-top:hover{background:var(--green-dark)}
   </style>
@@ -178,7 +136,6 @@
   <button class="toc-btn" onclick="document.querySelector('.toc-overlay').classList.add('open')">📋 Sommaire</button>
 </nav>
 
-<!-- TOC MODAL -->
 <div class="toc-overlay" onclick="if(event.target===this)this.classList.remove('open')">
   <div class="toc-modal">
     <button class="close-btn" onclick="document.querySelector('.toc-overlay').classList.remove('open')">✕</button>
@@ -187,17 +144,18 @@
       <li><span class="lvl b">DÉB</span><a href="#s1">Pourquoi le Green IT avec un LLM</a></li>
       <li><span class="lvl b">DÉB</span><a href="#s2">Architecture de configuration CC</a></li>
       <li><span class="lvl b">DÉB</span><a href="#s3">CLAUDE.md — instructions permanentes</a></li>
-      <li><span class="lvl i">INT</span><a href="#s4">Économie de tokens & modèles</a></li>
-      <li><span class="lvl i">INT</span><a href="#s5">Permissions — Allowlist & Deny list</a></li>
-      <li><span class="lvl i">INT</span><a href="#s6">Hooks — audit & automatisation</a></li>
-      <li><span class="lvl i">INT</span><a href="#s7">Skills — réutilisation & spécialisation</a></li>
-      <li><span class="lvl e">EXP</span><a href="#s8">Agents & Sub-agents</a></li>
-      <li><span class="lvl e">EXP</span><a href="#s9">MCP Servers — outils précis</a></li>
-      <li><span class="lvl e">EXP</span><a href="#s10">Prompt Cache & Batch API</a></li>
-      <li><span class="lvl e">EXP</span><a href="#s11">Sécurité & Souveraineté</a></li>
-      <li><span class="lvl e">EXP</span><a href="#s12">Observabilité & Dashboard</a></li>
-      <li><span class="lvl b">DÉB</span><a href="#s13">Flash cards Q&amp;A</a></li>
-      <li><span class="lvl i">INT</span><a href="#s14">Checklist & Anti-patterns</a></li>
+      <li><span class="lvl i">INT</span><a href="#s4">Économie de tokens &amp; modèles</a></li>
+      <li><span class="lvl i">INT</span><a href="#s5">Permissions — Allowlist &amp; Deny list</a></li>
+      <li><span class="lvl i">INT</span><a href="#s6">Hooks — audit &amp; automatisation</a></li>
+      <li><span class="lvl i">INT</span><a href="#s7">Skills — réutilisation &amp; spécialisation</a></li>
+      <li><span class="lvl e">EXP</span><a href="#s8">Agents &amp; Sub-agents</a></li>
+      <li><span class="lvl e">EXP</span><a href="#s9">Workflow — orchestration déterministe</a></li>
+      <li><span class="lvl e">EXP</span><a href="#s10">MCP Servers — outils précis</a></li>
+      <li><span class="lvl e">EXP</span><a href="#s11">Prompt Cache &amp; Batch API</a></li>
+      <li><span class="lvl e">EXP</span><a href="#s12">Sécurité &amp; Souveraineté</a></li>
+      <li><span class="lvl e">EXP</span><a href="#s13">Observabilité &amp; Dashboard</a></li>
+      <li><span class="lvl b">DÉB</span><a href="#s14">Flash cards Q&amp;A</a></li>
+      <li><span class="lvl i">INT</span><a href="#s15">Checklist &amp; Anti-patterns</a></li>
     </ol>
   </div>
 </div>
@@ -205,29 +163,28 @@
 <header class="hero">
   <div class="hero-badge">État de l'art · 2026</div>
   <h1>Green IT &amp; Performance<br><span>avec Claude Code</span></h1>
-  <p>Panorama complet — configurations, skills, agents, MCP, cache, batch, souveraineté. Du débutant à l'expert, avec jeux de connaissances.</p>
+  <p>Panorama complet — configurations, skills, agents, workflows, MCP, cache, batch, souveraineté. Du débutant à l'expert, avec jeux de connaissances.</p>
   <div class="level-badges">
     <span class="lbadge lb-b">🌱 Débutant</span>
     <span class="lbadge lb-i">🌿 Intermédiaire</span>
     <span class="lbadge lb-e">🌳 Expert</span>
   </div>
 </header>
+
 <!-- ═══ S1 POURQUOI ═══ -->
 <section id="s1" data-level="beginner">
   <div class="container">
     <h2 class="section-title">1. Pourquoi le Green IT avec un LLM <span class="section-tag tag-b">🌱 Débutant</span></h2>
     <p class="section-subtitle">Les bases conceptuelles — comprendre ce qui coûte avant de configurer</p>
-
     <div class="def-box">
       <div class="def-title">Définition — Green IT</div>
-      <p>Ensemble de pratiques visant à réduire l'empreinte environnementale du numérique : énergie, CO₂, réseau, mémoire. Avec un LLM, l'unité de mesure principale est le <strong>token</strong> — chaque token traité consomme du GPU dans un datacenter.</p>
+      <p>Ensemble de pratiques visant à réduire l'empreinte environnementale du numérique : énergie, CO₂, réseau, mémoire. Avec un LLM, l'unité de mesure principale est le <strong>token</strong> — chaque token traité consomme du GPU dans un datacenter distant.</p>
     </div>
-
     <div class="cards">
       <div class="card">
         <div class="card-icon">⚡</div>
         <h4>1 token ≈ 0,75 mot ≈ énergie</h4>
-        <p>Un prompt de 10 000 tokens consomme ~10× plus d'énergie qu'un prompt de 1 000 tokens. Multiplié par des milliers d'appels quotidiens, l'impact est réel.</p>
+        <p>Un prompt de 10 000 tokens consomme ~10× plus d'énergie qu'un prompt de 1 000 tokens. Multiplié par des milliers d'appels quotidiens, l'impact est réel et mesurable.</p>
       </div>
       <div class="card orange">
         <div class="card-icon">🔁</div>
@@ -237,52 +194,46 @@
       <div class="card blue">
         <div class="card-icon">🏠</div>
         <h4>Local = souverain + green</h4>
-        <p>Inférence locale (mlx_lm.server) : zéro transit réseau, zéro cloud, zéro CO₂ datacenter distant. Obligatoire pour les projets defense/classifiés.</p>
+        <p>Inférence locale : zéro transit réseau, zéro cloud, zéro CO₂ datacenter distant. Obligatoire pour les projets avec contraintes de souveraineté ou de confidentialité.</p>
       </div>
       <div class="card purple">
         <div class="card-icon">🎯</div>
         <h4>IA là où elle apporte de la valeur</h4>
-        <p>Tout ce qu'un outil classique fait mieux (SQL, grep, jq) doit être délégué à cet outil. Le LLM n'intervient que pour le raisonnement symbolique.</p>
+        <p>Tout ce qu'un outil classique fait mieux (SQL, grep, jq) doit être délégué à cet outil. Le LLM n'intervient que pour le raisonnement symbolique à valeur ajoutée.</p>
       </div>
     </div>
-
     <div class="diagram-wrap">
       <figure>
-        <svg viewBox="0 0 900 280" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:900px;display:block;margin:auto">
-          <rect width="900" height="280" fill="#f8fffe" rx="12"/>
-          <line x1="60" y1="140" x2="845" y2="140" stroke="#c8e6c9" stroke-width="3"/>
-          <polygon points="845,133 860,140 845,147" fill="#2d6a4f"/>
-          <!-- Phases -->
-          <circle cx="140" cy="140" r="38" fill="#1a4731"/>
-          <text x="140" y="136" text-anchor="middle" fill="white" font-size="11" font-weight="bold">Sans</text>
-          <text x="140" y="152" text-anchor="middle" fill="#a8ff78" font-size="10">config</text>
-          <text x="140" y="198" text-anchor="middle" fill="#e63946" font-size="12" font-weight="bold">~8 000 tok/éch</text>
-
-          <circle cx="310" cy="140" r="38" fill="#2d6a4f"/>
-          <text x="310" y="136" text-anchor="middle" fill="white" font-size="11" font-weight="bold">CLAUDE</text>
-          <text x="310" y="152" text-anchor="middle" fill="#a8ff78" font-size="10">.md</text>
-          <text x="310" y="198" text-anchor="middle" fill="#f4a261" font-size="12" font-weight="bold">~4 000 tok/éch</text>
-          <text x="225" y="136" fill="#2d6a4f" font-size="20" text-anchor="middle">→</text>
-
-          <circle cx="490" cy="140" r="38" fill="#40916c"/>
-          <text x="490" y="130" text-anchor="middle" fill="white" font-size="10" font-weight="bold">Perms +</text>
-          <text x="490" y="144" text-anchor="middle" fill="#a8ff78" font-size="10">Skills +</text>
-          <text x="490" y="158" text-anchor="middle" fill="white" font-size="10">Hooks</text>
-          <text x="490" y="198" text-anchor="middle" fill="#40916c" font-size="12" font-weight="bold">~1 800 tok/éch</text>
-          <text x="400" y="136" fill="#2d6a4f" font-size="20" text-anchor="middle">→</text>
-
-          <circle cx="670" cy="140" r="38" fill="#52b788"/>
-          <text x="670" y="130" text-anchor="middle" fill="white" font-size="10" font-weight="bold">MCP +</text>
-          <text x="670" y="144" text-anchor="middle" fill="white" font-size="10">Agents +</text>
-          <text x="670" y="158" text-anchor="middle" fill="white" font-size="10">Cache</text>
-          <text x="670" y="198" text-anchor="middle" fill="#1a4731" font-size="12" font-weight="bold">~500 tok/éch</text>
-          <text x="580" y="136" fill="#2d6a4f" font-size="20" text-anchor="middle">→</text>
-
-          <text x="140" y="228" text-anchor="middle" fill="#888" font-size="10">Aucune config</text>
-          <text x="310" y="228" text-anchor="middle" fill="#888" font-size="10">🌱 Débutant</text>
-          <text x="490" y="228" text-anchor="middle" fill="#888" font-size="10">🌿 Intermédiaire</text>
-          <text x="670" y="228" text-anchor="middle" fill="#888" font-size="10">🌳 Expert</text>
-          <text x="450" y="266" text-anchor="middle" fill="#aaa" font-size="11">Réduction progressive de la consommation de tokens par niveau de configuration</text>
+        <svg viewBox="0 0 900 260" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:900px;display:block;margin:auto">
+          <rect width="900" height="260" fill="#f8fffe" rx="12"/>
+          <line x1="60" y1="120" x2="845" y2="120" stroke="#c8e6c9" stroke-width="3"/>
+          <polygon points="845,113 860,120 845,127" fill="#2d6a4f"/>
+          <circle cx="140" cy="120" r="38" fill="#1a4731"/>
+          <text x="140" y="116" text-anchor="middle" fill="white" font-size="11" font-weight="bold">Sans</text>
+          <text x="140" y="132" text-anchor="middle" fill="#a8ff78" font-size="10">config</text>
+          <text x="140" y="178" text-anchor="middle" fill="#e63946" font-size="12" font-weight="bold">~8 000 tok/éch</text>
+          <circle cx="310" cy="120" r="38" fill="#2d6a4f"/>
+          <text x="310" y="116" text-anchor="middle" fill="white" font-size="11" font-weight="bold">CLAUDE</text>
+          <text x="310" y="132" text-anchor="middle" fill="#a8ff78" font-size="10">.md</text>
+          <text x="310" y="178" text-anchor="middle" fill="#f4a261" font-size="12" font-weight="bold">~4 000 tok/éch</text>
+          <text x="225" y="116" fill="#2d6a4f" font-size="20" text-anchor="middle">→</text>
+          <circle cx="490" cy="120" r="38" fill="#40916c"/>
+          <text x="490" y="110" text-anchor="middle" fill="white" font-size="10" font-weight="bold">Perms +</text>
+          <text x="490" y="124" text-anchor="middle" fill="#a8ff78" font-size="10">Skills +</text>
+          <text x="490" y="138" text-anchor="middle" fill="white" font-size="10">Hooks</text>
+          <text x="490" y="178" text-anchor="middle" fill="#40916c" font-size="12" font-weight="bold">~1 800 tok/éch</text>
+          <text x="400" y="116" fill="#2d6a4f" font-size="20" text-anchor="middle">→</text>
+          <circle cx="670" cy="120" r="38" fill="#52b788"/>
+          <text x="670" y="110" text-anchor="middle" fill="white" font-size="10" font-weight="bold">MCP +</text>
+          <text x="670" y="124" text-anchor="middle" fill="white" font-size="10">Agents +</text>
+          <text x="670" y="138" text-anchor="middle" fill="white" font-size="10">Workflows</text>
+          <text x="670" y="178" text-anchor="middle" fill="#1a4731" font-size="12" font-weight="bold">~500 tok/éch</text>
+          <text x="580" y="116" fill="#2d6a4f" font-size="20" text-anchor="middle">→</text>
+          <text x="140" y="208" text-anchor="middle" fill="#888" font-size="10">Aucune config</text>
+          <text x="310" y="208" text-anchor="middle" fill="#888" font-size="10">🌱 Débutant</text>
+          <text x="490" y="208" text-anchor="middle" fill="#888" font-size="10">🌿 Intermédiaire</text>
+          <text x="670" y="208" text-anchor="middle" fill="#888" font-size="10">🌳 Expert</text>
+          <text x="450" y="244" text-anchor="middle" fill="#aaa" font-size="11">Réduction progressive de la consommation de tokens par niveau de configuration</text>
         </svg>
         <figcaption>Fig. 1 — Trajectoire de réduction tokens selon la maturité Green IT</figcaption>
       </figure>
@@ -295,63 +246,54 @@
   <div class="container">
     <h2 class="section-title">2. Architecture de configuration Claude Code <span class="section-tag tag-b">🌱 Débutant</span></h2>
     <p class="section-subtitle">Les fichiers qui gouvernent le comportement de l'agent</p>
-
     <div class="def-box">
       <div class="def-title">Définition — Claude Code (CC)</div>
       <p>CLI officiel d'Anthropic. Agit directement sur votre système (fichiers, shell, APIs). Entièrement configurable via fichiers JSON et Markdown. Deux niveaux : <strong>global</strong> (<code>~/.claude/</code>) et <strong>projet</strong> (<code>.claude/</code> dans le repo).</p>
     </div>
-
     <div class="diagram-wrap">
       <figure>
-        <svg viewBox="0 0 860 400" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:860px;display:block;margin:auto">
-          <rect width="860" height="400" fill="#f8fffe" rx="12"/>
-          <!-- Global -->
+        <svg viewBox="0 0 860 380" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:860px;display:block;margin:auto">
+          <rect width="860" height="380" fill="#f8fffe" rx="12"/>
           <rect x="20" y="20" width="820" height="130" rx="12" fill="#1a4731" opacity=".07" stroke="#1a4731" stroke-width="1.5"/>
           <text x="40" y="46" fill="#1a4731" font-size="13" font-weight="bold">🌍 Niveau GLOBAL — ~/.claude/</text>
-          <rect x="55" y="58" width="175" height="70" rx="8" fill="#2d6a4f"/>
-          <text x="142" y="82" text-anchor="middle" fill="white" font-size="11" font-weight="bold">settings.json</text>
-          <text x="142" y="99" text-anchor="middle" fill="#a8ff78" font-size="10">modèles, env vars</text>
-          <text x="142" y="114" text-anchor="middle" fill="#a8ff78" font-size="10">MCP servers</text>
-          <rect x="260" y="58" width="175" height="70" rx="8" fill="#40916c"/>
-          <text x="347" y="82" text-anchor="middle" fill="white" font-size="11" font-weight="bold">CLAUDE.md</text>
-          <text x="347" y="99" text-anchor="middle" fill="#d8f3dc" font-size="10">instructions globales</text>
-          <text x="347" y="114" text-anchor="middle" fill="#d8f3dc" font-size="10">cross-projets</text>
-          <rect x="465" y="58" width="175" height="70" rx="8" fill="#52b788"/>
-          <text x="552" y="82" text-anchor="middle" fill="white" font-size="11" font-weight="bold">memory/</text>
-          <text x="552" y="99" text-anchor="middle" fill="#d8f3dc" font-size="10">mémoire persistante</text>
-          <text x="552" y="114" text-anchor="middle" fill="#d8f3dc" font-size="10">inter-sessions</text>
-          <rect x="670" y="58" width="175" height="70" rx="8" fill="#7c4dff"/>
-          <text x="757" y="82" text-anchor="middle" fill="white" font-size="11" font-weight="bold">skills/</text>
-          <text x="757" y="99" text-anchor="middle" fill="#ede7f6" font-size="10">commandes /slash</text>
-          <text x="757" y="114" text-anchor="middle" fill="#ede7f6" font-size="10">réutilisables</text>
-
-          <!-- Arrow -->
-          <text x="430" y="178" text-anchor="middle" fill="#2d6a4f" font-size="26">↓</text>
-          <text x="430" y="196" text-anchor="middle" fill="#888" font-size="11">hérite + peut surcharger</text>
-
-          <!-- Project -->
-          <rect x="20" y="210" width="820" height="130" rx="12" fill="#f4a261" opacity=".1" stroke="#f4a261" stroke-width="1.5"/>
-          <text x="40" y="236" fill="#a0522d" font-size="13" font-weight="bold">📁 Niveau PROJET — .claude/ (versionné dans le repo)</text>
-          <rect x="55" y="248" width="175" height="70" rx="8" fill="#e07b39"/>
-          <text x="142" y="272" text-anchor="middle" fill="white" font-size="11" font-weight="bold">settings.json</text>
-          <text x="142" y="289" text-anchor="middle" fill="#fff3e0" font-size="10">permissions, hooks</text>
-          <text x="142" y="304" text-anchor="middle" fill="#fff3e0" font-size="10">deny list</text>
-          <rect x="260" y="248" width="175" height="70" rx="8" fill="#f4a261"/>
-          <text x="347" y="272" text-anchor="middle" fill="white" font-size="11" font-weight="bold">CLAUDE.md</text>
-          <text x="347" y="289" text-anchor="middle" fill="#fff3e0" font-size="10">contexte projet</text>
-          <text x="347" y="304" text-anchor="middle" fill="#fff3e0" font-size="10">stack, chemins, règles</text>
-          <rect x="465" y="248" width="175" height="70" rx="8" fill="#ffc58a"/>
-          <text x="552" y="272" text-anchor="middle" fill="#3d1a00" font-size="11" font-weight="bold">audit.log</text>
-          <text x="552" y="289" text-anchor="middle" fill="#3d1a00" font-size="10">traçabilité</text>
-          <text x="552" y="304" text-anchor="middle" fill="#3d1a00" font-size="10">des actions</text>
-          <rect x="670" y="248" width="175" height="70" rx="8" fill="#ffb347"/>
-          <text x="757" y="272" text-anchor="middle" fill="#3d1a00" font-size="11" font-weight="bold">skills/ locaux</text>
-          <text x="757" y="289" text-anchor="middle" fill="#3d1a00" font-size="10">commandes projet</text>
-          <text x="757" y="304" text-anchor="middle" fill="#3d1a00" font-size="10">spécifiques</text>
-
-          <!-- Priority -->
-          <rect x="20" y="355" width="820" height="35" rx="8" fill="#e8f4fd" stroke="#457b9d" stroke-width="1"/>
-          <text x="430" y="377" text-anchor="middle" fill="#0d47a1" font-size="11">⚡ Priorité : settings projet surcharge global · CLAUDE.md projet s'ajoute au global · Memory s'applique toujours</text>
+          <rect x="55" y="58" width="160" height="70" rx="8" fill="#2d6a4f"/>
+          <text x="135" y="82" text-anchor="middle" fill="white" font-size="11" font-weight="bold">settings.json</text>
+          <text x="135" y="99" text-anchor="middle" fill="#a8ff78" font-size="10">modèles, env vars</text>
+          <text x="135" y="114" text-anchor="middle" fill="#a8ff78" font-size="10">MCP servers</text>
+          <rect x="235" y="58" width="160" height="70" rx="8" fill="#40916c"/>
+          <text x="315" y="82" text-anchor="middle" fill="white" font-size="11" font-weight="bold">CLAUDE.md</text>
+          <text x="315" y="99" text-anchor="middle" fill="#d8f3dc" font-size="10">instructions globales</text>
+          <text x="315" y="114" text-anchor="middle" fill="#d8f3dc" font-size="10">cross-projets</text>
+          <rect x="415" y="58" width="160" height="70" rx="8" fill="#52b788"/>
+          <text x="495" y="82" text-anchor="middle" fill="white" font-size="11" font-weight="bold">memory/</text>
+          <text x="495" y="99" text-anchor="middle" fill="#d8f3dc" font-size="10">mémoire persistante</text>
+          <text x="495" y="114" text-anchor="middle" fill="#d8f3dc" font-size="10">inter-sessions</text>
+          <rect x="595" y="58" width="180" height="70" rx="8" fill="#7c4dff"/>
+          <text x="685" y="82" text-anchor="middle" fill="white" font-size="11" font-weight="bold">skills/ + workflows/</text>
+          <text x="685" y="99" text-anchor="middle" fill="#ede7f6" font-size="10">commandes /slash</text>
+          <text x="685" y="114" text-anchor="middle" fill="#ede7f6" font-size="10">scripts d'orchestration</text>
+          <text x="430" y="172" text-anchor="middle" fill="#2d6a4f" font-size="26">↓</text>
+          <text x="430" y="190" text-anchor="middle" fill="#888" font-size="11">hérite + peut surcharger</text>
+          <rect x="20" y="200" width="820" height="130" rx="12" fill="#f4a261" opacity=".1" stroke="#f4a261" stroke-width="1.5"/>
+          <text x="40" y="226" fill="#a0522d" font-size="13" font-weight="bold">📁 Niveau PROJET — .claude/ (versionné dans le repo)</text>
+          <rect x="55" y="238" width="160" height="70" rx="8" fill="#e07b39"/>
+          <text x="135" y="262" text-anchor="middle" fill="white" font-size="11" font-weight="bold">settings.json</text>
+          <text x="135" y="279" text-anchor="middle" fill="#fff3e0" font-size="10">permissions, hooks</text>
+          <text x="135" y="294" text-anchor="middle" fill="#fff3e0" font-size="10">deny list</text>
+          <rect x="235" y="238" width="160" height="70" rx="8" fill="#f4a261"/>
+          <text x="315" y="262" text-anchor="middle" fill="white" font-size="11" font-weight="bold">CLAUDE.md</text>
+          <text x="315" y="279" text-anchor="middle" fill="#fff3e0" font-size="10">contexte projet</text>
+          <text x="315" y="294" text-anchor="middle" fill="#fff3e0" font-size="10">stack, chemins, règles</text>
+          <rect x="415" y="238" width="160" height="70" rx="8" fill="#ffc58a"/>
+          <text x="495" y="262" text-anchor="middle" fill="#3d1a00" font-size="11" font-weight="bold">audit.log</text>
+          <text x="495" y="279" text-anchor="middle" fill="#3d1a00" font-size="10">traçabilité</text>
+          <text x="495" y="294" text-anchor="middle" fill="#3d1a00" font-size="10">des actions</text>
+          <rect x="595" y="238" width="180" height="70" rx="8" fill="#ffb347"/>
+          <text x="685" y="262" text-anchor="middle" fill="#3d1a00" font-size="11" font-weight="bold">skills/ locaux</text>
+          <text x="685" y="279" text-anchor="middle" fill="#3d1a00" font-size="10">commandes projet</text>
+          <text x="685" y="294" text-anchor="middle" fill="#3d1a00" font-size="10">spécifiques</text>
+          <rect x="20" y="342" width="820" height="28" rx="8" fill="#e8f4fd" stroke="#457b9d" stroke-width="1"/>
+          <text x="430" y="361" text-anchor="middle" fill="#0d47a1" font-size="11">⚡ Priorité : settings projet surcharge global · CLAUDE.md projet s'ajoute au global · Memory s'applique toujours</text>
         </svg>
         <figcaption>Fig. 2 — Hiérarchie des fichiers de configuration Claude Code</figcaption>
       </figure>
@@ -364,21 +306,18 @@
   <div class="container">
     <h2 class="section-title">3. CLAUDE.md — instructions permanentes <span class="section-tag tag-b">🌱 Débutant</span></h2>
     <p class="section-subtitle">Le fichier le plus impactant sur la qualité et le coût des échanges</p>
-
     <div class="def-box">
       <div class="def-title">Définition — CLAUDE.md</div>
       <p>Fichier Markdown lu automatiquement à chaque session. C'est le "contrat" entre vous et l'agent : contexte projet, chemins, règles métier, format de réponse. Une fois bien rédigé, vous ne répétez plus jamais le contexte dans chaque prompt.</p>
     </div>
-
     <h3>Structure optimale — section Token Economy indispensable</h3>
     <pre><span class="fn">CLAUDE.md</span><code><span class="com">## Token Economy — CC Rules   ← SECTION CRITIQUE GREEN IT</span>
-- Tâches répétitives (scoring) → Agent subtype <span class="str">haiku</span>
+- Tâches répétitives (scoring, validation) → Agent subtype <span class="str">haiku</span>
 - Exploration codebase → Agent subtype <span class="str">Explore</span>
 - Fichiers &gt;300 lignes → demander résumé avant lecture complète
 - Requêtes métadonnées → MCP sqlite, jamais lecture fichier .db
 - /compact après &gt;30 échanges dans la session
 - Prefer short + precise questions over long explanations</code></pre>
-
     <div class="compare">
       <div class="compare-bad">
         <h4>❌ CLAUDE.md avec données dynamiques</h4>
@@ -397,35 +336,36 @@
   <div class="container">
     <h2 class="section-title">4. Économie de tokens &amp; modèles <span class="section-tag tag-i">🌿 Intermédiaire</span></h2>
     <p class="section-subtitle">Choisir le bon modèle pour chaque tâche — la décision la plus rentable</p>
-
     <div class="table-wrap">
       <table>
         <thead>
-          <tr><th>Modèle</th><th>Puissance</th><th>Coût relatif</th><th>Cas d'usage Green IT</th><th>Variable</th></tr>
+          <tr><th>Modèle</th><th>ID</th><th>Puissance</th><th>Coût relatif</th><th>Cas d'usage Green IT</th></tr>
         </thead>
         <tbody>
-          <tr><td><strong>Haiku</strong></td><td>⭐⭐</td><td>×1 🍃🍃🍃</td><td>Scoring, exploration, grep, répétitif</td><td><code>ANTHROPIC_SMALL_FAST_MODEL</code></td></tr>
-          <tr><td><strong>Sonnet</strong></td><td>⭐⭐⭐⭐</td><td>×5 🔥🔥</td><td>Développement courant, génération code</td><td><code>ANTHROPIC_MODEL</code></td></tr>
-          <tr><td><strong>Opus</strong></td><td>⭐⭐⭐⭐⭐</td><td>×15 🔥🔥🔥🔥</td><td>Architecture complexe, sécurité, raisonnement difficile</td><td><code>ANTHROPIC_LARGE_MODEL</code></td></tr>
+          <tr><td><strong>Haiku 4.5</strong></td><td><code>claude-haiku-4-5-20251001</code></td><td>⭐⭐</td><td>×1 🍃🍃🍃</td><td>Scoring, exploration, grep, tâches répétitives</td></tr>
+          <tr><td><strong>Sonnet 4.6</strong></td><td><code>claude-sonnet-4-6</code></td><td>⭐⭐⭐⭐</td><td>×5 🔥🔥</td><td>Développement courant, génération code, refactoring</td></tr>
+          <tr><td><strong>Opus 4.8</strong></td><td><code>claude-opus-4-8</code></td><td>⭐⭐⭐⭐⭐</td><td>×15 🔥🔥🔥🔥</td><td>Architecture complexe, sécurité, raisonnement difficile</td></tr>
         </tbody>
       </table>
     </div>
-
     <div class="callout warning">
       <div class="ci">⚠️</div>
-      <div class="cb"><strong>Erreur classique débutant</strong> Utiliser Opus ou Sonnet pour tout "par sécurité". Haiku couvre 60-70% des tâches de développement courant. Réserver Opus aux décisions architecturales rares.</div>
+      <div class="cb"><strong>Erreur classique débutant</strong> Utiliser Opus ou Sonnet pour tout "par sécurité". Haiku couvre 60–70% des tâches de développement courant. Réserver Opus aux décisions architecturales rares.</div>
     </div>
-
+    <h3>Fast Mode — Opus accéléré</h3>
+    <div class="callout purple">
+      <div class="ci">⚡</div>
+      <div class="cb"><strong>Fast mode ≠ modèle plus petit</strong> Le fast mode utilise Claude <strong>Opus</strong> avec une sortie accélérée — il ne downgrade PAS vers Haiku ou Sonnet. Toggle : <code>/fast</code> dans CC. Disponible sur Opus 4.8/4.7/4.6. Green IT : à activer uniquement quand la vitesse prime sur le coût (session interactive intensive), pas comme défaut.</div>
+    </div>
     <h3>Configuration trimodale dans settings.json global</h3>
     <pre><span class="fn">~/.claude/settings.json</span><code>{
   <span class="key">"model"</span>: <span class="str">"haiku"</span>,
   <span class="key">"env"</span>: {
     <span class="key">"ANTHROPIC_MODEL"</span>:            <span class="str">"us.anthropic.claude-sonnet-4-6"</span>,
-    <span class="key">"ANTHROPIC_SMALL_FAST_MODEL"</span>: <span class="str">"us.anthropic.claude-haiku-4-5-20251001-v1:0"</span>,
-    <span class="key">"ANTHROPIC_LARGE_MODEL"</span>:      <span class="str">"us.anthropic.claude-opus-4-7"</span>
+    <span class="key">"ANTHROPIC_SMALL_FAST_MODEL"</span>: <span class="str">"claude-haiku-4-5-20251001"</span>,
+    <span class="key">"ANTHROPIC_LARGE_MODEL"</span>:      <span class="str">"us.anthropic.claude-opus-4-8"</span>
   }
 }</code></pre>
-
     <div class="pb-wrap">
       <div class="pb-label"><span>Impact sur réduction tokens : choix du bon modèle</span><span>55% de gain</span></div>
       <div class="pb"><div class="pb-fill" style="width:55%"></div></div>
@@ -444,68 +384,38 @@
     </div>
   </div>
 </section>
+
 <!-- ═══ S5 PERMISSIONS ═══ -->
 <section id="s5" data-level="inter">
   <div class="container">
     <h2 class="section-title">5. Permissions — Allowlist &amp; Deny list <span class="section-tag tag-i">🌿 Intermédiaire</span></h2>
     <p class="section-subtitle">Contrôle précis des actions — zéro prompt inutile, zéro risque accidentel</p>
-
     <div class="def-box">
       <div class="def-title">Définition — Allowlist / Deny list</div>
-      <p>L'<strong>allowlist</strong> liste les commandes que CC peut exécuter sans confirmation. La <strong>deny list</strong> interdit des opérations spécifiques même si elles seraient normalement permises. Ensemble, elles définissent la surface d'action de l'agent.</p>
+      <p>L'<strong>allowlist</strong> liste les commandes que CC peut exécuter sans confirmation. La <strong>deny list</strong> interdit des opérations spécifiques même si elles seraient normalement permises. La <strong>deny list a la priorité absolue</strong> sur l'allowlist.</p>
     </div>
-
-    <div class="diagram-wrap">
-      <figure>
-        <svg viewBox="0 0 780 190" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:780px;display:block;margin:auto">
-          <rect width="780" height="190" fill="#1e2433" rx="12"/>
-          <text x="40" y="55" fill="#6272a4" font-size="14" font-style="italic">"Bash(git log*)"</text>
-          <rect x="40" y="72" width="56" height="20" rx="4" fill="none" stroke="#ff79c6" stroke-width="1.5"/>
-          <text x="68" y="86" text-anchor="middle" fill="#ff79c6" font-size="11" font-weight="bold">Bash</text>
-          <line x1="68" y1="92" x2="68" y2="118" stroke="#ff79c6" stroke-width="1" stroke-dasharray="3"/>
-          <text x="68" y="132" text-anchor="middle" fill="#ff79c6" font-size="10">outil</text>
-          <rect x="103" y="72" width="80" height="20" rx="4" fill="none" stroke="#50fa7b" stroke-width="1.5"/>
-          <text x="143" y="86" text-anchor="middle" fill="#50fa7b" font-size="11" font-weight="bold">git log</text>
-          <line x1="143" y1="92" x2="143" y2="118" stroke="#50fa7b" stroke-width="1" stroke-dasharray="3"/>
-          <text x="143" y="132" text-anchor="middle" fill="#50fa7b" font-size="10">commande</text>
-          <rect x="187" y="72" width="18" height="20" rx="4" fill="none" stroke="#f1fa8c" stroke-width="1.5"/>
-          <text x="196" y="86" text-anchor="middle" fill="#f1fa8c" font-size="11" font-weight="bold">*</text>
-          <line x1="196" y1="92" x2="196" y2="118" stroke="#f1fa8c" stroke-width="1" stroke-dasharray="3"/>
-          <text x="196" y="132" text-anchor="middle" fill="#f1fa8c" font-size="10">glob</text>
-          <rect x="340" y="28" width="420" height="145" rx="8" fill="#2d3450"/>
-          <text x="360" y="52" fill="#a8ff78" font-size="12" font-weight="bold">Autorise :</text>
-          <text x="360" y="72" fill="#ccc" font-size="11">✓  git log</text>
-          <text x="360" y="90" fill="#ccc" font-size="11">✓  git log --oneline -10</text>
-          <text x="360" y="108" fill="#ccc" font-size="11">✓  git log --format="%H %s" HEAD~5</text>
-          <text x="360" y="132" fill="#ff5555" font-size="11">✗  git reset --hard  (ne commence pas par "git log")</text>
-          <text x="360" y="152" fill="#ff5555" font-size="11">✗  git push --force</text>
-        </svg>
-        <figcaption>Fig. 3 — Anatomie d'une règle d'allowlist avec glob</figcaption>
-      </figure>
-    </div>
-
-    <h3>Exemple complet — projet MLOps</h3>
+    <h3>Exemple complet — projet générique</h3>
     <pre><span class="fn">.claude/settings.json</span><code>{
   <span class="key">"permissions"</span>: {
     <span class="key">"allow"</span>: [
-      <span class="str">"Bash(mlx_lm.*)"</span>,        <span class="com">// fine-tuning local</span>
       <span class="str">"Bash(python *.py)"</span>,
-      <span class="str">"Bash(dvc *)"</span>,           <span class="com">// versioning données</span>
       <span class="str">"Bash(git log*)"</span>, <span class="str">"Bash(git diff*)"</span>, <span class="str">"Bash(git add *)"</span>,
-      <span class="str">"Bash(ollama *)"</span>, <span class="str">"Bash(mlflow *)"</span>,
       <span class="str">"Bash(ls *)"</span>, <span class="str">"Bash(grep -r *)"</span>, <span class="str">"Bash(pytest *)"</span>,
-      <span class="str">"Write(~/mlOps/datalake/processed/**)"</span>,
-      <span class="str">"Write(~/mlOps/experiments/**)"</span>
+      <span class="str">"Write(~/your-project/src/**)"</span>,
+      <span class="str">"Write(~/your-project/tests/**)"</span>
     ],
     <span class="key">"deny"</span>: [
-      <span class="str">"Write(~/mlOps/datalake/raw/**)"</span>,  <span class="com">// raw IMMUTABLE</span>
-      <span class="str">"Bash(curl * anthropic*)"</span>,          <span class="com">// souveraineté</span>
-      <span class="str">"Bash(curl * openai*)"</span>,
+      <span class="str">"Write(~/your-project/data/raw/**)"</span>,  <span class="com">// données sources = IMMUTABLES</span>
+      <span class="str">"Bash(curl * openai*)"</span>,               <span class="com">// souveraineté</span>
       <span class="str">"Bash(rm -rf *)"</span>,
-      <span class="str">"Write(~/migrator/**)"</span>              <span class="com">// repo tiers = read-only</span>
+      <span class="str">"Bash(git push --force*)"</span>
     ]
   }
 }</code></pre>
+    <div class="callout tip">
+      <div class="ci">💡</div>
+      <div class="cb"><strong>Skill <code>/fewer-permission-prompts</code></strong> Scanne vos transcripts pour les appels Bash répétitifs et ajoute automatiquement les entrées allowlist manquantes dans <code>.claude/settings.json</code>. À lancer après une semaine d'utilisation.</div>
+    </div>
   </div>
 </section>
 
@@ -514,22 +424,20 @@
   <div class="container">
     <h2 class="section-title">6. Hooks — audit &amp; automatisation <span class="section-tag tag-i">🌿 Intermédiaire</span></h2>
     <p class="section-subtitle">Commandes déclenchées automatiquement autour de chaque outil</p>
-
     <div class="def-box">
       <div class="def-title">Définition — Hook</div>
       <p>Commande shell qui se déclenche avant (<strong>PreToolUse</strong>) ou après (<strong>PostToolUse</strong>) l'utilisation d'un outil, ou à la fin de la session (<strong>Stop</strong>). Claude ne voit pas les hooks — ce sont des effets de bord du harness d'exécution.</p>
     </div>
-
     <div class="cards">
       <div class="card blue">
         <div class="card-icon">🔍</div>
         <h4>PreToolUse</h4>
-        <p>S'exécute avant l'outil. Peut <strong>bloquer</strong> l'exécution (code retour ≠ 0). Utile pour validation, double-check avant suppression.</p>
+        <p>S'exécute avant l'outil. Peut <strong>bloquer</strong> l'exécution (code retour ≠ 0). Utile pour validation, double-check avant suppression, vérification de périmètre.</p>
       </div>
       <div class="card orange">
         <div class="card-icon">📝</div>
         <h4>PostToolUse</h4>
-        <p>S'exécute après l'outil. Idéal pour audit, métriques, notification. Ne peut pas annuler l'action.</p>
+        <p>S'exécute après l'outil. Idéal pour audit, métriques, notification. Ne peut pas annuler l'action déjà effectuée.</p>
       </div>
       <div class="card">
         <div class="card-icon">🏁</div>
@@ -537,7 +445,6 @@
         <p>Déclenché quand Claude termine sa réponse. Pour rapport de session, marqueur dans audit.log, notification équipe.</p>
       </div>
     </div>
-
     <h3>Hook d'audit robuste — avec jq</h3>
     <div class="compare">
       <div class="compare-bad">
@@ -563,18 +470,15 @@
   <div class="container">
     <h2 class="section-title">7. Skills — réutilisation &amp; spécialisation <span class="section-tag tag-i">🌿 Intermédiaire</span></h2>
     <p class="section-subtitle">Les commandes /slash qui encapsulent de la logique complexe et réduisent les tokens répétés</p>
-
     <div class="def-box">
       <div class="def-title">Définition — Skill</div>
-      <p>Un skill est un fichier Markdown (<code>.md</code>) placé dans <code>~/.claude/skills/</code> (global) ou <code>.claude/skills/</code> (projet). Il est invoqué par une commande <code>/nom-du-skill</code> et contient des instructions précises, des exemples, et éventuellement des séquences d'actions. C'est l'équivalent d'une "macro" intelligente pour Claude Code.</p>
+      <p>Un skill est un fichier Markdown (<code>.md</code>) placé dans <code>~/.claude/skills/</code> (global) ou <code>.claude/skills/</code> (projet). Il est invoqué par <code>/nom-du-skill</code> et contient des instructions précises, des exemples et des séquences d'actions. C'est l'équivalent d'une "macro" intelligente pour Claude Code.</p>
     </div>
-
-    <h3>Pourquoi les skills sont du Green IT</h3>
     <div class="cards">
       <div class="card">
         <div class="card-icon">♻️</div>
         <h4>Zéro répétition de contexte</h4>
-        <p>Sans skill, chaque appel à "lancer le fine-tuning" réexplique les paramètres optimaux, les chemins, les règles MLflow. Avec un skill, tout est encapsulé une fois.</p>
+        <p>Sans skill, chaque appel réexplique les paramètres, les chemins, les règles. Avec un skill, tout est encapsulé une fois pour toutes.</p>
       </div>
       <div class="card orange">
         <div class="card-icon">🎯</div>
@@ -584,7 +488,7 @@
       <div class="card blue">
         <div class="card-icon">🔗</div>
         <h4>Orchestration multi-étapes</h4>
-        <p>Un skill peut enchaîner : nettoyage → validation → fine-tuning → évaluation → deploy. L'utilisateur tape <code>/train-lora</code>, pas 20 prompts.</p>
+        <p>Un skill peut enchaîner : nettoyage → validation → traitement → déploiement. L'utilisateur tape une commande, pas 20 prompts.</p>
       </div>
       <div class="card purple">
         <div class="card-icon">🧩</div>
@@ -592,48 +496,29 @@
         <p>Les skills dans <code>.claude/skills/</code> sont versionnés avec le repo — toute l'équipe dispose des mêmes recettes, sans réinventer à chaque fois.</p>
       </div>
     </div>
-
     <h3>Structure d'un skill</h3>
-    <pre><span class="fn">~/.claude/skills/train-lora.md</span><code><span class="com"># /train-lora — Lance le fine-tuning LoRA avec config optimale M4 Pro</span>
+    <pre><span class="fn">~/.claude/skills/process-dataset.md</span><code><span class="com"># /process-dataset — Traite un dataset avec validation et rapport</span>
 
 <span class="com">## Déclencheur</span>
-Invoqué par : `/train-lora [projet]`
+Invoqué par : `/process-dataset [nom]`
 
 <span class="com">## Contexte injecté automatiquement</span>
-- Modèle de base : Mistral 7B Instruct 4-bit
-- batch_size optimal : 8 (7B 4-bit sur M4 Pro 48GB)
-- Dataset : datalake/fine-tuning-ready/[projet]/train.jsonl
-- Adapter output : adapters/[projet]/
+- Input : data/processed/[nom]/
+- Output : data/fine-tuning-ready/[nom]/train.jsonl
+- Format attendu : JSONL avec champs instruction/output
 
 <span class="com">## Séquence d'actions</span>
-1. Vérifier que le dataset existe et est valide (wc -l, vérification special tokens)
-2. Lancer mlx_lm.lora avec les paramètres optimaux
-3. Logger la run dans MLflow (OBLIGATOIRE)
-4. Afficher un résumé val_loss
+1. Vérifier que le dataset existe (wc -l, validation format)
+2. Lancer le pipeline de nettoyage
+3. Logger les métriques qualité
+4. Afficher un résumé
 
 <span class="com">## Token Economy</span>
-- Utiliser Agent subtype haiku pour la validation du dataset
+- Utiliser Agent subtype haiku pour la validation ligne par ligne
 - Ne pas relire les fichiers de config déjà chargés</code></pre>
-
-    <h3>Skills disponibles sur ce projet</h3>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Commande</th><th>Rôle</th><th>Économie principale</th></tr></thead>
-        <tbody>
-          <tr><td><code>/train-lora</code></td><td>Fine-tuning LoRA avec config M4 Pro optimale</td><td>Évite de réexpliquer batch_size, chemins, MLflow</td></tr>
-          <tr><td><code>/eval-model</code></td><td>Évaluation + comparaison baseline</td><td>Séquence eval→métriques→rapport en un appel</td></tr>
-          <tr><td><code>/clean-dataset</code></td><td>Pipeline de nettoyage JSONL</td><td>Délègue le scoring répétitif à Haiku</td></tr>
-          <tr><td><code>/extract-pairs</code></td><td>Extraction paires depuis un repo</td><td>Lit uniquement les fichiers pertinents</td></tr>
-          <tr><td><code>/deploy-model</code></td><td>Fuse + serve + sanity check</td><td>Valide avant de fusionner (évite reroll)</td></tr>
-          <tr><td><code>/daily-report</code></td><td>Rapport agrégé quotidien</td><td>Requête SQLite via MCP, pas lecture log brut</td></tr>
-          <tr><td><code>/new-project</code></td><td>Initialise la structure d'un projet</td><td>Template versionné, zéro oubli</td></tr>
-        </tbody>
-      </table>
-    </div>
-
     <div class="callout tip">
       <div class="ci">💡</div>
-      <div class="cb"><strong>Règle de création d'un skill</strong> Si vous tapez la même séquence de prompts plus de 3 fois, c'est un skill. Si vous expliquez le même contexte à chaque session, c'est du CLAUDE.md. La frontière : le skill contient de la <em>logique d'action</em>, CLAUDE.md contient du <em>contexte statique</em>.</div>
+      <div class="cb"><strong>Règle de création d'un skill</strong> Si vous tapez la même séquence de prompts plus de 3 fois, c'est un skill. Si vous expliquez le même contexte à chaque session, c'est du CLAUDE.md. Le skill contient de la <em>logique d'action</em> ; CLAUDE.md contient du <em>contexte statique</em>.</div>
     </div>
   </div>
 </section>
@@ -643,143 +528,147 @@ Invoqué par : `/train-lora [projet]`
   <div class="container">
     <h2 class="section-title">8. Agents &amp; Sub-agents <span class="section-tag tag-e">🌳 Expert</span></h2>
     <p class="section-subtitle">Délégation intelligente — le levier le plus puissant pour la qualité ET la performance</p>
-
     <div class="def-box">
       <div class="def-title">Définition — Agent / Sub-agent</div>
-      <p>Un <strong>agent</strong> est une instance de Claude qui reçoit une tâche, dispose de ses propres outils, et renvoie un résultat. Un <strong>sub-agent</strong> est un agent lancé par Claude depuis le contexte principal via l'outil <code>Agent()</code>. Ils permettent la <strong>parallélisation</strong>, la <strong>spécialisation</strong> (type de modèle), et la <strong>protection du contexte principal</strong> (résultats volumineux restent dans le sub-agent).</p>
+      <p>Un <strong>agent</strong> est une instance de Claude qui reçoit une tâche, dispose de ses propres outils, et renvoie un résultat. Un <strong>sub-agent</strong> est lancé par l'outil <code>Agent()</code> depuis le contexte principal. Ils permettent la <strong>parallélisation</strong>, la <strong>spécialisation par modèle</strong>, et la <strong>protection du contexte principal</strong> (résultats volumineux restent dans le sub-agent).</p>
     </div>
-
-    <div class="diagram-wrap">
-      <figure>
-        <svg viewBox="0 0 860 410" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:860px;display:block;margin:auto">
-          <rect width="860" height="410" fill="#f8fffe" rx="12"/>
-          <text x="430" y="28" text-anchor="middle" fill="#1a4731" font-size="14" font-weight="bold">Architecture Agents — parallélisation et spécialisation</text>
-
-          <!-- Main agent — centré -->
-          <rect x="305" y="48" width="250" height="68" rx="12" fill="#2d6a4f"/>
-          <text x="430" y="78" text-anchor="middle" fill="white" font-size="13" font-weight="bold">Agent Principal</text>
-          <text x="430" y="97" text-anchor="middle" fill="#a8ff78" font-size="11">orchestration · Sonnet ou Opus selon complexité</text>
-
-          <!-- Flèches du principal vers chaque sous-agent (depuis bas du principal y=116) -->
-          <!-- centres des boxes : 100, 230, 360, 490, 760... recalculés avec 5 boxes de w=130, gap=17, start=71 -->
-          <!-- box1 cx=136, box2 cx=283, box3 cx=430, box4 cx=577, box5 cx=724 -->
-          <line x1="380" y1="116" x2="136" y2="190" stroke="#999" stroke-width="1.5" stroke-dasharray="5"/>
-          <line x1="405" y1="116" x2="283" y2="190" stroke="#999" stroke-width="1.5" stroke-dasharray="5"/>
-          <line x1="430" y1="116" x2="430" y2="190" stroke="#999" stroke-width="1.5" stroke-dasharray="5"/>
-          <line x1="455" y1="116" x2="577" y2="190" stroke="#999" stroke-width="1.5" stroke-dasharray="5"/>
-          <line x1="480" y1="116" x2="724" y2="190" stroke="#999" stroke-width="1.5" stroke-dasharray="5"/>
-
-          <!-- 5 sub-agents : x=71, 218, 365, 512, 659 · largeur=130 · hauteur=90 -->
-          <rect x="71"  y="190" width="130" height="90" rx="10" fill="#52b788"/>
-          <text x="136" y="215" text-anchor="middle" fill="white"   font-size="11" font-weight="bold">Explore</text>
-          <text x="136" y="232" text-anchor="middle" fill="#d8f3dc" font-size="10">exploration codebase</text>
-          <text x="136" y="248" text-anchor="middle" fill="#d8f3dc" font-size="10">glob · grep · read</text>
-          <text x="136" y="268" text-anchor="middle" fill="#d8f3dc" font-size="9">→ modèle: haiku</text>
-
-          <rect x="218" y="190" width="130" height="90" rx="10" fill="#40916c"/>
-          <text x="283" y="215" text-anchor="middle" fill="white"   font-size="11" font-weight="bold">general-purpose</text>
-          <text x="283" y="232" text-anchor="middle" fill="#d8f3dc" font-size="10">recherche multi-étapes</text>
-          <text x="283" y="248" text-anchor="middle" fill="#d8f3dc" font-size="10">tâches complexes</text>
-          <text x="283" y="268" text-anchor="middle" fill="#d8f3dc" font-size="9">→ modèle: sonnet</text>
-
-          <rect x="365" y="190" width="130" height="90" rx="10" fill="#7c4dff"/>
-          <text x="430" y="215" text-anchor="middle" fill="white"   font-size="11" font-weight="bold">claude-api</text>
-          <text x="430" y="232" text-anchor="middle" fill="#ede7f6" font-size="10">intégration Anthropic</text>
-          <text x="430" y="248" text-anchor="middle" fill="#ede7f6" font-size="10">SDK, caching, tools</text>
-          <text x="430" y="268" text-anchor="middle" fill="#ede7f6" font-size="9">→ modèle: sonnet</text>
-
-          <rect x="512" y="190" width="130" height="90" rx="10" fill="#e07b39"/>
-          <text x="577" y="215" text-anchor="middle" fill="white"   font-size="11" font-weight="bold">Plan</text>
-          <text x="577" y="232" text-anchor="middle" fill="#fff3e0" font-size="10">architecture &amp; design</text>
-          <text x="577" y="248" text-anchor="middle" fill="#fff3e0" font-size="10">plan d'implémentation</text>
-          <text x="577" y="268" text-anchor="middle" fill="#fff3e0" font-size="9">→ modèle: opus (coûteux/rare)</text>
-
-          <rect x="659" y="190" width="130" height="90" rx="10" fill="#457b9d"/>
-          <text x="724" y="215" text-anchor="middle" fill="white"   font-size="11" font-weight="bold">Haiku custom</text>
-          <text x="724" y="232" text-anchor="middle" fill="#a8dadc" font-size="10">scoring · nettoyage</text>
-          <text x="724" y="248" text-anchor="middle" fill="#a8dadc" font-size="10">tâches répétitives ×N</text>
-          <text x="724" y="268" text-anchor="middle" fill="#a8dadc" font-size="9">→ modèle: haiku · ×15 moins cher</text>
-
-          <!-- Résultats synthétisés remontent -->
-          <text x="430" y="308" text-anchor="middle" fill="#888"    font-size="11">↑ seuls les résultats synthétisés remontent — jamais les données brutes volumineuses</text>
-          <text x="430" y="326" text-anchor="middle" fill="#2d6a4f" font-size="11" font-weight="bold">Contexte principal protégé — fenêtre de tokens préservée</text>
-
-          <!-- Barre de légende -->
-          <rect x="20" y="348" width="820" height="46" rx="8" fill="#e8f4fd" stroke="#457b9d" stroke-width="1"/>
-          <text x="430" y="368" text-anchor="middle" fill="#0d47a1" font-size="11" font-weight="bold">⚡ Green IT — règles de dispatch</text>
-          <text x="430" y="386" text-anchor="middle" fill="#457b9d" font-size="10">Exploration → Explore (Haiku) · Scoring/répétitif → Haiku custom · Architecture → Plan (Opus, rare) · Résultats = synthèse, jamais dump brut</text>
-        </svg>
-        <figcaption>Fig. 4 — Architecture multi-agents : 5 types spécialisés, chacun avec son modèle optimal</figcaption>
-      </figure>
-    </div>
-
     <h3>Types d'agents disponibles dans CC</h3>
     <div class="table-wrap">
       <table>
         <thead><tr><th>Type</th><th>Spécialisation</th><th>Modèle optimal</th><th>Usage Green IT</th></tr></thead>
         <tbody>
           <tr><td><code>Explore</code></td><td>Exploration codebase (glob, grep, read)</td><td>Haiku</td><td>Ne surcharge pas le contexte principal avec des résultats de recherche</td></tr>
-          <tr><td><code>general-purpose</code></td><td>Recherche multi-étapes, tâches complexes</td><td>Sonnet</td><td>Paralléliser des recherches indépendantes</td></tr>
+          <tr><td><code>general-purpose</code></td><td>Catch-all, recherche multi-étapes, tâches complexes</td><td>Sonnet</td><td>Paralléliser des recherches indépendantes</td></tr>
           <tr><td><code>Plan</code></td><td>Conception d'architecture, plans d'implémentation</td><td>Opus</td><td>Réservé aux décisions structurantes — coûteux mais rare</td></tr>
-          <tr><td><code>claude-api</code></td><td>Intégration API Anthropic, SDK</td><td>Sonnet</td><td>Tâches spécifiques API sans polluer le contexte principal</td></tr>
-          <tr><td><code>claude-code-guide</code></td><td>Questions sur CC (CLI, hooks, MCP)</td><td>Sonnet</td><td>Décharge le contexte principal pour les questions de config</td></tr>
+          <tr><td><code>claude-api</code></td><td>Intégration SDK Anthropic, prompt caching, tool use</td><td>Sonnet</td><td>Tâches API sans polluer le contexte principal</td></tr>
+          <tr><td><code>claude-code-guide</code></td><td>Questions sur CC (CLI, hooks, MCP, SDK, keybindings)</td><td>Sonnet</td><td>Décharge le contexte principal pour les questions de config</td></tr>
+          <tr><td><code>code-reviewer</code></td><td>Revue de code, bugs, sécurité, refactoring</td><td>Sonnet</td><td>Revue indépendante sans biaiser le contexte principal</td></tr>
+          <tr><td><code>deep-research</code></td><td>Recherche web multi-sources, vérification adversariale</td><td>Opus</td><td>Rapports factuels cités — coûteux, réserver aux recherches importantes</td></tr>
         </tbody>
       </table>
     </div>
-
-    <h3>Exemple concret — scoring de 5 000 paires</h3>
-    <pre><code><span class="com">// Dans un skill /clean-dataset :</span>
-<span class="com">// Déléguer le scoring répétitif à Haiku en parallèle</span>
-
+    <h3>Exemple — scoring de dataset en parallèle</h3>
+    <pre><code><span class="com">// Déléguer le scoring répétitif à Haiku en parallèle</span>
 Agent({
   <span class="key">subagent_type</span>: <span class="str">"general-purpose"</span>,
   <span class="key">model</span>: <span class="str">"haiku"</span>,        <span class="com">// ← override modèle → ×15 moins cher qu'Opus</span>
-  <span class="key">prompt</span>: <span class="str">"Score each pair in datalake/processed/batch_042.jsonl..."</span>,
+  <span class="key">prompt</span>: <span class="str">"Score each pair in data/processed/batch_042.jsonl on 0-10..."</span>,
   <span class="key">run_in_background</span>: <span class="val">true</span>  <span class="com">// ← non-bloquant</span>
 })</code></pre>
-
     <div class="callout success">
       <div class="ci">✅</div>
-      <div class="cb"><strong>Pattern optimal : contexte principal Sonnet, sous-tâches Haiku</strong> Le contexte principal orchestre (Sonnet/Opus), les tâches répétitives ou d'exploration sont déléguées à des sub-agents Haiku. Le ratio coût/qualité est optimal.</div>
+      <div class="cb"><strong>Pattern optimal : contexte principal Sonnet, sous-tâches Haiku</strong> Le contexte principal orchestre (Sonnet/Opus), les tâches répétitives ou d'exploration sont déléguées à des sub-agents Haiku. Le ratio coût/qualité est optimal. Seuls les <em>résultats synthétisés</em> remontent — jamais les données brutes volumineuses.</div>
     </div>
-
-    <h3>Background agents — parallélisme réel</h3>
-    <p>Avec <code>run_in_background: true</code>, plusieurs agents s'exécutent simultanément. Exemple : lancer en parallèle l'évaluation sur le dataset de validation ET la génération du rapport MLflow, au lieu de les exécuter séquentiellement.</p>
-
     <div class="callout warning">
       <div class="ci">⚠️</div>
       <div class="cb"><strong>Ne pas paralléliser des tâches dépendantes</strong> Si la tâche B utilise les résultats de la tâche A, elles doivent être séquentielles. La parallélisation n'est valide que pour des tâches vraiment indépendantes.</div>
     </div>
   </div>
 </section>
-<!-- ═══ S9 MCP ═══ -->
+<!-- ═══ S9 WORKFLOW ═══ -->
 <section id="s9" data-level="expert">
   <div class="container">
-    <h2 class="section-title">9. MCP Servers — outils précis <span class="section-tag tag-e">🌳 Expert</span></h2>
-    <p class="section-subtitle">Model Context Protocol — donner à Claude des outils chirurgicaux au lieu de lui faire relire des fichiers entiers</p>
+    <h2 class="section-title">9. Workflow — orchestration déterministe <span class="section-tag tag-e">🌳 Expert</span></h2>
+    <p class="section-subtitle">Scripts JS qui pilotent des dizaines d'agents en parallèle, avec reprise sur incident</p>
+    <div class="def-box">
+      <div class="def-title">Définition — Workflow</div>
+      <p>Un <strong>Workflow</strong> est un script JavaScript qui orchestre plusieurs sub-agents de façon <em>déterministe</em> — via du code, pas du raisonnement LLM. Il permet le fan-out (parallélisme réel), la pipeline multi-étapes, et la <strong>résumabilité</strong> : si interrompu, les agents déjà complétés retournent leur résultat depuis le cache.</p>
+    </div>
+    <div class="compare">
+      <div class="compare-bad">
+        <h4>Agent() simple</h4>
+        <p>Une seule instance. Parallélisme possible mais non garanti. Pas de reprise sur incident. Logique de branchement laissée au LLM.</p>
+      </div>
+      <div class="compare-good">
+        <h4>Workflow</h4>
+        <p>Dizaines d'agents concurrents. Fan-out déterministe (code). <code>resumeFromRunId</code> : reprise gratuite des agents déjà complétés. Jusqu'à 16 agents simultanés, 1000 agents max par workflow.</p>
+      </div>
+    </div>
+    <h3>Fonctions clés</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Fonction</th><th>Comportement</th><th>Quand l'utiliser</th></tr></thead>
+        <tbody>
+          <tr><td><code>agent(prompt, opts)</code></td><td>Lance un sub-agent, retourne son résultat (texte ou objet JSON si <code>schema</code>)</td><td>Toujours — brique de base</td></tr>
+          <tr><td><code>pipeline(items, ...stages)</code></td><td>Chaque item traverse les stages sans barrière — item A peut être en stage 3 pendant que B est en stage 1</td><td><strong>Défaut</strong> — wall-clock = chaîne la plus lente</td></tr>
+          <tr><td><code>parallel(thunks)</code></td><td>Barrière : attend TOUS les thunks avant de continuer</td><td>Seulement si le stage N a besoin de TOUS les résultats du stage N-1</td></tr>
+          <tr><td><code>phase(title)</code></td><td>Groupe les agents suivants sous un titre dans l'UI</td><td>Chaque étape logique (Scan, Review, Fix…)</td></tr>
+          <tr><td><code>log(message)</code></td><td>Affiche un message de progression à l'utilisateur</td><td>Boucles longues, état d'avancement</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout warning">
+      <div class="ci">⚠️</div>
+      <div class="cb"><strong>pipeline() par défaut, parallel() seulement si nécessaire</strong> Une barrière <code>parallel()</code> bloque tous les items jusqu'au plus lent. N'utiliser que si le stage suivant a besoin de la <em>totalité</em> des résultats (ex : déduplication cross-items). Pour tout le reste : <code>pipeline()</code>.</div>
+    </div>
+    <h3>Exemple — scoring de dataset en fan-out</h3>
+    <pre><span class="fn">.claude/workflows/score-dataset.js</span><code><span class="kw">export const</span> meta = {
+  <span class="key">name</span>: <span class="str">'score-dataset'</span>,
+  <span class="key">description</span>: <span class="str">'Score all pairs in a dataset in parallel with Haiku'</span>,
+  <span class="key">phases</span>: [
+    { <span class="key">title</span>: <span class="str">'Load'</span>, <span class="key">detail</span>: <span class="str">'read JSONL and split into batches'</span> },
+    { <span class="key">title</span>: <span class="str">'Score'</span>, <span class="key">detail</span>: <span class="str">'parallel Haiku scoring'</span> },
+  ],
+}
 
+<span class="kw">const</span> SCORE_SCHEMA = {
+  <span class="key">type</span>: <span class="str">'object'</span>,
+  <span class="key">properties</span>: {
+    <span class="key">score</span>: { <span class="key">type</span>: <span class="str">'number'</span> },
+    <span class="key">reason</span>: { <span class="key">type</span>: <span class="str">'string'</span> }
+  }
+}
+
+phase(<span class="str">'Load'</span>)
+<span class="kw">const</span> batches = <span class="kw">await</span> agent(
+  <span class="str">'Read data/processed/current/train.jsonl and split into batches of 50. Return array of batch file paths.'</span>,
+  { <span class="key">schema</span>: { <span class="key">type</span>: <span class="str">'object'</span>, <span class="key">properties</span>: { <span class="key">paths</span>: { <span class="key">type</span>: <span class="str">'array'</span>, <span class="key">items</span>: { <span class="key">type</span>: <span class="str">'string'</span> } } } } }
+)
+
+phase(<span class="str">'Score'</span>)
+<span class="kw">const</span> results = <span class="kw">await</span> pipeline(
+  batches.paths,
+  path => agent(
+    <span class="str">`Score each pair in ${path} on 0-10 for quality. Return scores array.`</span>,
+    { <span class="key">model</span>: <span class="str">'haiku'</span>, <span class="key">label</span>: <span class="str">`score:${path}`</span>, <span class="key">phase</span>: <span class="str">'Score'</span> }
+  )
+)
+
+log(<span class="str">`Scored ${results.flat().length} pairs`</span>)
+<span class="kw">return</span> results.flat()</code></pre>
+    <h3>Résumabilité — Green IT pour les longs workflows</h3>
+    <div class="callout success">
+      <div class="ci">✅</div>
+      <div class="cb"><strong>Reprise gratuite avec <code>resumeFromRunId</code></strong> Si un workflow de 200 agents est interrompu après 150 agents, relancer avec <code>resumeFromRunId</code> retourne les 150 résultats depuis le cache instantanément. Seuls les 50 agents restants sont réexécutés. Zéro retokenisation des agents déjà complétés.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ S10 MCP ═══ -->
+<section id="s10" data-level="expert">
+  <div class="container">
+    <h2 class="section-title">10. MCP Servers — outils précis <span class="section-tag tag-e">🌳 Expert</span></h2>
+    <p class="section-subtitle">Model Context Protocol — donner à Claude des outils chirurgicaux au lieu de lui faire relire des fichiers entiers</p>
     <div class="def-box">
       <div class="def-title">Définition — MCP (Model Context Protocol)</div>
-      <p>Protocole open-source d'Anthropic pour connecter des LLMs à des sources de données et outils externes. Un <strong>MCP Server</strong> expose des "outils" appelables directement : <code>execute_query</code> sur SQLite, <code>read_file</code> sur un répertoire, <code>search</code> sur une base vectorielle. C'est l'alternative Green IT à "colle tout le fichier dans le contexte".</p>
+      <p>Protocole open-source d'Anthropic pour connecter des LLMs à des sources de données et outils externes. Un <strong>MCP Server</strong> expose des outils appelables directement : <code>execute_query</code> sur SQLite, <code>read_file</code> ciblé, <code>search</code> vectoriel. C'est l'alternative Green IT à "colle tout le fichier dans le contexte".</p>
     </div>
-
     <div class="compare">
       <div class="compare-bad">
         <h4>❌ Sans MCP — ~3 500 tokens</h4>
-        <p>Claude lit <code>experiments/mlops.db</code> (binaire illisible), tente d'exporter en CSV 800 lignes, relit le CSV complet pour trouver les 3 dernières runs. 3 500 tokens gaspillés.</p>
+        <p>Claude tente de lire une DB binaire (illisible), exporte un CSV de 800 lignes, relit le CSV complet pour trouver les 3 dernières entrées. 3 500 tokens gaspillés.</p>
       </div>
       <div class="compare-good">
         <h4>✅ Avec MCP SQLite — ~180 tokens</h4>
         <p><code>execute_query("SELECT * FROM runs ORDER BY start_time DESC LIMIT 3")</code> → 3 lignes → 180 tokens. Gain : ×20.</p>
       </div>
     </div>
-
-    <h3>MCP Servers essentiels pour MLOps</h3>
+    <h3>MCP Servers essentiels</h3>
     <div class="cards">
       <div class="card">
         <div class="card-icon">🗄️</div>
         <h4>mcp-server-sqlite</h4>
-        <p>Requêtes SQL directes sur <code>mlops.db</code> (runs MLflow, métriques, expériences). Installation : <code>uvx mcp-server-sqlite</code></p>
+        <p>Requêtes SQL directes sur n'importe quelle DB SQLite (métadonnées, logs, expériences). Installation : <code>uvx mcp-server-sqlite</code></p>
       </div>
       <div class="card blue">
         <div class="card-icon">📂</div>
@@ -789,156 +678,135 @@ Agent({
       <div class="card orange">
         <div class="card-icon">🔎</div>
         <h4>mcp-server-qdrant</h4>
-        <p>Recherche sémantique dans la base vectorielle. Interroger les paires d'entraînement similaires sans les charger toutes en contexte.</p>
+        <p>Recherche sémantique dans la base vectorielle. Interroger les entrées similaires sans les charger toutes en contexte.</p>
       </div>
       <div class="card purple">
         <div class="card-icon">🌐</div>
         <h4>mcp-server-brave-search</h4>
-        <p>Veille tech (nouveaux modèles, papers) directement depuis CC. Pas de dépendance à un navigateur — résultats directement dans le contexte.</p>
+        <p>Veille tech (nouveaux modèles, papers, CVE) directement depuis CC. Résultats directement dans le contexte, pas de navigateur.</p>
       </div>
     </div>
-
-    <h3>Configuration — niveau global (Green IT : partagée entre projets)</h3>
+    <h3>Configuration globale (Green IT : partagée entre projets)</h3>
     <pre><span class="fn">~/.claude/settings.json</span><code>{
   <span class="key">"mcpServers"</span>: {
     <span class="key">"sqlite"</span>: {
       <span class="key">"command"</span>: <span class="str">"uvx"</span>,
       <span class="key">"args"</span>: [<span class="str">"mcp-server-sqlite"</span>, <span class="str">"--db-path"</span>,
-               <span class="str">"/Users/wlerouli/Documents/GitHub/mlOps/experiments/mlops.db"</span>]
+               <span class="str">"~/your-project/data/db.sqlite"</span>]
     },
     <span class="key">"filesystem"</span>: {
       <span class="key">"command"</span>: <span class="str">"npx"</span>,
       <span class="key">"args"</span>: [<span class="str">"-y"</span>, <span class="str">"@modelcontextprotocol/server-filesystem"</span>,
-               <span class="str">"/Users/wlerouli/Documents/GitHub/mlOps"</span>]
+               <span class="str">"~/your-project"</span>]
     }
   }
 }</code></pre>
-
     <div class="callout tip">
       <div class="ci">💡</div>
-      <div class="cb"><strong>Règle MCP Green IT</strong> Toute question "quelle est la dernière run avec val_loss &lt; 0.5 ?" doit passer par MCP SQLite. Toute lecture partielle de fichier (lignes 150-200 d'un log) par MCP filesystem. Le LLM n'est pas un système de fichiers.</div>
+      <div class="cb"><strong>MCP dans les Workflows</strong> Les agents lancés par <code>Workflow</code> ont accès à tous les MCP servers via <code>ToolSearch</code> — les schemas sont chargés à la demande par agent. Un workflow de 50 agents peut tous interroger SQLite sans configuration supplémentaire.</div>
+    </div>
+    <div class="callout tip">
+      <div class="ci">💡</div>
+      <div class="cb"><strong>Règle MCP Green IT</strong> Toute question "quelle est la dernière entrée avec score &lt; 0.5 ?" doit passer par MCP SQLite. Toute lecture partielle de fichier par MCP filesystem. Le LLM n'est pas un système de fichiers.</div>
     </div>
   </div>
 </section>
 
-<!-- ═══ S10 CACHE & BATCH ═══ -->
-<section id="s10" data-level="expert">
+<!-- ═══ S11 CACHE & BATCH ═══ -->
+<section id="s11" data-level="expert">
   <div class="container">
-    <h2 class="section-title">10. Prompt Cache &amp; Batch API <span class="section-tag tag-e">🌳 Expert</span></h2>
+    <h2 class="section-title">11. Prompt Cache &amp; Batch API <span class="section-tag tag-e">🌳 Expert</span></h2>
     <p class="section-subtitle">Les mécanismes invisibles qui réduisent les coûts de 50 à 90%</p>
-
     <h3>Prompt Cache — économie automatique si CLAUDE.md est stable</h3>
     <div class="def-box">
       <div class="def-title">Définition — Prompt Cache</div>
-      <p>Claude met en cache les préfixes de prompts identiques pendant <strong>5 minutes</strong>. Si votre CLAUDE.md + contexte système restent stables entre deux échanges, seule la partie nouvelle est traitée. Les tokens en cache sont facturés ~90% moins cher (et consomment proportionnellement moins d'énergie).</p>
+      <p>Claude met en cache les préfixes de prompts identiques pendant <strong>5 minutes</strong>. Si votre CLAUDE.md + contexte système restent stables entre deux échanges, seule la partie nouvelle est traitée. Les tokens en cache sont facturés ~90% moins cher et consomment proportionnellement moins d'énergie.</p>
     </div>
-
     <div class="diagram-wrap">
       <figure>
-        <svg viewBox="0 0 820 260" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:820px;display:block;margin:auto">
-          <rect width="820" height="260" fill="#f8fffe" rx="12"/>
+        <svg viewBox="0 0 820 240" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:820px;display:block;margin:auto">
+          <rect width="820" height="240" fill="#f8fffe" rx="12"/>
           <text x="410" y="28" text-anchor="middle" fill="#1a4731" font-size="13" font-weight="bold">Mécanique du Prompt Cache — fenêtre 5 minutes</text>
-
-          <!-- Echange 1 -->
-          <rect x="30" y="50" width="220" height="100" rx="10" fill="#fde8e8" stroke="#e63946" stroke-width="1.5"/>
-          <text x="140" y="73" text-anchor="middle" fill="#c0392b" font-size="11" font-weight="bold">Échange 1 (cold)</text>
-          <rect x="45" y="82" width="190" height="20" rx="4" fill="#e63946" opacity=".6"/>
-          <text x="140" y="96" text-anchor="middle" fill="white" font-size="10">CLAUDE.md (2 000 tok) — FACTURÉ</text>
-          <rect x="45" y="108" width="190" height="20" rx="4" fill="#e63946"/>
-          <text x="140" y="122" text-anchor="middle" fill="white" font-size="10">Prompt utilisateur (200 tok) — FACTURÉ</text>
-          <text x="140" y="145" text-anchor="middle" fill="#c0392b" font-size="11" font-weight="bold">2 200 tokens facturés</text>
-
-          <!-- Arrow -->
-          <text x="270" y="103" text-anchor="middle" fill="#888" font-size="18">→</text>
-          <text x="270" y="120" text-anchor="middle" fill="#888" font-size="9">TTL 5min</text>
-
-          <!-- Echange 2 -->
-          <rect x="300" y="50" width="220" height="100" rx="10" fill="#f0fff4" stroke="#52b788" stroke-width="1.5"/>
-          <text x="410" y="73" text-anchor="middle" fill="#1a4731" font-size="11" font-weight="bold">Échange 2 (cache hit)</text>
-          <rect x="315" y="82" width="190" height="20" rx="4" fill="#52b788" opacity=".4"/>
-          <text x="410" y="96" text-anchor="middle" fill="#1a4731" font-size="10">CLAUDE.md (2 000 tok) — CACHE ✓</text>
-          <rect x="315" y="108" width="190" height="20" rx="4" fill="#40916c"/>
-          <text x="410" y="122" text-anchor="middle" fill="white" font-size="10">Prompt utilisateur (200 tok) — FACTURÉ</text>
-          <text x="410" y="145" text-anchor="middle" fill="#1a4731" font-size="11" font-weight="bold">200 tokens facturés (−91%)</text>
-
-          <!-- Arrow -->
-          <text x="540" y="103" text-anchor="middle" fill="#888" font-size="18">→</text>
-          <text x="540" y="120" text-anchor="middle" fill="#e63946" font-size="9">TTL expiré</text>
-
-          <!-- Echange 3 -->
-          <rect x="570" y="50" width="220" height="100" rx="10" fill="#fde8e8" stroke="#f4a261" stroke-width="1.5"/>
-          <text x="680" y="73" text-anchor="middle" fill="#a0522d" font-size="11" font-weight="bold">Échange 3 (&gt;5min — cold)</text>
-          <rect x="585" y="82" width="190" height="20" rx="4" fill="#f4a261" opacity=".7"/>
-          <text x="680" y="96" text-anchor="middle" fill="white" font-size="10">CLAUDE.md (2 000 tok) — FACTURÉ</text>
-          <rect x="585" y="108" width="190" height="20" rx="4" fill="#f4a261"/>
-          <text x="680" y="122" text-anchor="middle" fill="white" font-size="10">Prompt utilisateur (200 tok) — FACTURÉ</text>
-          <text x="680" y="145" text-anchor="middle" fill="#a0522d" font-size="11" font-weight="bold">2 200 tokens facturés</text>
-
-          <!-- Conseil -->
-          <rect x="30" y="170" width="760" height="70" rx="10" fill="#e8f4fd" stroke="#457b9d" stroke-width="1"/>
-          <text x="410" y="193" text-anchor="middle" fill="#0d47a1" font-size="12" font-weight="bold">Maximiser le cache hit rate</text>
-          <text x="410" y="213" text-anchor="middle" fill="#457b9d" font-size="11">• Garder CLAUDE.md 100% statique · Enchaîner les échanges en &lt;5 min · /compact conserve le cache</text>
-          <text x="410" y="230" text-anchor="middle" fill="#457b9d" font-size="11">• Ne pas inclure de timestamps/IDs dynamiques dans le contexte permanent</text>
+          <rect x="30" y="45" width="220" height="100" rx="10" fill="#fde8e8" stroke="#e63946" stroke-width="1.5"/>
+          <text x="140" y="68" text-anchor="middle" fill="#c0392b" font-size="11" font-weight="bold">Échange 1 (cold)</text>
+          <rect x="45" y="77" width="190" height="20" rx="4" fill="#e63946" opacity=".6"/>
+          <text x="140" y="91" text-anchor="middle" fill="white" font-size="10">CLAUDE.md (2 000 tok) — FACTURÉ</text>
+          <rect x="45" y="103" width="190" height="20" rx="4" fill="#e63946"/>
+          <text x="140" y="117" text-anchor="middle" fill="white" font-size="10">Prompt utilisateur (200 tok) — FACTURÉ</text>
+          <text x="140" y="140" text-anchor="middle" fill="#c0392b" font-size="11" font-weight="bold">2 200 tokens facturés</text>
+          <text x="270" y="98" text-anchor="middle" fill="#888" font-size="18">→</text>
+          <text x="270" y="115" text-anchor="middle" fill="#888" font-size="9">TTL 5min</text>
+          <rect x="300" y="45" width="220" height="100" rx="10" fill="#f0fff4" stroke="#52b788" stroke-width="1.5"/>
+          <text x="410" y="68" text-anchor="middle" fill="#1a4731" font-size="11" font-weight="bold">Échange 2 (cache hit)</text>
+          <rect x="315" y="77" width="190" height="20" rx="4" fill="#52b788" opacity=".4"/>
+          <text x="410" y="91" text-anchor="middle" fill="#1a4731" font-size="10">CLAUDE.md (2 000 tok) — CACHE ✓</text>
+          <rect x="315" y="103" width="190" height="20" rx="4" fill="#40916c"/>
+          <text x="410" y="117" text-anchor="middle" fill="white" font-size="10">Prompt utilisateur (200 tok) — FACTURÉ</text>
+          <text x="410" y="140" text-anchor="middle" fill="#1a4731" font-size="11" font-weight="bold">200 tokens facturés (−91%)</text>
+          <text x="540" y="98" text-anchor="middle" fill="#888" font-size="18">→</text>
+          <text x="540" y="115" text-anchor="middle" fill="#e63946" font-size="9">TTL expiré</text>
+          <rect x="570" y="45" width="220" height="100" rx="10" fill="#fde8e8" stroke="#f4a261" stroke-width="1.5"/>
+          <text x="680" y="68" text-anchor="middle" fill="#a0522d" font-size="11" font-weight="bold">Échange 3 (&gt;5min — cold)</text>
+          <rect x="585" y="77" width="190" height="20" rx="4" fill="#f4a261" opacity=".7"/>
+          <text x="680" y="91" text-anchor="middle" fill="white" font-size="10">CLAUDE.md (2 000 tok) — FACTURÉ</text>
+          <rect x="585" y="103" width="190" height="20" rx="4" fill="#f4a261"/>
+          <text x="680" y="117" text-anchor="middle" fill="white" font-size="10">Prompt utilisateur (200 tok) — FACTURÉ</text>
+          <text x="680" y="140" text-anchor="middle" fill="#a0522d" font-size="11" font-weight="bold">2 200 tokens facturés</text>
+          <rect x="30" y="160" width="760" height="65" rx="10" fill="#e8f4fd" stroke="#457b9d" stroke-width="1"/>
+          <text x="410" y="183" text-anchor="middle" fill="#0d47a1" font-size="12" font-weight="bold">Maximiser le cache hit rate</text>
+          <text x="410" y="203" text-anchor="middle" fill="#457b9d" font-size="11">• CLAUDE.md 100% statique · Enchaîner les échanges en &lt;5 min · /compact conserve le cache</text>
+          <text x="410" y="219" text-anchor="middle" fill="#457b9d" font-size="11">• Ne pas inclure de timestamps/IDs dynamiques dans le contexte permanent</text>
         </svg>
-        <figcaption>Fig. 5 — Fonctionnement du prompt cache : économie de 91% sur les tokens répétés</figcaption>
+        <figcaption>Fig. 3 — Fonctionnement du prompt cache : économie de 91% sur les tokens répétés</figcaption>
       </figure>
     </div>
-
     <h3>Batch API — traitement asynchrone de masse</h3>
     <div class="def-box">
       <div class="def-title">Définition — Batch API</div>
-      <p>L'API Batch d'Anthropic permet d'envoyer des milliers de requêtes en une seule fois, traitées de manière asynchrone. Coût : <strong>50% moins cher</strong> que l'API standard, avec un délai de traitement de quelques heures. Idéal pour le nettoyage et le scoring de datasets.</p>
+      <p>L'API Batch d'Anthropic permet d'envoyer des milliers de requêtes en une seule fois, traitées de manière asynchrone. Coût : <strong>50% moins cher</strong> que l'API standard, avec un délai de quelques heures. Idéal pour le nettoyage et le scoring de datasets volumineux.</p>
     </div>
-
     <div class="cards">
       <div class="card">
         <div class="card-icon">📦</div>
-        <h4>Cas d'usage MLOps parfait</h4>
-        <p>Scorer 50 000 paires Python→Java avec Haiku via Batch API : ×50% de réduction de coût, lancé le soir, résultats le matin.</p>
+        <h4>Cas d'usage parfait</h4>
+        <p>Scorer 50 000 entrées avec Haiku via Batch API : ×50% de réduction de coût, lancé le soir, résultats le matin. Zéro coût d'attente humain.</p>
       </div>
       <div class="card orange">
         <div class="card-icon">⏱️</div>
         <h4>Quand l'utiliser</h4>
-        <p>Tâches non-interactives : scoring dataset, évaluation modèle sur test set, génération d'augmentations synthétiques. Pas pour les interactions utilisateur.</p>
+        <p>Tâches non-interactives : scoring dataset, évaluation sur test set, génération d'augmentations synthétiques. Pas pour les interactions utilisateur en temps réel.</p>
       </div>
     </div>
-
-    <h3>Pattern Batch API pour nettoyage de dataset</h3>
     <pre><code><span class="kw">from</span> anthropic <span class="kw">import</span> Anthropic
-<span class="kw">import</span> json
 <span class="kw">from</span> pathlib <span class="kw">import</span> Path
+<span class="kw">import</span> json
 
 client = Anthropic()
 
-<span class="kw">def</span> <span class="val">score_pairs_batch</span>(pairs_path: Path) -> Path:
-    pairs = [json.loads(l) <span class="kw">for</span> l <span class="kw">in</span> pairs_path.read_text().splitlines()]
-
+<span class="kw">def</span> <span class="val">score_items_batch</span>(items_path: Path) -> str:
+    items = [json.loads(l) <span class="kw">for</span> l <span class="kw">in</span> items_path.read_text().splitlines()]
     requests = [{
-        <span class="str">"custom_id"</span>: <span class="str">f"pair-{i}"</span>,
+        <span class="str">"custom_id"</span>: <span class="str">f"item-{i}"</span>,
         <span class="str">"params"</span>: {
             <span class="str">"model"</span>: <span class="str">"claude-haiku-4-5-20251001"</span>,  <span class="com"># haiku = ×15 moins cher</span>
             <span class="str">"max_tokens"</span>: <span class="num">64</span>,
-            <span class="str">"messages"</span>: [{<span class="str">"role"</span>: <span class="str">"user"</span>, <span class="str">"content"</span>: <span class="str">f"Score 0-10: {p}"</span>}]
+            <span class="str">"messages"</span>: [{<span class="str">"role"</span>: <span class="str">"user"</span>, <span class="str">"content"</span>: <span class="str">f"Score 0-10: {item}"</span>}]
         }
-    } <span class="kw">for</span> i, p <span class="kw">in</span> enumerate(pairs)]
-
+    } <span class="kw">for</span> i, item <span class="kw">in</span> enumerate(items)]
     batch = client.messages.batches.create(requests=requests)
-    <span class="com"># Asynchrone — résultats dans quelques heures</span>
-    <span class="kw">return</span> batch.id</code></pre>
+    <span class="kw">return</span> batch.id  <span class="com"># résultats disponibles dans quelques heures</span></code></pre>
   </div>
 </section>
 
-<!-- ═══ S11 SECURITE ═══ -->
-<section id="s11" data-level="expert">
+<!-- ═══ S12 SECURITE ═══ -->
+<section id="s12" data-level="expert">
   <div class="container">
-    <h2 class="section-title">11. Sécurité &amp; Souveraineté <span class="section-tag tag-e">🌳 Expert</span></h2>
-    <p class="section-subtitle">Secrets hors settings.json, deny cloud, raw immutable</p>
-
+    <h2 class="section-title">12. Sécurité &amp; Souveraineté <span class="section-tag tag-e">🌳 Expert</span></h2>
+    <p class="section-subtitle">Secrets hors settings.json, deny cloud, données sources immutables</p>
     <div class="callout danger">
       <div class="ci">🔴</div>
-      <div class="cb"><strong>Clés AWS en clair dans settings.json = vulnérabilité critique</strong> Ce fichier est lisible par tout processus tournant sous votre utilisateur. Utiliser <code>~/.aws/credentials</code> (chmod 600) + profil nommé dans settings.json.</div>
+      <div class="cb"><strong>Clés en clair dans settings.json = vulnérabilité critique</strong> Ce fichier est lisible par tout processus tournant sous votre utilisateur. Utiliser <code>~/.aws/credentials</code> (chmod 600) + profil nommé dans settings.json.</div>
     </div>
-
     <div class="compare">
       <div class="compare-bad">
         <h4>❌ Secrets dans settings.json</h4>
@@ -952,48 +820,46 @@ client = Anthropic()
       <div class="compare-good">
         <h4>✅ Profil AWS standard</h4>
         <pre style="background:#152d1a;font-size:.78rem;padding:14px;border-radius:8px;margin-top:8px;overflow-x:auto"><code style="color:#a8ff78;background:none"># ~/.aws/credentials (chmod 600)
-[default]
+[my-project]
 aws_access_key_id = AKIA...
 aws_secret_access_key = abc...
 
-# settings.json — juste la région
-{ "env": { "AWS_REGION": "us-east-1" } }</code></pre>
+# settings.json — juste le profil
+{ "env": { "AWS_PROFILE": "my-project" } }</code></pre>
       </div>
     </div>
-
-    <h3>Deny list souveraineté — defense et données classifiées</h3>
+    <h3>Deny list souveraineté — projets avec contraintes de confidentialité</h3>
     <pre><code><span class="key">"deny"</span>: [
-  <span class="str">"Bash(curl * anthropic*)"</span>,    <span class="com">// pas d'appel direct API Anthropic</span>
-  <span class="str">"Bash(curl * openai*)"</span>,
+  <span class="str">"Bash(curl * openai*)"</span>,       <span class="com">// pas d'appel cloud sortant</span>
+  <span class="str">"Bash(curl * anthropic*)"</span>,    <span class="com">// inférence locale uniquement</span>
   <span class="str">"Bash(wget * s3*)"</span>,
-  <span class="str">"Write(~/mlOps/datalake/raw/**)"</span>  <span class="com">// raw IMMUTABLE après ingestion</span>
+  <span class="str">"Write(~/your-project/data/raw/**)"</span>  <span class="com">// données sources = IMMUTABLES</span>
 ]</code></pre>
-
     <div class="def-box">
-      <div class="def-title">Définition — Immutabilité du datalake raw</div>
+      <div class="def-title">Définition — Immutabilité de la couche raw</div>
       <p>La couche <code>raw/</code> contient les données sources non transformées. Elle ne doit jamais être modifiée après ingestion — c'est la source de vérité pour rejouer le pipeline. La deny Write dans settings.json en fait une règle technique non-contournable, pas juste une convention.</p>
     </div>
   </div>
 </section>
-<!-- ═══ S12 OBSERVABILITE ═══ -->
-<section id="s12" data-level="expert">
-  <div class="container">
-    <h2 class="section-title">12. Observabilité &amp; Dashboard <span class="section-tag tag-e">🌳 Expert</span></h2>
-    <p class="section-subtitle">Green IT sans métriques = intention, pas pratique</p>
 
+<!-- ═══ S13 OBSERVABILITE ═══ -->
+<section id="s13" data-level="expert">
+  <div class="container">
+    <h2 class="section-title">13. Observabilité &amp; Dashboard <span class="section-tag tag-e">🌳 Expert</span></h2>
+    <p class="section-subtitle">Green IT sans métriques = intention, pas pratique</p>
     <div class="table-wrap">
       <table>
         <thead><tr><th>Métrique</th><th>Source</th><th>Outil</th><th>Fréquence</th></tr></thead>
         <tbody>
           <tr><td>Tokens consommés / session</td><td>API usage</td><td>Console Anthropic / Bedrock</td><td>Quotidien</td></tr>
-          <tr><td>Ratio Haiku/Sonnet/Opus</td><td>audit.log</td><td>Script bash + MLflow</td><td>Hebdomadaire</td></tr>
+          <tr><td>Ratio Haiku/Sonnet/Opus</td><td>audit.log</td><td>Script bash + agrégation</td><td>Hebdomadaire</td></tr>
           <tr><td>Commandes Bash exécutées</td><td>audit.log</td><td><code>grep BASH audit.log | wc -l</code></td><td>Par session</td></tr>
           <tr><td>Fichiers écrits</td><td>audit.log</td><td><code>grep WRITE audit.log</code></td><td>Par session</td></tr>
-          <tr><td>Cache hit rate</td><td>API response</td><td>SDK Anthropic usage_stats</td><td>Par appel</td></tr>
+          <tr><td>Cache hit rate</td><td>API response headers</td><td>SDK Anthropic usage stats</td><td>Par appel</td></tr>
+          <tr><td>Agents lancés / workflow</td><td>Workflow output</td><td><code>/workflows</code> dans CC</td><td>Par run</td></tr>
         </tbody>
       </table>
     </div>
-
     <h3>Script de rapport quotidien</h3>
     <pre><code><span class="com">#!/bin/bash</span>
 <span class="com"># .claude/daily-report.sh — appelé via hook Stop</span>
@@ -1006,12 +872,11 @@ echo <span class="str">"Sessions      : $(grep "$TODAY.*session end" $LOG | wc -
   </div>
 </section>
 
-<!-- ═══ S13 FLASHCARDS ═══ -->
-<section id="s13" data-level="beginner">
+<!-- ═══ S14 FLASHCARDS ═══ -->
+<section id="s14" data-level="beginner">
   <div class="container">
-    <h2 class="section-title">13. Flash cards — Q&amp;A <span class="section-tag tag-b">Tous niveaux</span></h2>
+    <h2 class="section-title">14. Flash cards — Q&amp;A <span class="section-tag tag-b">Tous niveaux</span></h2>
     <p class="section-subtitle">Cliquez sur une carte pour révéler la réponse. Couvrent l'ensemble du document.</p>
-
     <style>
       .fc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:18px;margin:28px 0}
       .fc{border-radius:14px;min-height:160px;cursor:pointer;perspective:800px;position:relative}
@@ -1030,10 +895,7 @@ echo <span class="str">"Sessions      : $(grep "$TODAY.*session end" $LOG | wc -
       .fc-back.red{background:#8b0000}
       .fc-back.purple{background:#4a0e8f}
       .fc-q{font-weight:700;font-size:.97rem;color:var(--text);line-height:1.45;flex:1}
-      .fc-q.orange{color:#a0522d}
-      .fc-q.blue{color:#1a3a5c}
-      .fc-q.red{color:#8b0000}
-      .fc-q.purple{color:#4a0e8f}
+      .fc-q.orange{color:#a0522d}.fc-q.blue{color:#1a3a5c}.fc-q.red{color:#8b0000}.fc-q.purple{color:#4a0e8f}
       .fc-hint{font-size:.75rem;color:#aaa;margin-top:10px}
       .fc-a{font-size:.9rem;line-height:1.6;flex:1}
       .fc-a code{background:rgba(255,255,255,.15);color:#a8ff78;padding:1px 5px;border-radius:3px;font-size:.85em}
@@ -1043,322 +905,132 @@ echo <span class="str">"Sessions      : $(grep "$TODAY.*session end" $LOG | wc -
       .fc-section-title{font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--text-light);margin-bottom:14px;padding-left:4px}
     </style>
 
-    <!-- FONDAMENTAUX -->
     <div class="fc-section">
       <div class="fc-section-title">🌱 Fondamentaux</div>
       <div class="fc-grid">
-
         <div class="fc" onclick="this.classList.toggle('flipped')">
           <div class="fc-inner">
-            <div class="fc-front">
-              <div class="fc-q">Qu'est-ce qu'un token, et pourquoi est-il l'unité de mesure Green IT d'un LLM ?</div>
-              <div class="fc-hint">↩ cliquer pour la réponse</div>
-            </div>
-            <div class="fc-back">
-              <div class="fc-a">Un token ≈ 0,75 mot (4 caractères). <strong>C'est l'unité de calcul GPU</strong> : chaque token consomme de l'énergie dans un datacenter. 1 fichier Python de 300 lignes ≈ 3 000 tokens. Multiplié par des milliers d'appels/jour, l'impact CO₂ est mesurable et réductible par la configuration.</div>
-              <div class="fc-hint">↩ retourner</div>
-            </div>
+            <div class="fc-front"><div class="fc-q">Qu'est-ce qu'un token, et pourquoi est-il l'unité de mesure Green IT d'un LLM ?</div><div class="fc-hint">↩ cliquer pour la réponse</div></div>
+            <div class="fc-back"><div class="fc-a">Un token ≈ 0,75 mot (4 caractères). <strong>C'est l'unité de calcul GPU</strong> : chaque token consomme de l'énergie dans un datacenter. 1 fichier source de 300 lignes ≈ 3 000 tokens. Multiplié par des milliers d'appels/jour, l'impact CO₂ est mesurable et réductible par la configuration.</div><div class="fc-hint">↩ retourner</div></div>
           </div>
         </div>
-
         <div class="fc" onclick="this.classList.toggle('flipped')">
           <div class="fc-inner">
-            <div class="fc-front">
-              <div class="fc-q">Quelle est la différence entre <code>~/.claude/settings.json</code> et <code>.claude/settings.json</code> ?</div>
-              <div class="fc-hint">↩ cliquer pour la réponse</div>
-            </div>
-            <div class="fc-back">
-              <div class="fc-a"><strong>Global</strong> (<code>~/.claude/</code>) : s'applique à tous les projets — modèles, MCP servers, env vars partagées. <strong>Projet</strong> (<code>.claude/</code>) : versionné dans le repo, contient permissions, hooks, deny list spécifiques. Le projet surcharge le global.</div>
-              <div class="fc-hint">↩ retourner</div>
-            </div>
+            <div class="fc-front"><div class="fc-q">Quelle est la différence entre <code>~/.claude/settings.json</code> et <code>.claude/settings.json</code> ?</div><div class="fc-hint">↩ cliquer pour la réponse</div></div>
+            <div class="fc-back"><div class="fc-a"><strong>Global</strong> (<code>~/.claude/</code>) : s'applique à tous les projets — modèles, MCP servers, env vars partagées. <strong>Projet</strong> (<code>.claude/</code>) : versionné dans le repo, contient permissions, hooks, deny list spécifiques. Le projet surcharge le global.</div><div class="fc-hint">↩ retourner</div></div>
           </div>
         </div>
-
         <div class="fc" onclick="this.classList.toggle('flipped')">
           <div class="fc-inner">
-            <div class="fc-front">
-              <div class="fc-q">Pourquoi le CLAUDE.md doit-il être 100% statique (sans timestamps ni IDs dynamiques) ?</div>
-              <div class="fc-hint">↩ cliquer pour la réponse</div>
-            </div>
-            <div class="fc-back">
-              <div class="fc-a">Le <strong>prompt cache</strong> d'Anthropic met en cache les préfixes identiques pendant 5 min. Si CLAUDE.md change à chaque session (timestamp, ID de run), le cache est invalidé → 100% des tokens sont refacturés à chaque échange. Un CLAUDE.md statique permet un <strong>cache hit rate de 90%+</strong>.</div>
-              <div class="fc-hint">↩ retourner</div>
-            </div>
+            <div class="fc-front"><div class="fc-q">Pourquoi le CLAUDE.md doit-il être 100% statique (sans timestamps ni IDs dynamiques) ?</div><div class="fc-hint">↩ cliquer pour la réponse</div></div>
+            <div class="fc-back"><div class="fc-a">Le <strong>prompt cache</strong> d'Anthropic met en cache les préfixes identiques pendant 5 min. Si CLAUDE.md change à chaque session, le cache est invalidé → 100% des tokens sont refacturés. Un CLAUDE.md statique permet un <strong>cache hit rate de 90%+</strong>.</div><div class="fc-hint">↩ retourner</div></div>
           </div>
         </div>
-
         <div class="fc" onclick="this.classList.toggle('flipped')">
           <div class="fc-inner">
-            <div class="fc-front">
-              <div class="fc-q">Quel est le rôle de la section "Token Economy" dans CLAUDE.md, et pourquoi est-elle critique ?</div>
-              <div class="fc-hint">↩ cliquer pour la réponse</div>
-            </div>
-            <div class="fc-back">
-              <div class="fc-a">Elle instruite Claude sur <strong>comment utiliser ses propres ressources</strong> : quel modèle pour quelle tâche, quand déléguer à un sub-agent Haiku, quand utiliser MCP au lieu de lire un fichier, quand faire <code>/compact</code>. Sans elle, Claude peut consommer ×10 plus de tokens par manque d'instructions explicites.</div>
-              <div class="fc-hint">↩ retourner</div>
-            </div>
+            <div class="fc-front"><div class="fc-q">Quel est le rôle de la section "Token Economy" dans CLAUDE.md ?</div><div class="fc-hint">↩ cliquer pour la réponse</div></div>
+            <div class="fc-back"><div class="fc-a">Elle instruite Claude sur <strong>comment utiliser ses propres ressources</strong> : quel modèle pour quelle tâche, quand déléguer à un sub-agent Haiku, quand utiliser MCP au lieu de lire un fichier, quand faire <code>/compact</code>. Sans elle, Claude peut consommer ×10 plus de tokens par manque d'instructions explicites.</div><div class="fc-hint">↩ retourner</div></div>
           </div>
         </div>
-
       </div>
     </div>
 
-    <!-- MODÈLES & COÛTS -->
     <div class="fc-section">
       <div class="fc-section-title">🌿 Modèles &amp; Coûts</div>
       <div class="fc-grid">
-
         <div class="fc" onclick="this.classList.toggle('flipped')">
           <div class="fc-inner">
-            <div class="fc-front orange">
-              <div class="fc-q orange">Haiku, Sonnet, Opus — quel modèle pour quel cas d'usage dans un projet MLOps métier ?</div>
-              <div class="fc-hint">↩ cliquer pour la réponse</div>
-            </div>
-            <div class="fc-back orange">
-              <div class="fc-a"><strong>Haiku</strong> (×1) : scoring de paires, nettoyage dataset, exploration codebase, tâches répétitives ×N.<br><strong>Sonnet</strong> (×5) : développement courant, génération de code, refactoring, pipelines.<br><strong>Opus</strong> (×15) : architecture système, revue de sécurité, raisonnement complexe. Coûteux → décisions rares.</div>
-              <div class="fc-hint">↩ retourner</div>
-            </div>
+            <div class="fc-front orange"><div class="fc-q orange">Haiku, Sonnet, Opus — quel modèle pour quel cas d'usage ?</div><div class="fc-hint">↩ cliquer pour la réponse</div></div>
+            <div class="fc-back orange"><div class="fc-a"><strong>Haiku</strong> (×1) : scoring, nettoyage, exploration codebase, tâches répétitives ×N.<br><strong>Sonnet</strong> (×5) : développement courant, génération de code, refactoring.<br><strong>Opus</strong> (×15) : architecture système, revue de sécurité, raisonnement complexe. Coûteux → décisions rares.</div><div class="fc-hint">↩ retourner</div></div>
           </div>
         </div>
-
         <div class="fc" onclick="this.classList.toggle('flipped')">
           <div class="fc-inner">
-            <div class="fc-front orange">
-              <div class="fc-q orange">Comment configurer les 3 modèles dans <code>~/.claude/settings.json</code> pour un usage optimal ?</div>
-              <div class="fc-hint">↩ cliquer pour la réponse</div>
-            </div>
-            <div class="fc-back orange">
-              <div class="fc-a"><code>"model": "haiku"</code> → défaut global (le plus léger).<br><code>ANTHROPIC_MODEL</code> → Sonnet (tâches courantes).<br><code>ANTHROPIC_SMALL_FAST_MODEL</code> → Haiku (sub-agents).<br><code>ANTHROPIC_LARGE_MODEL</code> → Opus (architecture). Le <strong>défaut global doit être Haiku</strong>, pas Sonnet.</div>
-              <div class="fc-hint">↩ retourner</div>
-            </div>
+            <div class="fc-front orange"><div class="fc-q orange">Qu'est-ce que le Fast Mode de Claude Code et quand l'utiliser ?</div><div class="fc-hint">↩ cliquer pour la réponse</div></div>
+            <div class="fc-back orange"><div class="fc-a">Fast mode = <strong>Claude Opus avec sortie accélérée</strong> — il ne downgrade PAS vers un modèle plus petit. Toggle : <code>/fast</code>. Disponible sur Opus 4.8/4.7/4.6. À utiliser quand la vitesse prime (session interactive dense), pas comme défaut Green IT : Opus reste plus cher que Haiku.</div><div class="fc-hint">↩ retourner</div></div>
           </div>
         </div>
-
         <div class="fc" onclick="this.classList.toggle('flipped')">
           <div class="fc-inner">
-            <div class="fc-front orange">
-              <div class="fc-q orange">Qu'est-ce que la Batch API d'Anthropic et dans quel cas l'utiliser pour un projet de fine-tuning ?</div>
-              <div class="fc-hint">↩ cliquer pour la réponse</div>
-            </div>
-            <div class="fc-back orange">
-              <div class="fc-a">API asynchrone pour envoyer des milliers de requêtes en une fois. <strong>Coût : 50% moins cher</strong> que l'API standard, délai de quelques heures. Cas d'usage parfait : scorer 50 000 paires Python→Java la nuit avec Haiku. Non adapté aux interactions utilisateur en temps réel.</div>
-              <div class="fc-hint">↩ retourner</div>
-            </div>
+            <div class="fc-front orange"><div class="fc-q orange">Qu'est-ce que la Batch API et dans quel cas l'utiliser ?</div><div class="fc-hint">↩ cliquer pour la réponse</div></div>
+            <div class="fc-back orange"><div class="fc-a">API asynchrone pour envoyer des milliers de requêtes en une fois. <strong>Coût : 50% moins cher</strong> que l'API standard, délai de quelques heures. Cas d'usage parfait : scorer un grand dataset la nuit avec Haiku. Non adapté aux interactions utilisateur en temps réel.</div><div class="fc-hint">↩ retourner</div></div>
           </div>
         </div>
-
       </div>
     </div>
 
-    <!-- PERMISSIONS & HOOKS -->
     <div class="fc-section">
       <div class="fc-section-title">🌿 Permissions &amp; Hooks</div>
       <div class="fc-grid">
-
         <div class="fc" onclick="this.classList.toggle('flipped')">
           <div class="fc-inner">
-            <div class="fc-front blue">
-              <div class="fc-q blue">Quelle est la différence entre allowlist et deny list, et laquelle a la priorité ?</div>
-              <div class="fc-hint">↩ cliquer pour la réponse</div>
-            </div>
-            <div class="fc-back blue">
-              <div class="fc-a"><strong>Allowlist</strong> : commandes que CC exécute sans confirmation. <strong>Deny list</strong> : commandes explicitement interdites même si elles seraient normalement permises. La <strong>deny list a la priorité</strong> sur l'allowlist — si une commande est dans les deux, elle est bloquée.</div>
-              <div class="fc-hint">↩ retourner</div>
-            </div>
+            <div class="fc-front blue"><div class="fc-q blue">Quelle est la différence entre allowlist et deny list, et laquelle a la priorité ?</div><div class="fc-hint">↩ cliquer pour la réponse</div></div>
+            <div class="fc-back blue"><div class="fc-a"><strong>Allowlist</strong> : commandes que CC exécute sans confirmation. <strong>Deny list</strong> : commandes explicitement interdites même si elles seraient normalement permises. La <strong>deny list a la priorité absolue</strong> — si une commande est dans les deux, elle est bloquée.</div><div class="fc-hint">↩ retourner</div></div>
           </div>
         </div>
-
         <div class="fc" onclick="this.classList.toggle('flipped')">
           <div class="fc-inner">
-            <div class="fc-front blue">
-              <div class="fc-q blue">Que signifie <code>Bash(git log*)</code> comme règle d'allowlist ? Qu'autorise-t-elle et qu'interdit-elle ?</div>
-              <div class="fc-hint">↩ cliquer pour la réponse</div>
-            </div>
-            <div class="fc-back blue">
-              <div class="fc-a">Autorise toute commande qui <strong>commence exactement par</strong> <code>git log</code> : <code>git log --oneline -10</code> ✓, <code>git log --format="%H"</code> ✓.<br>N'autorise pas : <code>git push</code> ✗, <code>git reset --hard</code> ✗. Le <code>*</code> est un glob suffixe, pas un wildcard global.</div>
-              <div class="fc-hint">↩ retourner</div>
-            </div>
+            <div class="fc-front blue"><div class="fc-q blue">Que signifie <code>Bash(git log*)</code> comme règle d'allowlist ?</div><div class="fc-hint">↩ cliquer pour la réponse</div></div>
+            <div class="fc-back blue"><div class="fc-a">Autorise toute commande qui <strong>commence exactement par</strong> <code>git log</code> : <code>git log --oneline -10</code> ✓, <code>git log --format="%H"</code> ✓.<br>N'autorise pas : <code>git push</code> ✗, <code>git reset --hard</code> ✗. Le <code>*</code> est un glob suffixe, pas un wildcard global.</div><div class="fc-hint">↩ retourner</div></div>
           </div>
         </div>
-
         <div class="fc" onclick="this.classList.toggle('flipped')">
           <div class="fc-inner">
-            <div class="fc-front blue">
-              <div class="fc-q blue">Pourquoi <code>$CLAUDE_TOOL_INPUT</code> ne peut pas être directement utilisé dans un hook <code>echo</code> ?</div>
-              <div class="fc-hint">↩ cliquer pour la réponse</div>
-            </div>
-            <div class="fc-back blue">
-              <div class="fc-a"><code>CLAUDE_TOOL_INPUT</code> contient un <strong>objet JSON multi-lignes</strong>. Un <code>echo</code> direct échoue silencieusement ou produit une entrée vide. Il faut utiliser <code>jq -r '.command // empty'</code> pour extraire le champ texte, et <code>printf '%s | BASH | %s\n'</code> (format en premier argument) pour éviter que les tirets soient interprétés comme options.</div>
-              <div class="fc-hint">↩ retourner</div>
-            </div>
+            <div class="fc-front blue"><div class="fc-q blue">Quelle est la différence entre PreToolUse, PostToolUse et Stop ?</div><div class="fc-hint">↩ cliquer pour la réponse</div></div>
+            <div class="fc-back blue"><div class="fc-a"><strong>PreToolUse</strong> : avant l'outil, peut bloquer (code ≠ 0). Ex : valider qu'un fichier à écrire n'est pas dans <code>raw/</code>.<br><strong>PostToolUse</strong> : après l'outil, pour l'audit. Ex : logger la commande Bash dans <code>audit.log</code>.<br><strong>Stop</strong> : fin de réponse Claude. Ex : marqueur <code>=== session end ===</code>.</div><div class="fc-hint">↩ retourner</div></div>
           </div>
         </div>
-
-        <div class="fc" onclick="this.classList.toggle('flipped')">
-          <div class="fc-inner">
-            <div class="fc-front blue">
-              <div class="fc-q blue">Quelle est la différence entre PreToolUse, PostToolUse et Stop ? Citez un cas d'usage concret pour chacun.</div>
-              <div class="fc-hint">↩ cliquer pour la réponse</div>
-            </div>
-            <div class="fc-back blue">
-              <div class="fc-a"><strong>PreToolUse</strong> : avant l'outil, peut bloquer (code ≠ 0). Ex : valider qu'un fichier à écrire n'est pas dans <code>raw/</code>.<br><strong>PostToolUse</strong> : après l'outil, pour l'audit. Ex : logger la commande Bash dans <code>audit.log</code>.<br><strong>Stop</strong> : fin de réponse Claude. Ex : écrire un marqueur <code>=== session end ===</code>.</div>
-              <div class="fc-hint">↩ retourner</div>
-            </div>
-          </div>
-        </div>
-
       </div>
     </div>
 
-    <!-- SKILLS & AGENTS -->
     <div class="fc-section">
-      <div class="fc-section-title">🌳 Skills &amp; Agents</div>
+      <div class="fc-section-title">🌳 Agents, Workflows &amp; MCP</div>
       <div class="fc-grid">
-
         <div class="fc" onclick="this.classList.toggle('flipped')">
           <div class="fc-inner">
-            <div class="fc-front purple">
-              <div class="fc-q purple">Qu'est-ce qu'un skill Claude Code, et en quoi est-il différent d'une entrée CLAUDE.md ?</div>
-              <div class="fc-hint">↩ cliquer pour la réponse</div>
-            </div>
-            <div class="fc-back purple">
-              <div class="fc-a">Un <strong>skill</strong> est un fichier <code>.md</code> dans <code>.claude/skills/</code>, invoqué par <code>/nom</code>. Il contient de la <strong>logique d'action</strong> : séquence d'étapes, règles spécifiques à une tâche, token economy de la tâche.<br><strong>CLAUDE.md</strong> contient du <strong>contexte statique</strong> : chemins, stack, règles globales permanentes. Le skill est une macro réutilisable ; CLAUDE.md est le contrat permanent.</div>
-              <div class="fc-hint">↩ retourner</div>
-            </div>
+            <div class="fc-front purple"><div class="fc-q purple">Qu'est-ce qu'un skill Claude Code, différent d'une entrée CLAUDE.md ?</div><div class="fc-hint">↩ cliquer pour la réponse</div></div>
+            <div class="fc-back purple"><div class="fc-a">Un <strong>skill</strong> est un fichier <code>.md</code> dans <code>.claude/skills/</code>, invoqué par <code>/nom</code>. Il contient de la <strong>logique d'action</strong> : séquence d'étapes, règles spécifiques à une tâche.<br><strong>CLAUDE.md</strong> contient du <strong>contexte statique</strong> : chemins, stack, règles permanentes. Skill = macro réutilisable ; CLAUDE.md = contrat permanent.</div><div class="fc-hint">↩ retourner</div></div>
           </div>
         </div>
-
         <div class="fc" onclick="this.classList.toggle('flipped')">
           <div class="fc-inner">
-            <div class="fc-front purple">
-              <div class="fc-q purple">Pourquoi créer un sub-agent Haiku pour scorer 5 000 paires plutôt que de laisser le contexte principal le faire ?</div>
-              <div class="fc-hint">↩ cliquer pour la réponse</div>
-            </div>
-            <div class="fc-back purple">
-              <div class="fc-a">Trois raisons Green IT : <strong>①</strong> Haiku coûte ×15 moins qu'Opus pour cette tâche répétitive. <strong>②</strong> Les 5 000 paires restent dans le sub-agent — le contexte principal n'est pas surchargé (sa fenêtre est préservée pour l'orchestration). <strong>③</strong> Avec <code>run_in_background: true</code>, le scoring tourne en parallèle pendant que le principal fait autre chose.</div>
-              <div class="fc-hint">↩ retourner</div>
-            </div>
+            <div class="fc-front purple"><div class="fc-q purple">Quelle est la différence entre <code>pipeline()</code> et <code>parallel()</code> dans un Workflow ?</div><div class="fc-hint">↩ cliquer pour la réponse</div></div>
+            <div class="fc-back purple"><div class="fc-a"><strong>pipeline()</strong> : pas de barrière — chaque item avance dans les stages indépendamment. Wall-clock = chaîne la plus lente d'un seul item. <strong>Défaut à utiliser.</strong><br><strong>parallel()</strong> : barrière — attend TOUS les résultats avant de continuer. À réserver aux cas où le stage suivant a besoin de la totalité des résultats précédents.</div><div class="fc-hint">↩ retourner</div></div>
           </div>
         </div>
-
         <div class="fc" onclick="this.classList.toggle('flipped')">
           <div class="fc-inner">
-            <div class="fc-front purple">
-              <div class="fc-q purple">Dans quel cas utiliser l'agent de type <code>Plan</code> avec Opus, et pourquoi doit-il rester rare ?</div>
-              <div class="fc-hint">↩ cliquer pour la réponse</div>
-            </div>
-            <div class="fc-back purple">
-              <div class="fc-a">L'agent <code>Plan</code> avec Opus est réservé aux <strong>décisions architecturales structurantes</strong> : conception d'un nouveau pipeline, choix de stack, revue de sécurité critique, plan d'implémentation multi-semaines. Il doit rester rare car Opus coûte ×15 vs Haiku. Un sous-agent Plan Opus par sprint est raisonnable ; un par tâche courante est du gaspillage.</div>
-              <div class="fc-hint">↩ retourner</div>
-            </div>
+            <div class="fc-front purple"><div class="fc-q purple">Qu'apporte la résumabilité (<code>resumeFromRunId</code>) d'un Workflow ?</div><div class="fc-hint">↩ cliquer pour la réponse</div></div>
+            <div class="fc-back purple"><div class="fc-a">Si un workflow de 200 agents est interrompu après 150, relancer avec <code>resumeFromRunId</code> retourne les 150 résultats depuis le <strong>cache instantanément</strong> — zéro retokenisation. Seuls les 50 agents restants sont réexécutés. Essentiel pour les long-running workflows coûteux.</div><div class="fc-hint">↩ retourner</div></div>
           </div>
         </div>
-
+        <div class="fc" onclick="this.classList.toggle('flipped')">
+          <div class="fc-inner">
+            <div class="fc-front red"><div class="fc-q red">Pourquoi utiliser MCP SQLite au lieu de lire une DB directement ? Chiffrez le gain.</div><div class="fc-hint">↩ cliquer pour la réponse</div></div>
+            <div class="fc-back red"><div class="fc-a">Sans MCP : CC tente de lire le binaire (illisible), exporte un CSV de 800 lignes, le charge entier → <strong>~3 500 tokens</strong>.<br>Avec MCP : <code>execute_query("SELECT ... LIMIT 3")</code> → 3 lignes → <strong>~180 tokens</strong>.<br>Gain : <strong>×20</strong>. Le LLM n'est pas un système de fichiers.</div><div class="fc-hint">↩ retourner</div></div>
+          </div>
+        </div>
+        <div class="fc" onclick="this.classList.toggle('flipped')">
+          <div class="fc-inner">
+            <div class="fc-front red"><div class="fc-q red">Le prompt cache d'Anthropic dure combien de temps ? Quelles pratiques le maximisent ?</div><div class="fc-hint">↩ cliquer pour la réponse</div></div>
+            <div class="fc-back red"><div class="fc-a">TTL : <strong>5 minutes</strong>. Pour maximiser le hit rate : <strong>①</strong> CLAUDE.md 100% statique. <strong>②</strong> Enchaîner les échanges en moins de 5 min. <strong>③</strong> Utiliser <code>/compact</code> qui résume sans changer le préfixe stable. Les tokens en cache sont facturés ~90% moins cher.</div><div class="fc-hint">↩ retourner</div></div>
+          </div>
+        </div>
+        <div class="fc" onclick="this.classList.toggle('flipped')">
+          <div class="fc-inner">
+            <div class="fc-front"><div class="fc-q">Pourquoi ne jamais mettre des clés d'API dans <code>settings.json</code> ?</div><div class="fc-hint">↩ cliquer pour la réponse</div></div>
+            <div class="fc-back"><div class="fc-a"><code>settings.json</code> est lisible par <strong>tout processus tournant sous votre utilisateur</strong>. Contrairement à <code>~/.aws/credentials</code> (chmod 600), il n'a pas de permission spéciale. Alternative : credentials provider standard + <code>"AWS_PROFILE": "mon-profil"</code> dans settings.</div><div class="fc-hint">↩ retourner</div></div>
+          </div>
+        </div>
       </div>
     </div>
-
-    <!-- MCP & CACHE -->
-    <div class="fc-section">
-      <div class="fc-section-title">🌳 MCP &amp; Cache</div>
-      <div class="fc-grid">
-
-        <div class="fc" onclick="this.classList.toggle('flipped')">
-          <div class="fc-inner">
-            <div class="fc-front red">
-              <div class="fc-q red">Pourquoi utiliser MCP SQLite au lieu de lire le fichier <code>mlops.db</code> directement ? Chiffrez le gain.</div>
-              <div class="fc-hint">↩ cliquer pour la réponse</div>
-            </div>
-            <div class="fc-back red">
-              <div class="fc-a">Sans MCP : CC tente de lire le binaire (illisible), exporte un CSV de 800 lignes, le charge entier → <strong>~3 500 tokens</strong>.<br>Avec MCP : <code>execute_query("SELECT * FROM runs ORDER BY start_time DESC LIMIT 3")</code> → 3 lignes → <strong>~180 tokens</strong>.<br>Gain : <strong>×20</strong>. Le LLM n'est pas un système de fichiers.</div>
-              <div class="fc-hint">↩ retourner</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="fc" onclick="this.classList.toggle('flipped')">
-          <div class="fc-inner">
-            <div class="fc-front red">
-              <div class="fc-q red">Le prompt cache d'Anthropic dure combien de temps ? Quelles pratiques le maximisent ?</div>
-              <div class="fc-hint">↩ cliquer pour la réponse</div>
-            </div>
-            <div class="fc-back red">
-              <div class="fc-a">TTL : <strong>5 minutes</strong>. Pour maximiser le hit rate : <strong>①</strong> CLAUDE.md 100% statique. <strong>②</strong> Enchaîner les échanges en moins de 5 min. <strong>③</strong> Utiliser <code>/compact</code> qui résume l'historique sans changer le préfixe stable. Les tokens en cache sont facturés ~90% moins cher.</div>
-              <div class="fc-hint">↩ retourner</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="fc" onclick="this.classList.toggle('flipped')">
-          <div class="fc-inner">
-            <div class="fc-front red">
-              <div class="fc-q red">Où doivent être configurés les MCP servers partagés entre projets, et pourquoi ?</div>
-              <div class="fc-hint">↩ cliquer pour la réponse</div>
-            </div>
-            <div class="fc-back red">
-              <div class="fc-a">Dans <code>~/.claude/settings.json</code> (global), pas dans chaque projet. Principe Green IT de <strong>réutilisation de configuration</strong> : un MCP SQLite configuré une fois sert tous les projets qui partagent la même DB. Évite la duplication, garantit la cohérence, réduit le risque d'oubli sur un nouveau projet.</div>
-              <div class="fc-hint">↩ retourner</div>
-            </div>
-          </div>
-        </div>
-
-      </div>
-    </div>
-
-    <!-- SÉCURITÉ & SOUVERAINETÉ -->
-    <div class="fc-section">
-      <div class="fc-section-title">🔐 Sécurité &amp; Souveraineté</div>
-      <div class="fc-grid">
-
-        <div class="fc" onclick="this.classList.toggle('flipped')">
-          <div class="fc-inner">
-            <div class="fc-front">
-              <div class="fc-q">Pourquoi ne jamais mettre des clés AWS dans <code>settings.json</code>, même en local ?</div>
-              <div class="fc-hint">↩ cliquer pour la réponse</div>
-            </div>
-            <div class="fc-back">
-              <div class="fc-a"><code>settings.json</code> est lisible par <strong>tout processus tournant sous votre utilisateur</strong> (apps, scripts, malwares). Contrairement à <code>~/.aws/credentials</code> (chmod 600, lu uniquement par le SDK AWS), settings.json n'a pas de permission spéciale. Alternative : <code>~/.aws/credentials</code> + <code>"AWS_PROFILE": "mon-profil"</code> dans settings.</div>
-              <div class="fc-hint">↩ retourner</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="fc" onclick="this.classList.toggle('flipped')">
-          <div class="fc-inner">
-            <div class="fc-front">
-              <div class="fc-q">Qu'est-ce que l'immutabilité de la couche <code>raw/</code> du datalake et comment l'imposer techniquement avec CC ?</div>
-              <div class="fc-hint">↩ cliquer pour la réponse</div>
-            </div>
-            <div class="fc-back">
-              <div class="fc-a"><code>raw/</code> contient les données sources dans leur état d'origine. Une fois ingérées, elles ne doivent jamais être modifiées — c'est la source de vérité pour rejouer le pipeline. Techniquement : <code>"deny": ["Write(~/mlOps/datalake/raw/**)]"</code> dans <code>.claude/settings.json</code>. La règle est non-contournable par CC, même par erreur.</div>
-              <div class="fc-hint">↩ retourner</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="fc" onclick="this.classList.toggle('flipped')">
-          <div class="fc-inner">
-            <div class="fc-front">
-              <div class="fc-q">Dans un projet defense/classifié, quelles règles deny garantissent la souveraineté des données ?</div>
-              <div class="fc-hint">↩ cliquer pour la réponse</div>
-            </div>
-            <div class="fc-back">
-              <div class="fc-a">Minimum : <code>"Bash(curl * anthropic*)"</code>, <code>"Bash(curl * openai*)"</code>, <code>"Bash(wget * s3*)"</code> bloquent les appels cloud sortants. L'inférence en production via <code>mlx_lm.server</code> (local) et les embeddings via Ollama garantissent que <strong>aucune donnée ne quitte la machine</strong>. CC lui-même peut passer par Bedrock (usage interne dev) sans que les données de prod transitent.</div>
-              <div class="fc-hint">↩ retourner</div>
-            </div>
-          </div>
-        </div>
-
-      </div>
-    </div>
-
   </div>
 </section>
 
-<!-- ═══ S14 CHECKLIST ═══ -->
-<section id="s14" data-level="inter">
+<!-- ═══ S15 CHECKLIST ═══ -->
+<section id="s15" data-level="inter">
   <div class="container">
-    <h2 class="section-title">14. Checklist &amp; Anti-patterns <span class="section-tag tag-i">🌿 Intermédiaire</span></h2>
-
+    <h2 class="section-title">15. Checklist &amp; Anti-patterns <span class="section-tag tag-i">🌿 Intermédiaire</span></h2>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:32px">
       <div>
         <h3>🌱 Débutant — fondations</h3>
@@ -1371,10 +1043,10 @@ echo <span class="str">"Sessions      : $(grep "$TODAY.*session end" $LOG | wc -
         <h3 style="margin-top:24px">🌿 Intermédiaire</h3>
         <ul class="checklist">
           <li>Allowlist minimale pour le travail courant</li>
-          <li>Deny list souveraineté + raw immutable</li>
-          <li>Secrets AWS hors settings.json</li>
-          <li>Hook PostToolUse audit avec jq (pas $CLAUDE_TOOL_INPUT nu)</li>
-          <li>Hook Stop avec echo (pas printf ---)</li>
+          <li>Deny list souveraineté + données sources immutables</li>
+          <li>Secrets d'API hors settings.json</li>
+          <li>Hook PostToolUse audit avec jq</li>
+          <li>Hook Stop avec marqueur de fin de session</li>
           <li>Au moins 3 skills versionnés dans .claude/skills/</li>
           <li>Mémoire persistante initialisée (MEMORY.md)</li>
         </ul>
@@ -1383,11 +1055,13 @@ echo <span class="str">"Sessions      : $(grep "$TODAY.*session end" $LOG | wc -
           <li>MCP SQLite pour toutes les requêtes métadonnées</li>
           <li>MCP Filesystem configuré</li>
           <li>Sub-agents Haiku pour tâches répétitives</li>
-          <li>Batch API pour datasets >500 paires</li>
-          <li>Cache hit rate mesuré et >60%</li>
+          <li>Au moins 1 Workflow défini pour les tâches fan-out</li>
+          <li>Batch API pour datasets volumineux (&gt;500 entrées)</li>
+          <li>Cache hit rate mesuré et &gt;60%</li>
+          <li>Fast mode configuré pour sessions interactives intenses</li>
           <li>Rapport hebdomadaire sur audit.log</li>
-          <li class="todo">Dashboard MLflow avec métriques AI</li>
-          <li class="todo">Rotation automatique des clés AWS</li>
+          <li class="todo">Dashboard de consommation tokens</li>
+          <li class="todo">Rotation automatique des credentials</li>
         </ul>
       </div>
       <div>
@@ -1395,11 +1069,11 @@ echo <span class="str">"Sessions      : $(grep "$TODAY.*session end" $LOG | wc -
         <div class="cards" style="grid-template-columns:1fr;gap:12px;margin:12px 0">
           <div class="card red" style="padding:16px">
             <h4>Clés secrets dans settings.json</h4>
-            <p style="font-size:.85rem">Lisibles par tout process. Utiliser ~/.aws/credentials (chmod 600).</p>
+            <p style="font-size:.85rem">Lisibles par tout process. Utiliser le credentials provider standard (chmod 600).</p>
           </div>
           <div class="card red" style="padding:16px">
             <h4>Bash(*) — tout autoriser</h4>
-            <p style="font-size:.85rem">Autorise rm -rf /. La friction des prompts est un signal — affiner l'allowlist.</p>
+            <p style="font-size:.85rem">Autorise <code>rm -rf /</code>. La friction des prompts est un signal — affiner l'allowlist.</p>
           </div>
           <div class="card red" style="padding:16px">
             <h4>CLAUDE.md avec données dynamiques</h4>
@@ -1407,11 +1081,15 @@ echo <span class="str">"Sessions      : $(grep "$TODAY.*session end" $LOG | wc -
           </div>
           <div class="card red" style="padding:16px">
             <h4>Opus/Sonnet pour tout "par sécurité"</h4>
-            <p style="font-size:.85rem">×5 à ×15 le coût. Haiku couvre 60-70% des tâches courantes.</p>
+            <p style="font-size:.85rem">×5 à ×15 le coût. Haiku couvre 60–70% des tâches courantes.</p>
           </div>
           <div class="card red" style="padding:16px">
             <h4>Lire une DB SQLite comme fichier</h4>
             <p style="font-size:.85rem">Binaire illisible → CSV 800 lignes → 3 500 tokens. MCP SQLite : 180 tokens.</p>
+          </div>
+          <div class="card red" style="padding:16px">
+            <h4>parallel() au lieu de pipeline()</h4>
+            <p style="font-size:.85rem">Barrière inutile → le plus lent bloque tout. pipeline() par défaut, parallel() seulement si nécessaire.</p>
           </div>
           <div class="card red" style="padding:16px">
             <h4>Sessions sans /compact</h4>
@@ -1423,11 +1101,10 @@ echo <span class="str">"Sessions      : $(grep "$TODAY.*session end" $LOG | wc -
   </div>
 </section>
 
-<!-- ═══ FOOTER ═══ -->
 <footer>
-  <p>Document généré pour le projet <strong>mlOps — Capgemini</strong> · Wilfried Leroulier</p>
-  <p style="margin-top:8px">Stack : Claude Code · MLX-LM · MLflow · DVC · LanceDB · Qdrant · MCP</p>
-  <p style="margin-top:8px;opacity:.5">2026 · Green IT = zéro cloud en production · tokens minimisés · souveraineté totale</p>
+  <p>Document généré par <strong>Claude Code</strong> · Green IT &amp; Performance · État de l'art 2026</p>
+  <p style="margin-top:8px">Claude Code · MCP · Workflows · Agents · Prompt Cache · Batch API</p>
+  <p style="margin-top:8px;opacity:.5">2026 · tokens minimisés · souveraineté configurable · automatisation complète</p>
 </footer>
 
 <button class="back-top" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑</button>
@@ -1445,7 +1122,5 @@ function filterLevel(level) {
     }
   });
 }
-// Show/hide corrections already handled inline
 </script>
-</body>
-</html>
+</body></html>

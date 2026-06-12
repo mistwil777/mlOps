@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import time
 from pathlib import Path
 from typing import Any
@@ -11,6 +10,7 @@ from typing import Any
 import yaml
 
 from pipeline.utils.jsonl import read_jsonl
+from pipeline.utils.llm import call_llm as _call_llm
 from pipeline.utils.logger import get_logger, log_metric
 from pipeline.utils.metrics import rouge_l_score
 
@@ -47,28 +47,10 @@ def _call_local_model(prompt: str, model_path: str, port: int = 8080) -> tuple[s
 
 
 def _call_nova_pro(prompt: str) -> tuple[str, float]:
-    """Call AWS Bedrock Nova Pro and return (completion, latency_ms)."""
-    import boto3  # noqa: PLC0415
-
-    client = boto3.client(
-        "bedrock-runtime",
-        region_name=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
-    )
-    model_id = os.environ.get("AWS_BEDROCK_MODEL_GENERATION", "us.amazon.nova-pro-v1:0")
-
+    """Call generation backend (Bedrock→Ollama fallback) and return (completion, latency_ms)."""
     t0 = time.perf_counter()
-    response = client.invoke_model(
-        modelId=model_id,
-        body=json.dumps({
-            "messages": [{"role": "user", "content": [{"text": prompt}]}],
-            "inferenceConfig": {"maxTokens": 2048, "temperature": 0.1},
-        }),
-        contentType="application/json",
-        accept="application/json",
-    )
+    completion = _call_llm(prompt, max_tokens=2048, temperature=0.1) or ""
     latency = (time.perf_counter() - t0) * 1000
-    body = json.loads(response["body"].read())
-    completion = body["output"]["message"]["content"][0]["text"]
     return completion, latency
 
 

@@ -82,6 +82,54 @@ collectors:
     # Legacy: web_collector already produces {prompt, completion} directly
     output_schema: []
 
+  semantic_match:
+    module: agents.semantic_pair_matcher
+    description: "Match bilingual records into training pairs by description semantic similarity (no LLM)"
+    required_args:
+      - pair          # language pair key from config/languages.yaml
+      - source_jsonl  # input JSONL with both-language records
+    optional_args:
+      - threshold     # min cosine similarity (default from languages.yaml or 0.75)
+      - max_pairs
+      - adapter_name
+    cli_mapping:
+      pair:        "--pair"
+      source_jsonl: "--source-jsonl"
+      threshold:   "--threshold"
+      max_pairs:   "--max-pairs"
+      adapter_name: "--adapter-name"
+    output_schema:
+      - prompt
+      - completion
+      - source_lang
+      - target_lang
+      - source_desc
+      - target_desc
+      - similarity
+      - source_url
+      - target_url
+      - collected_at
+
+  source_discover:
+    module: agents.source_discoverer
+    description: "AWA: autonomously discover bilingual documentation sources for a language pair"
+    required_args:
+      - pair          # language pair key from config/languages.yaml
+    optional_args:
+      - project
+      - adapter       # adapter name to skip already-known sources
+      - max_sources   # max new sources per language (default 5)
+    cli_mapping:
+      pair:        "--pair"
+      project:     "--project"
+      adapter:     "--adapter"
+      max_sources: "--max-sources"
+    output_schema:
+      - url
+      - label
+      - lang_hint
+      - concept
+
   manual:
     module: null
     description: "Manually provided JSONL file — loaded as-is, no subprocess launched"
@@ -89,3 +137,23 @@ collectors:
     optional_args: []
     cli_mapping: {}
     output_schema: []
+
+  synthetic:
+    module: agents.synthetic_collector
+    description: "Generates synthetic code examples via LLM from the adapter description — for domains where web crawling is unavailable"
+    required_args: []
+    optional_args:
+      - lang          # target language (java, python, etc.)
+      - max_pairs     # number of records to generate (default 100)
+      - adapter_name
+    cli_mapping:
+      lang:         "--lang"
+      max_pairs:    "--n"
+      adapter_name: "--adapter-name"
+    output_schema:
+      - description
+      - code
+      - lang
+      - source_url
+      - collected_at
+      - adapter_name

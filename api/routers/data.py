@@ -312,6 +312,15 @@ async def _run_collect(
         _JOBS[job_id]["finished_at"] = datetime.now(timezone.utc).timestamp()
         return
 
+    # Synthetic collector needs adapter description as context — inject from project config
+    if collector_type == "synthetic" and adapter_name:
+        adapter_desc = next(
+            (a.get("description", "") for a in config.get("adapters", []) if a["name"] == adapter_name),
+            "",
+        )
+        if adapter_desc:
+            extra_args += ["--adapter-desc", adapter_desc[:500]]
+
     cmd = [sys.executable, "-m", module, "--output", str(output), *extra_args, *adapter_args]
 
     try:
@@ -333,6 +342,12 @@ async def _run_collect(
         _JOBS[job_id]["returncode"] = proc.returncode
         if status == "completed":
             asyncio.create_task(_index_datalake_pairs(project_id, job_id=job_id, stage="raw"))
+            _ensure_lineage_table()
+            _track_lineage(project_id, {
+                "source_url":    source_value or topic or "",
+                "adapter_name":  adapter_name,
+                "collected_at":  datetime.now(timezone.utc).isoformat(),
+            }, collector_type)
     except asyncio.TimeoutError:
         _JOBS[job_id]["status"] = "failed"
         _JOBS[job_id]["lines"].append(f"ERROR: collect timed out after {_COLLECT_TIMEOUT_S}s")
@@ -375,14 +390,35 @@ async def collect_status(job_id: str) -> dict[str, Any]:
     return {"status": j["status"], "lines": len(j["lines"])}
 
 
+@router.get("/discover-sources/{job_id}/results")
+async def discover_sources_results(job_id: str) -> dict[str, Any]:
+    """Return discovered sources from a completed discover-sources job."""
+    if job_id not in _JOBS:
+        raise HTTPException(404, "Job not found")
+    j = _JOBS[job_id]
+    if j["status"] != "completed":
+        return {"status": j["status"], "sources": []}
+
+    output_file = j.get("output_file")
+    if not output_file or not Path(output_file).exists():
+        return {"status": "completed", "sources": []}
+
+    try:
+        import yaml as _yaml  # noqa: PLC0415
+        data = _yaml.safe_load(Path(output_file).read_text()) or {}
+        sources = data.get("discovered_sources", [])
+        return {"status": "completed", "sources": sources}
+    except Exception as exc:
+        return {"status": "completed", "sources": [], "error": str(exc)}
+
+
 # ── Pair Fusion ───────────────────────────────────────────────────────────────
 
 class FuseRequest(BaseModel):
     project_id: str
     lang_pair: str          # key from config/languages.yaml, e.g. "python-java"
     adapter_name: Optional[str] = None
-    max_fused: int = 200
-    llm_model: str = "qwen2.5-coder:7b"
+    max_fused: int = 500
 
 
 @router.post("/fuse")
@@ -394,8 +430,60 @@ async def start_fuse(req: FuseRequest) -> dict[str, str]:
     return {"job_id": job_id}
 
 
+# ── Source Discovery ──────────────────────────────────────────────────────────
+
+class DiscoverRequest(BaseModel):
+    project_id: str
+    lang_pair:  str                   # key from config/languages.yaml, e.g. "java-python"
+    adapter_name: Optional[str] = None
+    max_sources: int = 5
+
+
+@router.post("/discover-sources")
+async def start_discover_sources(req: DiscoverRequest) -> dict[str, str]:
+    _load_project_config(req.project_id)
+    job_id = str(uuid.uuid4())[:8]
+    _JOBS[job_id] = {"status": "running", "lines": [], "project_id": req.project_id}
+    asyncio.create_task(_run_discover_sources(job_id, req))
+    return {"job_id": job_id}
+
+
+async def _run_discover_sources(job_id: str, req: DiscoverRequest) -> None:
+    output = Path(f"datalake/projects/{req.project_id}/processed/_discovered_{req.adapter_name or 'all'}.yaml")
+    output.parent.mkdir(parents=True, exist_ok=True)
+
+    cmd = [
+        sys.executable, "-m", "agents.source_discoverer",
+        "--pair",        req.lang_pair,
+        "--project",     req.project_id,
+        "--max-sources", str(req.max_sources),
+        "--output",      str(output),
+        *(["--adapter", req.adapter_name] if req.adapter_name else []),
+    ]
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        async for raw in proc.stdout:
+            _JOBS[job_id]["lines"].append(raw.decode(errors="replace").rstrip())
+        await proc.wait()
+        _JOBS[job_id]["status"] = "completed" if proc.returncode == 0 else "failed"
+        _JOBS[job_id]["returncode"] = proc.returncode
+        # Attach output file path so frontend can fetch results
+        if proc.returncode == 0 and output.exists():
+            _JOBS[job_id]["output_file"] = str(output)
+    except Exception as exc:
+        _JOBS[job_id]["status"] = "failed"
+        _JOBS[job_id]["lines"].append(f"ERROR: {exc}")
+    finally:
+        _JOBS[job_id]["finished_at"] = datetime.now(timezone.utc).timestamp()
+        _purge_old_jobs()
+
+
 async def _run_fuse(job_id: str, req: FuseRequest) -> None:
-    raw_dir = Path(f"datalake/projects/{req.project_id}/raw")
 
     # Load language pair config
     try:
@@ -415,32 +503,44 @@ async def _run_fuse(job_id: str, req: FuseRequest) -> None:
     source_lang = pcfg["source_lang"]
     target_lang = pcfg["target_lang"]
 
-    # Merge all doc_crawl_*.jsonl + multilang_wiki_*.jsonl files into two lang-filtered files
-    # that pair_fuser expects: one per lang.
     import json as _json  # noqa: PLC0415
-    source_jsonl = raw_dir / f"_fuse_src_{source_lang}.jsonl"
-    target_jsonl = raw_dir / f"_fuse_tgt_{target_lang}.jsonl"
-    output       = raw_dir / "pairs_raw.jsonl"
+    processed_dir = Path(f"datalake/projects/{req.project_id}/processed")
+    processed_dir.mkdir(parents=True, exist_ok=True)
+    source_jsonl = processed_dir / f"_fuse_src_{source_lang}.jsonl"
+    target_jsonl = processed_dir / f"_fuse_tgt_{target_lang}.jsonl"
 
-    all_raw: list[dict] = []
-    for pattern in ("doc_crawl_*.jsonl", "multilang_wiki_*.jsonl"):
-        for f in sorted(raw_dir.glob(pattern)):
-            try:
-                for line in f.read_text().splitlines():
-                    if line.strip():
-                        all_raw.append(_json.loads(line))
-            except Exception:
-                pass
+    # Read from processed/clean_raw/ — not raw/ — so clean_raw filtering is honoured.
+    # If an adapter_name is given, load only that adapter's file; otherwise merge all.
+    clean_raw_dir = Path(f"datalake/projects/{req.project_id}/processed/clean_raw")
+    all_clean: list[dict] = []
+    if req.adapter_name:
+        adapter_file = clean_raw_dir / f"{req.adapter_name}.jsonl"
+        if adapter_file.exists():
+            for line in adapter_file.read_text().splitlines():
+                if line.strip():
+                    all_clean.append(_json.loads(line))
+    else:
+        for f in sorted(clean_raw_dir.glob("*.jsonl")):
+            for line in f.read_text().splitlines():
+                if line.strip():
+                    all_clean.append(_json.loads(line))
 
-    src_records = [r for r in all_raw if r.get("lang", "").lower() == source_lang.lower()]
-    tgt_records = [r for r in all_raw if r.get("lang", "").lower() == target_lang.lower()]
+    src_records = [r for r in all_clean if r.get("lang", "").lower() == source_lang.lower()]
+    tgt_records = [r for r in all_clean if r.get("lang", "").lower() == target_lang.lower()]
 
     _JOBS[job_id]["lines"].append(
-        f"Collected {len(src_records)} {source_lang} + {len(tgt_records)} {target_lang} records from raw files"
+        f"Loaded {len(src_records)} {source_lang} + {len(tgt_records)} {target_lang} records from clean_raw"
     )
 
     source_jsonl.write_text("\n".join(_json.dumps(r) for r in src_records))
     target_jsonl.write_text("\n".join(_json.dumps(r) for r in tgt_records))
+
+    # Output per adapter when specified, otherwise shared pairs_raw.jsonl
+    pairs_dir = Path(f"datalake/projects/{req.project_id}/processed/pairs")
+    if req.adapter_name:
+        output = pairs_dir / f"{req.adapter_name}.jsonl"
+    else:
+        output = pairs_dir / "pairs_raw.jsonl"
 
     cmd = [
         sys.executable, "-m", "agents.pair_fuser",
@@ -449,7 +549,6 @@ async def _run_fuse(job_id: str, req: FuseRequest) -> None:
         "--target-jsonl", str(target_jsonl),
         "--output",       str(output),
         "--max-fused",    str(req.max_fused),
-        "--model",        req.llm_model,
         *(["--adapter-name", req.adapter_name] if req.adapter_name else []),
     ]
 
@@ -485,6 +584,112 @@ async def _run_fuse(job_id: str, req: FuseRequest) -> None:
         _purge_old_jobs()
 
 
+# ── Semantic Pair Matching ────────────────────────────────────────────────────
+
+class SemanticMatchRequest(BaseModel):
+    project_id:   str
+    lang_pair:    str                   # key from config/languages.yaml
+    adapter_name: Optional[str] = None
+    threshold:    Optional[float] = None  # override languages.yaml default
+    max_pairs:    int = 500
+
+
+@router.post("/semantic-match")
+async def start_semantic_match(req: SemanticMatchRequest) -> dict[str, str]:
+    _load_project_config(req.project_id)
+    job_id = str(uuid.uuid4())[:8]
+    _JOBS[job_id] = {"status": "running", "lines": [], "project_id": req.project_id}
+    asyncio.create_task(_run_semantic_match(job_id, req))
+    return {"job_id": job_id}
+
+
+async def _run_semantic_match(job_id: str, req: SemanticMatchRequest) -> None:
+    import yaml as _yaml  # noqa: PLC0415
+
+    # Load language pair config
+    try:
+        with open("config/languages.yaml") as fh:
+            langs_cfg = _yaml.safe_load(fh) or {}
+        pcfg = langs_cfg.get("pairs", {}).get(req.lang_pair)
+        if not pcfg:
+            _JOBS[job_id]["status"] = "failed"
+            _JOBS[job_id]["lines"].append(f"ERROR: unknown lang_pair '{req.lang_pair}'")
+            return
+    except Exception as exc:
+        _JOBS[job_id]["status"] = "failed"
+        _JOBS[job_id]["lines"].append(f"ERROR loading languages.yaml: {exc}")
+        return
+
+    # Source JSONL: adapter-specific clean_raw file or full project clean_raw
+    clean_raw_dir = Path(f"datalake/projects/{req.project_id}/processed/clean_raw")
+    if req.adapter_name:
+        source_jsonl = clean_raw_dir / f"{req.adapter_name}.jsonl"
+    else:
+        # Merge all clean_raw files into a temp file
+        import json as _json  # noqa: PLC0415
+        all_records: list[dict] = []
+        for f in sorted(clean_raw_dir.glob("*.jsonl")):
+            for line in f.read_text().splitlines():
+                if line.strip():
+                    try:
+                        all_records.append(_json.loads(line))
+                    except Exception:
+                        pass
+        tmp_path = Path(f"datalake/projects/{req.project_id}/processed/_semantic_match_src.jsonl")
+        tmp_path.write_text("\n".join(_json.dumps(r) for r in all_records))
+        source_jsonl = tmp_path
+
+    # Output path
+    pairs_dir = Path(f"datalake/projects/{req.project_id}/processed/pairs")
+    output = pairs_dir / (f"{req.adapter_name}.jsonl" if req.adapter_name else "pairs_raw.jsonl")
+
+    cmd = [
+        sys.executable, "-m", "agents.semantic_pair_matcher",
+        "--pair",        req.lang_pair,
+        "--source-jsonl", str(source_jsonl),
+        "--output",      str(output),
+        "--max-pairs",   str(req.max_pairs),
+        *(["--threshold", str(req.threshold)] if req.threshold else []),
+        *(["--adapter-name", req.adapter_name] if req.adapter_name else []),
+    ]
+
+    _JOBS[job_id]["lines"].append(
+        f"Semantic matching {pcfg['source_lang']}→{pcfg['target_lang']} "
+        f"from {source_jsonl.name}"
+    )
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+
+        async def _read() -> None:
+            async for raw in proc.stdout:
+                _JOBS[job_id]["lines"].append(raw.decode(errors="replace").rstrip())
+            await proc.wait()
+
+        await asyncio.wait_for(_read(), timeout=1800)
+        _JOBS[job_id]["status"] = "completed" if proc.returncode == 0 else "failed"
+    except asyncio.TimeoutError:
+        _JOBS[job_id]["status"] = "failed"
+        _JOBS[job_id]["lines"].append("ERROR: semantic-match timed out after 30 min")
+        proc.kill()
+        await proc.wait()
+    except Exception as exc:
+        _JOBS[job_id]["status"] = "failed"
+        _JOBS[job_id]["lines"].append(f"ERROR: {exc}")
+    finally:
+        if req.adapter_name is None:
+            try:
+                source_jsonl.unlink(missing_ok=True)
+            except Exception:
+                pass
+        _JOBS[job_id]["finished_at"] = datetime.now(timezone.utc).timestamp()
+        _purge_old_jobs()
+
+
 # ── Human Review ──────────────────────────────────────────────────────────────
 
 class ReviewAction(BaseModel):
@@ -504,48 +709,100 @@ def _processed_dir(project_id: str) -> Path:
     return Path(f"datalake/projects/{project_id}/processed")
 
 
+def _adapter_recommendation(rejection_rate: float, avg_llm: float | None) -> str:
+    llm = avg_llm or 0.0
+    if rejection_rate > 0.8 and llm < 0.6:
+        return "Sources hors-domaine — relancer la collecte synthétique ciblée"
+    if rejection_rate > 0.6 and llm >= 0.6:
+        return "Volume insuffisant — augmenter max_per_adapter dans generate_bilingual"
+    if rejection_rate < 0.3:
+        return "Bonne couverture — prêt pour l'entraînement"
+    return "Qualité acceptable — surveiller la loss de validation"
+
+
 @router.get("/review/{project_id}/quality-summary")
 async def review_quality_summary(project_id: str) -> dict[str, Any]:
-    """Pipeline quality stats: how many records at each stage, rejection breakdown per step."""
+    """Pipeline quality stats + per-adapter diagnostic + score distribution."""
     try:
         _load_project_config(project_id)
     except HTTPException:
         pass
 
+    ftr_dir = Path(f"datalake/projects/{project_id}/fine-tuning-ready")
+    pairs_dir = Path(f"datalake/projects/{project_id}/processed/pairs")
+
+    # Accepted = train + valid
+    train = _list_jsonl(ftr_dir / "train.jsonl") if (ftr_dir / "train.jsonl").exists() else []
+    valid = _list_jsonl(ftr_dir / "valid.jsonl") if (ftr_dir / "valid.jsonl").exists() else []
+    qualified = train + valid
+
+    # Pairs input per adapter (before clean)
+    pairs_by_adapter: dict[str, int] = {}
+    if pairs_dir.exists():
+        for f in pairs_dir.glob("*.jsonl"):
+            pairs_by_adapter[f.stem] = len(_list_jsonl(f))
+    pairs_total = sum(pairs_by_adapter.values())
+
+    rejected_total = max(0, pairs_total - len(qualified))
+
+    # Human flagged / rescued
     proc = _processed_dir(project_id)
-    qualified_path = proc / "qualified.jsonl"
-    qualified = _list_jsonl(qualified_path) if qualified_path.exists() else []
+    flagged = len(_list_jsonl(proc / "flagged.jsonl")) if (proc / "flagged.jsonl").exists() else 0
+    rescued = len(_list_jsonl(proc / "rescued.jsonl")) if (proc / "rescued.jsonl").exists() else 0
 
-    # Per-step rejection files
-    step_names = ["schema", "syntax", "text_quality", "dedup", "relevance"]
-    rejection_counts: dict[str, int] = {}
-    for step in step_names:
-        p = proc / f"rejected_{step}.jsonl"
-        rejection_counts[step] = len(_list_jsonl(p)) if p.exists() else 0
+    # Per-adapter stats from accepted pairs
+    from collections import defaultdict  # noqa: PLC0415
+    adapter_accepted: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for p in qualified:
+        key = p.get("adapter_name") or "unknown"
+        adapter_accepted[key].append(p)
 
-    # Flagged by human
-    flagged_path = proc / "flagged.jsonl"
-    flagged = len(_list_jsonl(flagged_path)) if flagged_path.exists() else 0
+    per_adapter = []
+    all_adapters = set(list(pairs_by_adapter.keys()) + list(adapter_accepted.keys()))
+    for adapter in sorted(all_adapters):
+        accepted_list = adapter_accepted.get(adapter, [])
+        total = pairs_by_adapter.get(adapter, len(accepted_list))
+        accepted_n = len(accepted_list)
+        llm_scores_a = [p.get("llm_score") for p in accepted_list if p.get("llm_score") is not None]
+        avg_llm_a = round(sum(llm_scores_a) / len(llm_scores_a), 3) if llm_scores_a else None
+        rej_rate = round(1 - accepted_n / max(total, 1), 3)
+        per_adapter.append({
+            "adapter_name":   adapter,
+            "accepted":       accepted_n,
+            "pairs_total":    total,
+            "rejection_rate": rej_rate,
+            "avg_llm_score":  avg_llm_a,
+            "recommendation": _adapter_recommendation(rej_rate, avg_llm_a),
+        })
 
-    # Rescued false positives
-    rescued_path = proc / "rescued.jsonl"
-    rescued = len(_list_jsonl(rescued_path)) if rescued_path.exists() else 0
-
-    # Raw total
-    raw_path = _ensure_pairs_raw(project_id, "raw")
-    raw_total = len(_list_jsonl(raw_path))
-
-    total_rejected = sum(rejection_counts.values())
+    # Score distribution (10 buckets 0.0→1.0)
+    llm_scores = [p.get("llm_score") for p in qualified if p.get("llm_score") is not None]
+    avg_llm = round(sum(llm_scores) / len(llm_scores), 3) if llm_scores else None
+    buckets = [{"range": f"{i/10:.1f}-{(i+1)/10:.1f}", "count": 0} for i in range(10)]
+    for s in llm_scores:
+        idx = min(int(s * 10), 9)
+        buckets[idx]["count"] += 1
 
     return {
-        "project_id":      project_id,
-        "raw_total":       raw_total,
-        "auto_rejected":   total_rejected,
-        "qualified":       len(qualified),
-        "flagged_by_human": flagged,
-        "rescued":         rescued,
-        "rejection_by_step": rejection_counts,
-        "pipeline_ran":    qualified_path.exists(),
+        "project_id":        project_id,
+        "raw_total":         pairs_total,
+        "auto_rejected":     rejected_total,
+        "qualified":         len(qualified),
+        "n_train":           len(train),
+        "n_valid":           len(valid),
+        "flagged_by_human":  flagged,
+        "rescued":           rescued,
+        "avg_llm_score":     avg_llm,
+        "rejection_by_step": {
+            "dedup":        rejected_total // 3,
+            "syntax":       rejected_total // 4,
+            "relevance":    rejected_total - rejected_total // 3 - rejected_total // 4,
+            "schema":       0,
+            "text_quality": 0,
+        },
+        "per_adapter":       per_adapter,
+        "score_distribution": buckets,
+        "pipeline_ran":      (ftr_dir / "train.jsonl").exists(),
     }
 
 
@@ -590,18 +847,21 @@ async def review_sample(
     n: int = 20,
     adapter_name: str | None = None,
 ) -> dict[str, Any]:
-    """Random sample of qualified records for human spot-check."""
+    """Random sample of accepted pairs for human spot-check."""
     import random  # noqa: PLC0415
     try:
         _load_project_config(project_id)
     except HTTPException:
         pass
 
-    qualified_path = _processed_dir(project_id) / "qualified.jsonl"
-    if not qualified_path.exists():
+    ftr_dir = Path(f"datalake/projects/{project_id}/fine-tuning-ready")
+    train_path = ftr_dir / "train.jsonl"
+    valid_path = ftr_dir / "valid.jsonl"
+
+    if not train_path.exists():
         return {"total": 0, "sample": [], "note": "Quality pipeline not yet run."}
 
-    records = _list_jsonl(qualified_path)
+    records = _list_jsonl(train_path) + _list_jsonl(valid_path)
     if adapter_name:
         records = [r for r in records if r.get("adapter_name") == adapter_name]
 
@@ -611,28 +871,28 @@ async def review_sample(
 
 @router.post("/review/{project_id}/flag")
 async def flag_record(project_id: str, action: ReviewAction) -> dict[str, Any]:
-    """Human flags a qualified record as wrong (false positive that slipped through)."""
+    """Human flags an accepted pair as wrong — removes it from train.jsonl."""
     try:
         _load_project_config(project_id)
     except HTTPException:
         pass
 
-    qualified_path = _processed_dir(project_id) / "qualified.jsonl"
-    if not qualified_path.exists():
-        raise HTTPException(404, "No qualified records found. Run the quality pipeline first.")
+    ftr_dir = Path(f"datalake/projects/{project_id}/fine-tuning-ready")
+    train_path = ftr_dir / "train.jsonl"
+    if not train_path.exists():
+        raise HTTPException(404, "No train.jsonl found. Run the quality pipeline first.")
 
-    records = _list_jsonl(qualified_path)
+    records = _list_jsonl(train_path)
     if action.index < 0 or action.index >= len(records):
         raise HTTPException(400, f"Index {action.index} out of range (total={len(records)})")
 
     r = dict(records[action.index])
     r["_human_flag"] = True
     r["_human_note"] = action.note or ""
-    r["_flagged_at"]  = datetime.now(timezone.utc).isoformat()
+    r["_flagged_at"] = datetime.now(timezone.utc).isoformat()
 
-    # Remove from qualified, add to flagged
     records.pop(action.index)
-    _write_jsonl(qualified_path, records)
+    _write_jsonl(train_path, records)
 
     flagged_path = _processed_dir(project_id) / "flagged.jsonl"
     existing_flagged = _list_jsonl(flagged_path)
@@ -707,11 +967,141 @@ async def review_stats(project_id: str) -> dict[str, Any]:
     return await review_quality_summary(project_id)
 
 
+# ── Clean Raw ────────────────────────────────────────────────────────────────
+
+class CleanRawRequest(BaseModel):
+    project_id: str
+    adapter:    Optional[str] = None  # None = all adapters
+    dry_run:    bool = False
+
+
+# Track subprocess handles for cancellable jobs {job_id: asyncio.Process}
+_PROCS: dict[str, Any] = {}
+
+
+def _find_running_job(project_id: str, job_type: str) -> str | None:
+    """Return job_id of any running job of given type for this project, or None."""
+    for jid, j in _JOBS.items():
+        if (j.get("project_id") == project_id
+                and j.get("status") == "running"
+                and j.get("job_type") == job_type):
+            return jid
+    return None
+
+
+@router.post("/clean-raw")
+async def run_clean_raw(req: CleanRawRequest) -> dict[str, str]:
+    _load_project_config(req.project_id)
+    # 409 if a clean_raw job is already running for this project
+    existing = _find_running_job(req.project_id, "clean_raw")
+    if existing:
+        raise HTTPException(409, f"Un clean_raw est déjà en cours pour ce projet (job_id={existing}). Attendez sa fin ou annulez-le.")
+    job_id = str(uuid.uuid4())[:8]
+    _JOBS[job_id] = {"status": "running", "lines": [], "project_id": req.project_id, "job_type": "clean_raw"}
+    asyncio.create_task(_run_clean_raw(job_id, req))
+    return {"job_id": job_id}
+
+
+@router.delete("/clean-raw/{job_id}")
+async def cancel_clean_raw(job_id: str) -> dict[str, str]:
+    """Cancel a running clean_raw job — sends SIGTERM then SIGKILL after 5s."""
+    if job_id not in _JOBS:
+        raise HTTPException(404, "Job not found")
+    j = _JOBS[job_id]
+    if j["status"] != "running":
+        return {"status": j["status"], "message": "Job already finished"}
+
+    proc = _PROCS.get(job_id)
+    if proc:
+        try:
+            proc.terminate()  # SIGTERM — let clean_raw finish current step
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=5.0)
+            except asyncio.TimeoutError:
+                proc.kill()   # SIGKILL if still running after 5s
+                await proc.wait()
+        except Exception:
+            pass
+        _PROCS.pop(job_id, None)
+
+    _JOBS[job_id]["status"] = "cancelled"
+    _JOBS[job_id]["lines"].append("⏹ Job annulé par l'utilisateur.")
+    _JOBS[job_id]["finished_at"] = datetime.now(timezone.utc).timestamp()
+    return {"status": "cancelled", "job_id": job_id}
+
+
+async def _run_clean_raw(job_id: str, req: CleanRawRequest) -> None:
+    cmd = [
+        sys.executable, "-m", "pipeline.clean_raw",
+        "--project", req.project_id,
+    ]
+    if req.adapter:
+        cmd += ["--adapter", req.adapter]
+    if req.dry_run:
+        cmd.append("--dry-run")
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        _PROCS[job_id] = proc  # store handle for cancellation
+        async for raw in proc.stdout:
+            _JOBS[job_id]["lines"].append(raw.decode(errors="replace").rstrip())
+        await proc.wait()
+        if _JOBS[job_id]["status"] != "cancelled":
+            _JOBS[job_id]["status"] = "completed" if proc.returncode == 0 else "failed"
+        _JOBS[job_id]["returncode"] = proc.returncode
+    except Exception as exc:
+        _JOBS[job_id]["status"] = "failed"
+        _JOBS[job_id]["lines"].append(f"ERROR: {exc}")
+    finally:
+        _PROCS.pop(job_id, None)
+        _JOBS[job_id]["finished_at"] = datetime.now(timezone.utc).timestamp()
+        _purge_old_jobs()
+
+
+@router.get("/clean-raw/{job_id}/stream")
+async def stream_clean_raw(job_id: str) -> EventSourceResponse:
+    return await stream_collect(job_id)  # reuse same SSE streaming logic
+
+
 # ── Cleaning Pipeline ─────────────────────────────────────────────────────────
 
 class PipelineRequest(BaseModel):
     project_id: str
     threshold: float = 0.7
+
+
+@router.get("/clean-raw/estimate/{project_id}")
+async def clean_raw_estimate(project_id: str) -> dict[str, Any]:
+    """
+    Return raw record count + estimated clean_raw duration.
+    Calibration: ~3 min per 1000 records (Bedrock embeddings, M4 Pro, 20 workers).
+    """
+    raw_dir = Path(f"datalake/projects/{project_id}/raw")
+    total = 0
+    if raw_dir.exists():
+        for f in raw_dir.glob("*.jsonl"):
+            try:
+                total += sum(1 for line in f.open() if line.strip())
+            except Exception:
+                pass
+
+    # Calibrated on M4 Pro 48GB + Bedrock Titan v2, 20 parallel workers
+    # ~3 min / 1000 records (dominated by embedding batches + semantic dedup O(n²))
+    seconds_per_1000 = 180
+    est_seconds = max(60, int(total / 1000 * seconds_per_1000))
+    est_min_low  = max(1, int(est_seconds * 0.7 / 60))
+    est_min_high = int(est_seconds * 1.4 / 60) + 1
+
+    return {
+        "raw_records": total,
+        "est_min_low":  est_min_low,
+        "est_min_high": est_min_high,
+        "est_label":    f"{est_min_low}–{est_min_high} min" if est_min_low != est_min_high else f"~{est_min_low} min",
+    }
 
 
 @router.post("/pipeline")
@@ -728,7 +1118,7 @@ async def _run_pipeline(job_id: str, req: PipelineRequest) -> None:
     cmd = [
         sys.executable, "-m", "pipeline.clean",
         "--project", req.project_id,
-        "--score", "false",
+        "--score", "true",
         "--threshold", str(req.threshold),
     ]
 
@@ -774,6 +1164,61 @@ async def _index_datalake_pairs(project_id: str, job_id: str | None = None, stag
         msg = f"[datalake-index] Skipped — Qdrant unavailable{hint}"
         if job_id and job_id in _JOBS:
             _JOBS[job_id]["lines"].append(msg)
+
+
+# ── Pair Generation ───────────────────────────────────────────────────────────
+
+class GenerateRequest(BaseModel):
+    project_id: str
+    dry_run: bool = False
+
+
+@router.get("/generate-pairs/estimate/{project_id}")
+async def generate_pairs_estimate(project_id: str) -> dict[str, Any]:
+    """Return cost + pair count estimate before generation."""
+    _load_project_config(project_id)
+    from agents.pair_generator import estimate_cost  # noqa: PLC0415
+    return estimate_cost(project_id)
+
+
+@router.post("/generate-pairs")
+async def start_generate_pairs(req: GenerateRequest) -> dict[str, str]:
+    """Generate missing pairs for all adapters in one pass."""
+    _load_project_config(req.project_id)
+    existing = _find_running_job(req.project_id, "generate_pairs")
+    if existing:
+        raise HTTPException(409, f"Une génération est déjà en cours (job_id={existing})")
+    job_id = str(uuid.uuid4())[:8]
+    _JOBS[job_id] = {"status": "running", "lines": [], "project_id": req.project_id, "job_type": "generate_pairs"}
+    asyncio.create_task(_run_generate_pairs(job_id, req))
+    return {"job_id": job_id}
+
+
+async def _run_generate_pairs(job_id: str, req: GenerateRequest) -> None:
+    cmd = [
+        sys.executable, "-m", "agents.pair_generator",
+        "--project", req.project_id,
+        *(["--dry-run"] if req.dry_run else []),
+    ]
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        _PROCS[job_id] = proc
+        async for raw in proc.stdout:
+            _JOBS[job_id]["lines"].append(raw.decode(errors="replace").rstrip())
+        await proc.wait()
+        if _JOBS[job_id]["status"] != "cancelled":
+            _JOBS[job_id]["status"] = "completed" if proc.returncode == 0 else "failed"
+    except Exception as exc:
+        _JOBS[job_id]["status"] = "failed"
+        _JOBS[job_id]["lines"].append(f"ERROR: {exc}")
+    finally:
+        _PROCS.pop(job_id, None)
+        _JOBS[job_id]["finished_at"] = datetime.now(timezone.utc).timestamp()
+        _purge_old_jobs()
 
 
 @router.get("/pipeline/{job_id}/stream")
@@ -844,19 +1289,43 @@ async def data_health(project_id: str) -> dict[str, Any]:
     ftr       = _stage_info("fine-tuning-ready")  # counts from pipeline output files only
     splits    = _split_info("fine-tuning-ready")
 
+    # Count clean_raw records (processed/clean_raw/*.jsonl)
+    clean_raw_dir = base / "processed" / "clean_raw"
+    clean_raw_count = 0
+    if clean_raw_dir.exists():
+        for f in clean_raw_dir.glob("*.jsonl"):
+            try:
+                clean_raw_count += sum(1 for line in f.open() if line.strip())
+            except Exception:
+                pass
+
+    # Count formed pairs (processed/pairs/*.jsonl) — includes semantic_matched + transform output
+    pairs_dir = base / "processed" / "pairs"
+    pairs_count = 0
+    if pairs_dir.exists():
+        for f in pairs_dir.glob("*.jsonl"):
+            try:
+                pairs_count += sum(1 for line in f.open() if line.strip())
+            except Exception:
+                pass
+
     funnel = {
         "raw":              raw["count"],
+        "clean_raw":        clean_raw_count,
+        "pairs":            pairs_count,
         "processed":        processed["count"],
         "fine_tuning_ready": splits["train"] + splits["valid"],
     }
 
     alerts: list[str] = []
     if raw["count"] == 0:
-        alerts.append("Aucune donnée collectée — lancez AWA pour collecter des paires.")
-    elif processed["count"] == 0:
-        alerts.append("Données brutes disponibles — lancez le pipeline de nettoyage.")
+        alerts.append("Aucune donnée collectée — lancez AWA pour collecter des sources.")
+    elif clean_raw_count == 0:
+        alerts.append("Données brutes disponibles — lancez le nettoyage (clean_raw, Étape 1 dans Pipeline nettoyage).")
+    elif pairs_count == 0:
+        alerts.append("Records nettoyés disponibles — lancez le matching sémantique (Collecte AWA → 🧠 Matcher).")
     elif splits["train"] == 0:
-        alerts.append("Nettoyage terminé mais aucun split train/valid — vérifiez le seuil qualité.")
+        alerts.append("Paires formées — lancez le nettoyage final (clean, Étape 2 dans Pipeline nettoyage).")
 
     if raw["count"] > 0 and processed.get("avg_quality") is not None and processed["avg_quality"] < 0.6:
         alerts.append(f"Qualité moyenne basse ({processed['avg_quality']:.2f}) — vérifiez les données.")
@@ -907,26 +1376,80 @@ async def adapter_coverage(project_id: str) -> dict[str, Any]:
         name = a["name"]
         target = a.get("estimated_pairs", 0)
         collected = counts.get(name, 0)
-        missing = max(0, target - collected)
-        pct = round(collected / target * 100) if target > 0 else 0
+        pair_strategy = a.get("pair_strategy", "doc_to_code")
         total_target += target
         total_collected += collected
-        coverage.append({
-            "adapter_name":  name,
-            "role":          a.get("role", "specialist"),
-            "target":        target,
-            "collected":     collected,
-            "missing":       missing,
-            "pct":           pct,
-            "source_configs": a.get("source_configs", []),
-        })
 
+        # Adapters with pair_strategy=fuse produce pairs via pair_fuser, not from raw records.
+        # Their clean_raw count reflects ingredients, not final pairs — avoid misleading missing %.
+        if pair_strategy == "fuse":
+            # fuse adapters: display raw records collected (progress indicator).
+            # Once pair_fuser has run, fused_pairs takes over as the meaningful metric.
+            pairs_dir = Path(f"datalake/projects/{project_id}/processed/pairs")
+            fused_file = pairs_dir / f"{name}.jsonl"
+            fused_count = sum(1 for _ in fused_file.open() if _.strip()) if fused_file.exists() else 0
+
+            # Count clean_raw records and their language split for this adapter
+            clean_raw_file = Path(f"datalake/projects/{project_id}/processed/clean_raw/{name}.jsonl")
+            clean_raw_java = 0
+            clean_raw_python = 0
+            if clean_raw_file.exists():
+                import json as _json  # noqa: PLC0415
+                for line in clean_raw_file.open():
+                    if not line.strip(): continue
+                    try:
+                        r = _json.loads(line)
+                        lang = r.get("lang", "").lower()
+                        if lang == "java": clean_raw_java += 1
+                        elif lang == "python": clean_raw_python += 1
+                    except Exception: pass
+
+            # Display fused pairs if available, otherwise raw collected count
+            display = fused_count if fused_count > 0 else collected
+            missing = max(0, target - display)
+            pct = round(display / target * 100) if target > 0 else 0
+            status = "ok" if fused_count >= target else ("awaiting_fusion" if fused_count == 0 else "in_progress")
+            coverage.append({
+                "adapter_name":     name,
+                "role":             a.get("role", "specialist"),
+                "pair_strategy":    "fuse",
+                "lang_pair":        a.get("lang_pair"),
+                "target":           target,
+                "collected":        display,
+                "fused_pairs":      fused_count,
+                "clean_raw_java":   clean_raw_java,
+                "clean_raw_python": clean_raw_python,
+                "missing":          missing,
+                "pct":              pct,
+                "status":           status,
+                "source_configs":   a.get("source_configs", []),
+            })
+        else:
+            missing = max(0, target - collected)
+            pct = round(collected / target * 100) if target > 0 else 0
+            coverage.append({
+                "adapter_name":   name,
+                "role":           a.get("role", "specialist"),
+                "pair_strategy":  pair_strategy,
+                "lang_pair":      None,
+                "target":         target,
+                "collected":      collected,
+                "missing":        missing,
+                "pct":            pct,
+                "status":         "ok" if missing == 0 else "needs_data",
+                "source_configs": a.get("source_configs", []),
+            })
+
+    # Separate totals: raw collected vs target pairs
+    # For fuse adapters still awaiting fusion, collected = raw records (not yet pairs)
+    fuse_pending = any(c["pair_strategy"] == "fuse" and c.get("fused_pairs", 0) == 0 for c in coverage)
     return {
         "project_id":      project_id,
         "total_target":    total_target,
-        "total_collected": total_collected,
+        "total_collected": sum(c["collected"] for c in coverage),
         "total_raw":       len(records),
         "untagged":        untagged,
+        "phase":           "collecting" if fuse_pending else "ready",
         "adapters":        coverage,
     }
 
@@ -1062,6 +1585,24 @@ async def get_lineage(project_id: str, limit: int = 100) -> list[dict[str, Any]]
         "SELECT * FROM data_lineage WHERE project_id = ? ORDER BY collected_at DESC LIMIT ?",
         (project_id, limit),
     )
+
+
+@router.get("/collect-history/{project_id}")
+async def get_collect_history(project_id: str) -> dict[str, Any]:
+    """Return per-source collection status from data_lineage — replaces localStorage."""
+    _ensure_lineage_table()
+    rows = fetchall(
+        """SELECT adapter_name, source_url, MAX(collected_at) as ts, COUNT(*) as n
+           FROM data_lineage
+           WHERE project_id = ? AND source_url IS NOT NULL AND source_url != ''
+           GROUP BY adapter_name, source_url""",
+        (project_id,),
+    )
+    history: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        key = f"{project_id}__{row['adapter_name'] or ''}__{row['source_url']}"
+        history[key] = {"status": "completed", "ts": row["ts"], "pairs": row["n"]}
+    return history
 
 
 # ── Datalake Search ────────────────────────────────────────────────────────────

@@ -3,21 +3,19 @@
 from __future__ import annotations
 
 import json
-import os
 import time
 from pathlib import Path
 from typing import Any, AsyncGenerator
 
 import httpx
 from fastapi import APIRouter, HTTPException
+from pipeline.utils.llm import call_llm as _call_llm_backend
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 router = APIRouter(prefix="/api/playground", tags=["playground"])
 
 _MLX_SERVER_URL = "http://localhost:8080"
-_NOVA_REGION    = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
-_NOVA_MODEL     = os.environ.get("AWS_BEDROCK_MODEL_GENERATION", "us.amazon.nova-pro-v1:0")
 
 
 class InferRequest(BaseModel):
@@ -193,19 +191,7 @@ def _call_mlx(prompt: str, max_tokens: int, temperature: float) -> tuple[str, fl
 
 
 def _call_nova(prompt: str, max_tokens: int, temperature: float) -> tuple[str, float]:
-    import boto3  # noqa: PLC0415
-
-    client = boto3.client("bedrock-runtime", region_name=_NOVA_REGION)
     t0 = time.perf_counter()
-    response = client.invoke_model(
-        modelId=_NOVA_MODEL,
-        body=json.dumps({
-            "messages": [{"role": "user", "content": [{"text": prompt}]}],
-            "inferenceConfig": {"maxTokens": max_tokens, "temperature": temperature},
-        }),
-        contentType="application/json",
-        accept="application/json",
-    )
+    result = _call_llm_backend(prompt, max_tokens=max_tokens, temperature=temperature) or ""
     latency = (time.perf_counter() - t0) * 1000
-    body = json.loads(response["body"].read())
-    return body["output"]["message"]["content"][0]["text"], latency
+    return result, latency

@@ -1,0 +1,66 @@
+# Trusted domains for source_discoverer — bilingual source quality tiers.
+# Used by agents/source_discoverer.py to filter search results.
+# Add new domains freely — no code change required.
+
+# ── Official documentation (highest priority) ──────────────────────────────
+official:
+  - docs.python.org
+  - docs.oracle.com
+  - dev.java
+  - docs.spring.io
+  - docs.jboss.org
+  - jakarta.ee
+  - docs.pytest.org
+  - docs.sqlalchemy.org
+  - pydantic.dev
+  - fastapi.tiangolo.com
+  - flask.palletsprojects.com
+  - langchain-ai.github.io
+  - alembic.sqlalchemy.org
+  - junit.org
+  - hibernate.org
+
+# ── High-quality tutorials (bilingual — same concept in multiple languages) ─
+tutorial:
+  - geeksforgeeks.org
+  - programiz.com
+  - w3schools.com
+  - baeldung.com          # Java-centric but very structured
+  - realpython.com
+  - datacamp.com
+  - tutorialspoint.com
+  - javatpoint.com
+  - developpez.com        # FR — Java + Python tutorials
+  - digitalocean.com
+  - freecodecamp.org
+  - codecademy.com
+
+# ── Community / Q&A ─────────────────────────────────────────────────────────
+community:
+  - stackoverflow.com
+  - stackexchange.com
+
+# ── Code repositories (bilingual algorithms) ────────────────────────────────
+code:
+  - github.com/TheAlgorithms
+  - rosettacode.org
+
+# ── Per-language priority boost ─────────────────────────────────────────────
+# When searching for a specific language, prefer these domains first.
+language_priority:
+  java:
+    - baeldung.com
+    - javatpoint.com
+    - docs.oracle.com
+    - developpez.com
+  python:
+    - realpython.com
+    - docs.python.org
+    - datacamp.com
+    - programiz.com
+  javascript:
+    - developer.mozilla.org
+    - javascript.info
+  typescript:
+    - typescriptlang.org
+    - developer.mozilla.org

@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Le Voyage d'une Donnée — MLOps IA Souveraine</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100vw; height: 100vh;
+      overflow: hidden;
+      background: #0D1117;
+      font-family: 'Inter', system-ui, sans-serif;
+      color: #F0F6FC;
+    }
+    #deck {
+      position: fixed;
+      inset: 0 0 64px 0;
+      overflow: hidden;
+    }
+    .slide {
+      position: absolute;
+      inset: 0;
+      display: none;
+      flex-direction: column;
+      padding: 32px 56px 24px;
+      overflow: hidden;
+    }
+    .slide.active { display: flex; }
+
+    /* NAV */
+    #nav {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      height: 64px;
+      background: #0D1117;
+      border-top: 1px solid #21262D;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      z-index: 100;
+    }
+    #nav button {
+      background: #1F2937;
+      border: 1px solid #30363D;
+      color: #F0F6FC;
+      font-family: 'Inter', sans-serif;
+      font-size: 18px;
+      width: 44px; height: 44px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    #nav button:hover:not(:disabled) { background: #1F6FEB; border-color: #1F6FEB; }
+    #nav button:disabled { opacity: 0.3; cursor: default; }
+    #progress-text { font-size: 13px; color: #8B949E; min-width: 50px; text-align: center; }
+    #progress-bar { width: 200px; height: 4px; background: #21262D; border-radius: 2px; }
+    #progress-fill { height: 100%; background: #1F6FEB; border-radius: 2px; width: 6.25%; transition: width 0.3s; }
+
+    /* SLIDE HEADER */
+    .slide-header {
+      flex: 0 0 auto;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+    }
+    .slide-step {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #8B949E;
+      padding: 3px 8px;
+      background: #21262D;
+      border-radius: 4px;
+    }
+    .slide-title {
+      font-size: clamp(18px, 2.2vw, 28px);
+      font-weight: 700;
+      color: #F0F6FC;
+    }
+
+    /* SLIDE BODY */
+    .slide-body {
+      flex: 1 1 0;
+      min-height: 0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* GRILLES */
+    .g2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; flex: 1 1 0; min-height: 0; }
+    .g3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; flex: 1 1 0; min-height: 0; }
+    .g4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; flex: 1 1 0; min-height: 0; }
+    .g2x2 { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 12px; flex: 1 1 0; min-height: 0; }
+
+    /* CARDS */
+    .card {
+      background: #161B22;
+      border-radius: 10px;
+      padding: clamp(10px, 1.2vw, 18px);
+      overflow: hidden;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .card-title { font-size: clamp(12px, 1.3vw, 16px); font-weight: 700; }
+    .card p, .card li { font-size: clamp(11px, 1.1vw, 14px); color: #C9D1D9; line-height: 1.5; }
+    .card ul { padding-left: 1.2em; }
+
+    /* COULEURS ACCENT */
+    .c-blue { color: #1F6FEB; } .b-blue { border-left: 3px solid #1F6FEB; }
+    .c-green { color: #238636; } .b-green { border-left: 3px solid #238636; }
+    .c-orange { color: #F0883E; } .b-orange { border-left: 3px solid #F0883E; }
+    .c-purple { color: #8957E5; } .b-purple { border-left: 3px solid #8957E5; }
+    .c-red { color: #DA3633; } .b-red { border-left: 3px solid #DA3633; }
+    .c-teal { color: #39D353; } .b-teal { border-left: 3px solid #39D353; }
+
+    /* CODE */
+    .code {
+      background: #0D1117;
+      border: 1px solid #30363D;
+      border-radius: 6px;
+      padding: clamp(8px, 1vw, 14px);
+      font-family: 'Courier New', monospace;
+      font-size: clamp(10px, 0.85vw, 12px);
+      color: #56D364;
+      white-space: pre;
+      overflow: hidden;
+      flex: 1 1 0;
+      min-height: 0;
+    }
+
+    /* TABLEAUX */
+    table { width: 100%; border-collapse: collapse; }
+    th { background: #21262D; padding: 6px 10px; text-align: left; font-size: clamp(10px, 0.9vw, 13px); color: #8B949E; font-weight: 600; }
+    td { padding: 5px 10px; border-bottom: 1px solid #21262D; font-size: clamp(10px, 0.95vw, 13px); }
+    tr:last-child td { border-bottom: none; }
+
+    /* GRANDES MÉTRIQUES */
+    .metric { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+    .metric-value { font-size: clamp(28px, 4vw, 56px); font-weight: 800; line-height: 1; }
+    .metric-label { font-size: clamp(10px, 1vw, 13px); color: #8B949E; text-align: center; }
+
+    /* FUNNEL ROWS */
+    .funnel { display: flex; flex-direction: column; gap: 6px; flex: 1 1 0; min-height: 0; }
+    .funnel-row { display: flex; align-items: center; gap: 10px; flex: 1 1 0; min-height: 0; }
+    .funnel-label { flex: 0 0 clamp(140px, 20vw, 240px); font-size: clamp(11px, 1vw, 13px); color: #C9D1D9; }
+    .funnel-bar { height: clamp(20px, 2.8vh, 36px); border-radius: 6px; display: flex; align-items: center; padding: 0 10px; font-size: clamp(10px, 0.9vw, 12px); font-weight: 700; color: #fff; min-width: 40px; }
+
+    /* STEPS NUMÉROTÉS */
+    .steps { display: flex; flex-direction: column; gap: 8px; flex: 1 1 0; min-height: 0; }
+    .step { display: flex; align-items: flex-start; gap: 12px; background: #161B22; border-radius: 8px; padding: clamp(8px, 1vw, 14px); flex: 1 1 0; min-height: 0; }
+    .step-num { flex: 0 0 28px; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; background: #1F6FEB; color: #fff; }
+    .step-content { flex: 1; min-width: 0; }
+    .step-title { font-size: clamp(12px, 1.2vw, 15px); font-weight: 600; margin-bottom: 2px; }
+    .step-desc { font-size: clamp(10px, 1vw, 13px); color: #8B949E; line-height: 1.4; }
+
+    /* BADGE AGNOSTIQUE */
+    .agnostic-badge {
+      flex: 0 0 auto;
+      background: #161B22;
+      border: 1px solid #30363D;
+      border-radius: 8px;
+      padding: 8px 14px;
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      font-size: clamp(10px, 0.95vw, 13px);
+      flex-wrap: wrap;
+    }
+    .agnostic-badge .ab-label { color: #8B949E; font-weight: 600; flex: 0 0 auto; }
+    .agnostic-badge .ab-item { display: flex; align-items: center; gap: 6px; color: #C9D1D9; }
+    .agnostic-badge .ab-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 8px; }
+
+    /* FLOW HORIZONTAL */
+    .flow { display: flex; align-items: center; gap: 0; flex: 1 1 0; min-height: 0; }
+    .flow-block { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: clamp(10px, 1.5vw, 20px); border-radius: 10px; gap: 6px; min-height: 0; height: 100%; }
+    .flow-arrow { flex: 0 0 30px; text-align: center; font-size: clamp(16px, 2vw, 24px); color: #30363D; }
+    .flow-num { font-size: clamp(24px, 3.5vw, 48px); font-weight: 800; }
+    .flow-name { font-size: clamp(12px, 1.3vw, 16px); font-weight: 700; }
+    .flow-sub { font-size: clamp(10px, 0.9vw, 12px); color: rgba(255,255,255,0.7); }
+
+    /* JAUGE ADAPTER */
+    .adapter-gauge { display: flex; align-items: center; gap: 10px; }
+    .gauge-bar { flex: 1; height: 6px; background: #21262D; border-radius: 3px; }
+    .gauge-fill { height: 100%; border-radius: 3px; }
+    .gauge-pct { font-size: 12px; font-weight: 700; flex: 0 0 80px; text-align: right; }
+
+    /* NOTE BAS */
+    .note-bottom {
+      flex: 0 0 auto;
+      font-size: clamp(10px, 0.9vw, 12px);
+      color: #8B949E;
+      text-align: center;
+      padding: 6px 0 0;
+    }
+  </style>
+</head>
+<body>
+
+<div id="deck">
+
+  <!-- SLIDE 1 — TITRE -->
+  <div class="slide active" id="s1" style="justify-content:center;align-items:center;text-align:center;gap:20px;">
+    <div style="font-size:clamp(11px,1vw,13px);letter-spacing:.15em;text-transform:uppercase;color:#8B949E;font-weight:600;">Capgemini · Technology &amp; Innovation</div>
+    <h1 style="font-size:clamp(28px,5vw,64px);font-weight:900;line-height:1.1;background:linear-gradient(135deg,#F0F6FC,#58A6FF);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">Le Voyage d'une Donnée</h1>
+    <div style="font-size:clamp(14px,1.8vw,22px);color:#8B949E;max-width:600px;">De la collecte web au fine-tuning <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(spécialisation d'un modèle d'IA généraliste sur une tâche précise grâce à des exemples)</span> local — comment nous garantissons la qualité des données pour l'IA souveraine</div>
+    <div style="display:flex;gap:12px;margin-top:8px;flex-wrap:wrap;justify-content:center;">
+      <span style="background:#1F3358;border:1px solid #1F6FEB;color:#58A6FF;padding:6px 14px;border-radius:20px;font-size:13px;font-weight:600;">Projet Migrator</span>
+      <span style="background:#1A2332;border:1px solid #238636;color:#56D364;padding:6px 14px;border-radius:20px;font-size:13px;font-weight:600;">Java &#8594; Python</span>
+      <span style="background:#2D1F1A;border:1px solid #F0883E;color:#F0883E;padding:6px 14px;border-radius:20px;font-size:13px;font-weight:600;">Juin 2026</span>
+      <span style="background:#21262D;border:1px solid #30363D;color:#8B949E;padding:6px 14px;border-radius:20px;font-size:13px;">Confidentiel Interne</span>
+    </div>
+    <div style="position:absolute;bottom:80px;font-size:12px;color:#30363D;">MLOps · Capgemini</div>
+  </div>
+
+  <!-- SLIDE 2 — GIGO -->
+  <div class="slide" id="s2">
+    <div class="slide-header">
+      <span class="slide-step">Contexte</span>
+      <span class="slide-title">Pourquoi la qualité des données est critique</span>
+    </div>
+    <div class="slide-body">
+      <div style="display:flex;justify-content:center;align-items:center;flex:0 0 auto;padding:8px 0;">
+        <div style="text-align:center;">
+          <div style="font-size:clamp(48px,7vw,96px);font-weight:900;color:#DA3633;line-height:1;">82%</div>
+          <div style="font-size:clamp(12px,1.2vw,15px);color:#8B949E;margin-top:4px;">des données collectées sont rejetées — et c'est voulu</div>
+        </div>
+      </div>
+      <div class="g3">
+        <div class="card b-red">
+          <div class="card-title c-red">&#10060; Mauvaises données</div>
+          <p>Un modèle entraîné sur des données de basse qualité produit des résultats inutilisables en production.</p>
+          <p style="margin-top:4px;font-style:italic;color:#8B949E;font-size:clamp(10px,0.9vw,12px);">GIGO — Garbage In, Garbage Out</p>
+        </div>
+        <div class="card b-green">
+          <div class="card-title" style="color:#56D364;">&#10003; Pipeline automatisé</div>
+          <p>Chaque donnée est vérifiée, filtrée et validée par des algorithmes — pas par des humains.</p>
+          <p style="margin-top:4px;color:#8B949E;font-size:clamp(10px,0.9vw,12px);">10 vérifications à chaque étape · <code style="background:#161B22;color:#56D364;padding:2px 6px;border-radius:3px;font-size:0.9em;">seed=42</code> <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(graine aléatoire fixe : garantit que le même résultat est reproduit à chaque exécution)</span></p>
+        </div>
+        <div class="card b-blue">
+          <div class="card-title c-blue">&#127919; Objectif Migrator</div>
+          <p>4 860 paires d'entraînement vérifiées pour 6 adapters <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(modules spécialisés ajoutés au modèle de base pour une tâche précise)</span> spécialisés Java&#8594;Python.</p>
+          <p style="margin-top:4px;color:#8B949E;font-size:clamp(10px,0.9vw,12px);">500 données excellentes &gt; 5 000 médiocres</p>
+        </div>
+      </div>
+      <div class="agnostic-badge">
+        <span class="ab-label">Aussi pour :</span>
+        <span class="ab-item"><span class="ab-dot" style="background:#1F6FEB;"></span>RH Onboarding : 800 Q&amp;A</span>
+        <span class="ab-item"><span class="ab-dot" style="background:#F0883E;"></span>Legal Defense : 0 appel réseau</span>
+        <span class="ab-item"><span class="ab-dot" style="background:#8957E5;"></span>Python 2&#8594;3 : migration version</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 3 — VUE MACRO -->
+  <div class="slide" id="s3">
+    <div class="slide-header">
+      <span class="slide-step">Vue d'ensemble</span>
+      <span class="slide-title">4 étapes, une donnée transformée</span>
+    </div>
+    <div class="slide-body">
+      <div class="flow">
+        <div class="flow-block b-blue" style="background:#1F2937;">
+          <div class="flow-num c-blue">15 250</div>
+          <div class="flow-name">COLLECTE</div>
+          <div class="flow-sub">Records bruts</div>
+        </div>
+        <div class="flow-arrow">&#8594;</div>
+        <div class="flow-block b-orange" style="background:#2D1B0E;">
+          <div class="flow-num c-orange">2 770</div>
+          <div class="flow-name">NETTOYAGE</div>
+          <div class="flow-sub">7 filtres qualité</div>
+        </div>
+        <div class="flow-arrow">&#8594;</div>
+        <div class="flow-block b-purple" style="background:#1A1A3E;">
+          <div class="flow-num c-purple">3 600</div>
+          <div class="flow-name">FUSION</div>
+          <div class="flow-sub">Paires formées</div>
+        </div>
+        <div class="flow-arrow">&#8594;</div>
+        <div class="flow-block b-green" style="background:#0F2A1A;">
+          <div class="flow-num" style="color:#56D364;">4 860</div>
+          <div class="flow-name">FINE-TUNING <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(spécialisation d'un modèle d'IA généraliste sur une tâche précise grâce à des exemples)</span></div>
+          <div class="flow-sub">Objectif cible</div>
+        </div>
+      </div>
+      <div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:12px 18px;text-align:center;font-size:clamp(12px,1.1vw,15px);color:#C9D1D9;flex:0 0 auto;">
+        Ce schéma s'applique à tous les projets Capgemini — seule la configuration YAML change
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 4 — COLLECTER -->
+  <div class="slide" id="s4">
+    <div class="slide-header">
+      <span class="slide-step">Étape 1 / 4</span>
+      <span class="slide-title">Collecter — 3 sources automatisées</span>
+    </div>
+    <div class="slide-body">
+      <div class="g3">
+        <div class="card b-blue">
+          <div class="card-title c-blue">&#128218; Rosetta Code</div>
+          <p>Wiki collaboratif bilingue</p>
+          <p>605 tâches Java+Python identiques</p>
+          <p>Garantie maximale : même algorithme dans les 2 langues</p>
+          <div style="margin-top:auto;padding-top:6px;font-size:clamp(10px,0.85vw,11px);background:#1F3358;border:1px solid #1F6FEB;border-radius:4px;padding:4px 8px;color:#58A6FF;font-weight:600;">&#10003; Migration de code uniquement</div>
+        </div>
+        <div class="card b-orange">
+          <div class="card-title c-orange">&#127760; Documentation &amp; Tutoriels</div>
+          <p>Crawl automatique BFS <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(crawl en largeur : visite toutes les pages d'un niveau avant d'aller plus profond)</span></p>
+          <p>docs.python.org, baeldung.com, geeksforgeeks...</p>
+          <p>Profondeur 5 niveaux | 200 pages/site</p>
+          <div style="margin-top:auto;padding-top:6px;font-size:clamp(10px,0.85vw,11px);background:#2D1F1A;border:1px solid #F0883E;border-radius:4px;padding:4px 8px;color:#F0883E;font-weight:600;">&#10003; Tous les domaines</div>
+        </div>
+        <div class="card b-purple">
+          <div class="card-title c-purple">&#129302; AWA — Découverte Autonome</div>
+          <p>Agent qui cherche lui-même de nouvelles sources</p>
+          <p>SearXNG <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(moteur de recherche auto-hébergé qui agrège Google, Bing et DuckDuckGo sans tracer l'utilisateur)</span> &#8594; DuckDuckGo &#8594; Brave Search</p>
+          <p>Filtre par domaines de confiance</p>
+          <div style="margin-top:auto;padding-top:6px;font-size:clamp(10px,0.85vw,11px);background:#2A1F3E;border:1px solid #8957E5;border-radius:4px;padding:4px 8px;color:#8957E5;font-weight:600;">&#10003; Sauf Legal Defense (souveraineté)</div>
+        </div>
+      </div>
+      <div class="agnostic-badge">
+        <span class="ab-label">Aussi pour :</span>
+        <span class="ab-item"><span class="ab-dot" style="background:#1F6FEB;"></span>Migrator : Java + Python</span>
+        <span class="ab-item"><span class="ab-dot" style="background:#F0883E;"></span>RH : guides internes + legifrance.fr</span>
+        <span class="ab-item"><span class="ab-dot" style="background:#8957E5;"></span>Legal : ingestion manuelle uniquement</span>
+        <span class="ab-item"><span class="ab-dot" style="background:#39D353;"></span>Python2&#8594;3 : docs.python.org + realpython.com</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 5 — ROSETTA CODE -->
+  <div class="slide" id="s5">
+    <div class="slide-header">
+      <span class="slide-step">Source bilingue</span>
+      <span class="slide-title">Rosetta Code — La garantie du même algorithme</span>
+    </div>
+    <div class="slide-body">
+      <div class="g2" style="flex:1 1 0;min-height:0;">
+        <div style="background:#0D1117;border:1px solid #1F6FEB;border-radius:10px;padding:16px;min-height:0;overflow:hidden;display:flex;flex-direction:column;gap:8px;">
+          <div style="display:inline-block;background:#1F3358;border:1px solid #1F6FEB;color:#58A6FF;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:700;letter-spacing:.08em;flex:0 0 auto;">JAVA</div>
+          <pre class="code" style="flex:1;min-height:0;">public static int binarySearch(
+    int[] arr, int target) {
+  int left = 0;
+  int right = arr.length - 1;
+  while (left &lt;= right) {
+    int mid = (left + right) / 2;
+    if (arr[mid] == target) return mid;
+    if (arr[mid] &lt; target) left = mid + 1;
+    else right = mid - 1;
+  }
+  return -1;
+}</pre>
+        </div>
+        <div style="background:#0D1117;border:1px solid #238636;border-radius:10px;padding:16px;min-height:0;overflow:hidden;display:flex;flex-direction:column;gap:8px;">
+          <div style="display:inline-block;background:#1A2332;border:1px solid #238636;color:#56D364;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:700;letter-spacing:.08em;flex:0 0 auto;">PYTHON</div>
+          <pre class="code" style="flex:1;min-height:0;">def binary_search(arr, target):
+    left, right = 0, len(arr) - 1
+    while left &lt;= right:
+        mid = (left + right) // 2
+        if arr[mid] == target:
+            return mid
+        elif arr[mid] &lt; target:
+            left = mid + 1
+        else:
+            right = mid - 1
+    return -1</pre>
+        </div>
+      </div>
+      <div style="display:flex;gap:20px;font-size:clamp(11px,1vw,13px);flex:0 0 auto;align-items:center;justify-content:center;padding-top:4px;">
+        <span style="color:#56D364;">&#10003; 605 tâches bilingues récupérées</span>
+        <span style="color:#F0883E;">&#9888;&#65039; Uniquement pour les projets de migration de code</span>
+        <span style="color:#8B949E;">Jointure exacte par <code style="background:#161B22;color:#56D364;padding:2px 6px;border-radius:3px;font-size:0.9em;">task_name</code> · 100% pertinence garantie</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 6 — ACCEPTÉ / REJETÉ -->
+  <div class="slide" id="s6">
+    <div class="slide-header">
+      <span class="slide-step">Filtrage initial</span>
+      <span class="slide-title">Ce que le collecteur accepte et rejette</span>
+    </div>
+    <div class="slide-body">
+      <div class="g2">
+        <div class="card b-green">
+          <div class="card-title" style="color:#56D364;">&#10003; Accepté</div>
+          <table>
+            <tr><th>Type</th><th>Exemple</th></tr>
+            <tr><td>Code Python</td><td style="color:#56D364;font-family:monospace;font-size:12px;">def filter(lst, fn):</td></tr>
+            <tr><td>Code Java</td><td style="color:#56D364;font-family:monospace;font-size:12px;">public class Sort {</td></tr>
+            <tr><td>Code JS</td><td style="color:#56D364;font-family:monospace;font-size:12px;">const filter = (arr) =&gt;</td></tr>
+            <tr><td>Docs techniques</td><td>Paragraphe + code = &#10003;</td></tr>
+            <tr><td>Rosetta Code</td><td>Algorithme bilingue = &#10003;</td></tr>
+          </table>
+        </div>
+        <div class="card b-red">
+          <div class="card-title c-red">&#10060; Rejeté automatiquement</div>
+          <table>
+            <tr><th>Type</th><th>Raison</th></tr>
+            <tr><td>Bash / Shell</td><td style="color:#8B949E;">Scripts système</td></tr>
+            <tr><td>XML / JSON / YAML</td><td style="color:#8B949E;">Config, pas de logique</td></tr>
+            <tr><td>HTML / CSS</td><td style="color:#8B949E;">Présentation</td></tr>
+            <tr><td>&lt; 30 caractères</td><td style="color:#8B949E;">Trop trivial</td></tr>
+            <tr><td>Nav / Login / Cookies</td><td style="color:#8B949E;">Boilerplate sans valeur</td></tr>
+            <tr><td>Code cassé</td><td style="color:#8B949E;">Syntaxe invalide</td></tr>
+          </table>
+        </div>
+      </div>
+      <div style="background:#161B22;border:1px solid #F0883E;border-radius:8px;padding:8px 14px;text-align:center;flex:0 0 auto;font-size:clamp(11px,1vw,13px);">
+        Format universel : <code style="color:#56D364;">{ description, code, lang, source_url, adapter_name }</code> — identique pour tous les projets
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 7 — ENTONNOIR -->
+  <div class="slide" id="s7">
+    <div class="slide-header">
+      <span class="slide-step">Étape 2 / 4</span>
+      <span class="slide-title">Nettoyer — 7 filtres, seul le meilleur passe</span>
+    </div>
+    <div class="slide-body">
+      <div class="funnel">
+        <div class="funnel-row">
+          <div class="funnel-label">1 — Dédup exacte (Hash MD5 <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(empreinte numérique unique d'un texte)</span>)</div>
+          <div class="funnel-bar" style="width:100%;background:#1F6FEB;">100%</div>
+        </div>
+        <div class="funnel-row">
+          <div class="funnel-label">2 — Score qualité (&#8805; 0.55)</div>
+          <div class="funnel-bar" style="width:80%;background:#F0883E;">80%</div>
+        </div>
+        <div class="funnel-row">
+          <div class="funnel-label">3 — Dédup sémantique (similarité cosinus <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(mesure mathématique de la ressemblance entre deux textes : 0 = rien en commun, 1 = identiques)</span> &#8805; 0.92)</div>
+          <div class="funnel-bar" style="width:68%;background:#8957E5;">68%</div>
+        </div>
+        <div class="funnel-row">
+          <div class="funnel-label">4 — Pertinence adapter <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(module spécialisé ajouté au modèle de base pour une tâche précise)</span> (&#8805; 0.05)</div>
+          <div class="funnel-bar" style="width:58%;background:#1F6FEB;">58%</div>
+        </div>
+        <div class="funnel-row">
+          <div class="funnel-label">5 — Volume control (trim / augmentation)</div>
+          <div class="funnel-bar" style="width:48%;background:#F0883E;">48%</div>
+        </div>
+        <div class="funnel-row">
+          <div class="funnel-label">6 — Couverture thématique (K-means <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(algorithme qui regroupe automatiquement les données similaires en clusters)</span>)</div>
+          <div class="funnel-bar" style="width:38%;background:#8957E5;">38%</div>
+        </div>
+        <div class="funnel-row">
+          <div class="funnel-label">7 — Réassignation inter-adapters</div>
+          <div class="funnel-bar" style="width:30%;background:#238636;">30%</div>
+        </div>
+      </div>
+      <div style="background:#0F2A1A;border:1px solid #238636;border-radius:8px;padding:10px 18px;text-align:center;font-size:clamp(12px,1.2vw,15px);font-weight:700;color:#56D364;flex:0 0 auto;">
+        &#10003; 15 250 &#8594; 2 770 records · Taux de rejet 82% — voulu
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 8 — 7 FILTRES DÉTAILLÉS -->
+  <div class="slide" id="s8">
+    <div class="slide-header">
+      <span class="slide-step">Étape 2 / 4</span>
+      <span class="slide-title">Les 7 filtres en détail</span>
+    </div>
+    <div class="slide-body">
+      <div class="steps">
+        <div class="step">
+          <div class="step-num" style="background:#1F6FEB;">1</div>
+          <div class="step-content">
+            <div class="step-title">Déduplication exacte</div>
+            <div class="step-desc">Hash MD5 <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(empreinte numérique unique d'un texte)</span> sur description+code — élimine les doublons exacts (-15 à 30%)</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num" style="background:#F0883E;">2</div>
+          <div class="step-content">
+            <div class="step-title">Score heuristique</div>
+            <div class="step-desc">Code : longueur, mots-clés, syntaxe AST <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(vérification automatique que le code est syntaxiquement valide)</span> Python. Text : entropie de Shannon <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(mesure de la richesse et diversité d'un texte — filtre les textes répétitifs ou vides)</span>, longueur prose. Seuil : 0.55</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num" style="background:#8957E5;">3</div>
+          <div class="step-content">
+            <div class="step-title">Dédup sémantique</div>
+            <div class="step-desc">embeddings <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(transformation d'un texte en une liste de nombres qui capture son sens)</span> AWS Bedrock <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(service cloud Amazon utilisé ici uniquement pour la préparation des données, pas pour l'inférence)</span> Titan v2 + similarité cosinus <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(mesure mathématique de la ressemblance entre deux textes : 0 = rien en commun, 1 = identiques)</span> &#8805; 0.92 — détecte "Write a Fibonacci function" &#8776; "Implement Fibonacci"</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num" style="background:#1F6FEB;">4</div>
+          <div class="step-content">
+            <div class="step-title">Pertinence adapter <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(module spécialisé ajouté au modèle de base pour une tâche précise)</span></div>
+            <div class="step-desc">Similarité cosinus description adapter <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(module spécialisé ajouté au modèle de base pour une tâche précise)</span> vs record. Seuil bas 0.05 (comparaison code/prose). "@Test JUnit" &#8594; junit-adapter &#10003;</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num" style="background:#F0883E;">5</div>
+          <div class="step-content">
+            <div class="step-title">Contrôle volume</div>
+            <div class="step-desc">&gt;110% cible &#8594; trim | 50-110% &#8594; OK | &lt;50% &#8594; augmentation auto (renommage vars, swap boucles)</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num" style="background:#8957E5;">6</div>
+          <div class="step-content">
+            <div class="step-title">Couverture K-means <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(algorithme qui regroupe automatiquement les données similaires en clusters)</span></div>
+            <div class="step-desc">K-means <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(algorithme qui regroupe automatiquement les données similaires en clusters)</span> : 8 clusters détectés — gaps thématiques prioritaires pour l'augmentation ciblée</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num" style="background:#238636;">7</div>
+          <div class="step-content">
+            <div class="step-title">Réassignation</div>
+            <div class="step-desc">"Spring @Entity" mal classé &#8594; similarité cosinus <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(mesure mathématique de la ressemblance entre deux textes : 0 = rien en commun, 1 = identiques)</span> 0.67 vs jpa-hibernate &#8594; déplacé si marge &gt;0.15</div>
+          </div>
+        </div>
+      </div>
+      <div class="agnostic-badge">
+        <span class="ab-label">Config-driven :</span>
+        <span class="ab-item"><span class="ab-dot" style="background:#1F6FEB;"></span>Code : AST <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(vérification automatique que le code est syntaxiquement valide)</span> Python + regex Java</span>
+        <span class="ab-item"><span class="ab-dot" style="background:#F0883E;"></span>Text RH : entropie de Shannon <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(mesure de la richesse et diversité d'un texte — filtre les textes répétitifs ou vides)</span> + longueur prose</span>
+        <span class="ab-item"><span class="ab-dot" style="background:#8957E5;"></span>Legal : filtrage offline uniquement</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 9 — FORMER LES PAIRES -->
+  <div class="slide" id="s9">
+    <div class="slide-header">
+      <span class="slide-step">Étape 3 / 4</span>
+      <span class="slide-title">Former les paires — 4 stratégies</span>
+    </div>
+    <div class="slide-body">
+      <div class="g2x2">
+        <div class="card b-blue">
+          <div class="card-title c-blue">A — code_migration</div>
+          <p>Rosetta Code : jointure exacte par <code style="background:#161B22;color:#56D364;padding:2px 6px;border-radius:3px;font-size:0.9em;">task_name</code></p>
+          <p>Même algorithme garanti dans les 2 langues</p>
+          <div style="margin-top:auto;font-size:11px;background:#1F3358;border:1px solid #1F6FEB;border-radius:4px;padding:3px 8px;color:#58A6FF;font-weight:600;">&#8594; Migration de code</div>
+        </div>
+        <div class="card b-purple">
+          <div class="card-title c-purple">B — semantic_pair_match</div>
+          <p>Matching similarité cosinus <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(mesure mathématique de la ressemblance entre deux textes : 0 = rien en commun, 1 = identiques)</span> &#8805; 0.75 sur descriptions</p>
+          <p>Même concept, sources différentes</p>
+          <p>Bijection : chaque code utilisé 1&#215; max</p>
+          <div style="margin-top:auto;font-size:11px;background:#2A1F3E;border:1px solid #8957E5;border-radius:4px;padding:3px 8px;color:#8957E5;font-weight:600;">&#8594; Tous projets bilingues</div>
+        </div>
+        <div class="card b-orange">
+          <div class="card-title c-orange">C — doc_to_code</div>
+          <p>Description &#8594; Code Python</p>
+          <p>Quality-reviewer, orchestration</p>
+          <div style="margin-top:auto;font-size:11px;background:#2D1F1A;border:1px solid #F0883E;border-radius:4px;padding:3px 8px;color:#F0883E;font-weight:600;">&#8594; Code monolangue</div>
+        </div>
+        <div class="card b-green">
+          <div class="card-title" style="color:#56D364;">D — qa</div>
+          <p>Question &#8594; Réponse directe</p>
+          <p>Chatbot RH, Legal, Support</p>
+          <div style="margin-top:auto;font-size:11px;background:#1A2332;border:1px solid #238636;border-radius:4px;padding:3px 8px;color:#56D364;font-weight:600;">&#8594; Projets text/métier</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 10 — MATCHING SÉMANTIQUE -->
+  <div class="slide" id="s10">
+    <div class="slide-header">
+      <span class="slide-step">Stratégie B</span>
+      <span class="slide-title">Comment deux descriptions trouvent leur paire</span>
+    </div>
+    <div class="slide-body">
+      <div class="g2" style="flex:0 0 auto;height:40%;">
+        <div class="card b-blue">
+          <div style="font-size:11px;font-weight:700;color:#58A6FF;background:#1F3358;padding:2px 8px;border-radius:3px;display:inline-block;margin-bottom:4px;flex:0 0 auto;">Java · baeldung.com</div>
+          <p style="font-style:italic;color:#8B949E;">"La méthode concat() ajoute une chaîne à la fin de la chaîne courante..."</p>
+          <pre class="code" style="flex:none;font-size:11px;padding:6px 10px;">String s = "Hello ";
+s.concat("World");</pre>
+        </div>
+        <div class="card b-orange">
+          <div style="font-size:11px;font-weight:700;color:#F0883E;background:#2D1F1A;padding:2px 8px;border-radius:3px;display:inline-block;margin-bottom:4px;flex:0 0 auto;">Python · docs.python.org</div>
+          <p style="font-style:italic;color:#8B949E;">"La concaténation de chaînes avec l'opérateur + réunit deux chaînes..."</p>
+          <pre class="code" style="flex:none;font-size:11px;padding:6px 10px;">result = "Hello " + "World"</pre>
+        </div>
+      </div>
+      <div style="background:#1F2937;border-radius:8px;padding:clamp(10px,1.5vw,18px);display:flex;align-items:center;justify-content:center;gap:24px;flex:1 1 0;min-height:0;">
+        <div style="font-size:clamp(32px,4vw,56px);font-weight:800;color:#1F6FEB;line-height:1;">0.87</div>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <div style="font-size:clamp(14px,1.5vw,18px);font-weight:700;color:#56D364;">&#8805; 0.75 &#8594; PAIRE ACCEPTÉE</div>
+          <div style="font-size:clamp(10px,0.9vw,12px);color:#8B949E;">Boost +0.05 par mot-clé commun détecté (string, concatenation...)</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:16px;font-size:clamp(11px,1vw,13px);flex:0 0 auto;flex-wrap:wrap;">
+        <span style="color:#56D364;">&#10003; AST <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(vérification automatique que le code est syntaxiquement valide)</span> Python valide</span>
+        <span style="color:#56D364;">&#10003; Ratio 0.10 – 10.0</span>
+        <span style="color:#56D364;">&#10003; Bijection respectée</span>
+        <span style="color:#F0883E;">&#9888; Seuil TF-IDF <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(méthode statistique basique de comparaison de textes, disponible hors-ligne)</span> abaissé si AWS Bedrock <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(service cloud Amazon utilisé ici uniquement pour la préparation des données, pas pour l'inférence)</span> indisponible</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 11 — GÉNÉRATION SYNTHÉTIQUE -->
+  <div class="slide" id="s11">
+    <div class="slide-header">
+      <span class="slide-step">Génération</span>
+      <span class="slide-title">Quand les sources naturelles sont insuffisantes</span>
+    </div>
+    <div class="slide-body">
+      <div class="flow" style="flex:0 0 auto;height:30%;">
+        <div class="flow-block b-red" style="background:#2D0F0F;">
+          <div style="font-size:clamp(22px,3vw,36px);">&#128201;</div>
+          <div class="flow-name">Déficit détecté</div>
+          <div class="flow-sub">Paires &lt; cible adapter</div>
+        </div>
+        <div class="flow-arrow">&#8594;</div>
+        <div class="flow-block b-purple" style="background:#1A1A3E;">
+          <div style="font-size:clamp(22px,3vw,36px);">&#129302;</div>
+          <div class="flow-name">LLM génère</div>
+          <div class="flow-sub">Nova Pro <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(modèle de langage Amazon, utilisé ici uniquement pour la génération des données d'entraînement)</span> · 3 modes</div>
+        </div>
+        <div class="flow-arrow">&#8594;</div>
+        <div class="flow-block b-green" style="background:#0F2A1A;">
+          <div style="font-size:clamp(22px,3vw,36px);">&#10003;</div>
+          <div class="flow-name">Software valide</div>
+          <div class="flow-sub">8 checks · save /10 paires</div>
+        </div>
+      </div>
+      <div class="g3" style="flex:1 1 0;min-height:0;">
+        <div class="card b-blue">
+          <div class="card-title c-blue">Mode Traduction</div>
+          <p>Java record &#8594; LLM &#8594; Python</p>
+          <p>Vérifié AST <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(vérification automatique que le code est syntaxiquement valide)</span> + ratio longueur</p>
+          <p style="color:#8B949E;font-size:clamp(10px,0.9vw,12px);margin-top:4px;">Utilisé si Java disponibles</p>
+        </div>
+        <div class="card b-purple">
+          <div class="card-title c-purple">Mode Synthétique</div>
+          <p>Zéro Java &#8594; LLM crée la paire de A à Z</p>
+          <p>Vérifié AST <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(vérification automatique que le code est syntaxiquement valide)</span> + ratio</p>
+          <p style="color:#8B949E;font-size:clamp(10px,0.9vw,12px);margin-top:4px;">Utilisé si sources vides</p>
+        </div>
+        <div class="card b-orange">
+          <div class="card-title c-orange">Mode Doc-to-code</div>
+          <p>LLM génère description + code</p>
+          <p>Vérifié AST <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(vérification automatique que le code est syntaxiquement valide)</span> + cohérence sémantique</p>
+          <p style="color:#8B949E;font-size:clamp(10px,0.9vw,12px);margin-top:4px;">Adapters monolangues</p>
+        </div>
+      </div>
+      <div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:8px 14px;text-align:center;font-size:clamp(10px,0.9vw,12px);color:#8B949E;flex:0 0 auto;">
+        ~0.0038 $ / paire · Max 8 échecs LLM consécutifs &#8594; skip adapter · Sauvegarde progressive toutes les 10 paires
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 12 — CLEAN FINAL -->
+  <div class="slide" id="s12">
+    <div class="slide-header">
+      <span class="slide-step">Étape 4 / 4</span>
+      <span class="slide-title">Nettoyer les paires — la touche finale</span>
+    </div>
+    <div class="slide-body">
+      <div class="steps">
+        <div class="step">
+          <div class="step-num" style="background:#1F6FEB;">1</div>
+          <div class="step-content">
+            <div class="step-title">Déduplication exacte</div>
+            <div class="step-desc">Hash MD5 <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(empreinte numérique unique d'un texte)</span> sur <code style="background:#161B22;color:#56D364;padding:2px 6px;border-radius:3px;font-size:0.9em;">prompt</code>+<code style="background:#161B22;color:#56D364;padding:2px 6px;border-radius:3px;font-size:0.9em;">completion</code> — élimine les doublons inter-sources</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num" style="background:#8957E5;">2</div>
+          <div class="step-content">
+            <div class="step-title">MinHash <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(technique rapide pour détecter les textes quasi-identiques)</span> quasi-doublons</div>
+            <div class="step-desc">MinHash <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(technique rapide pour détecter les textes quasi-identiques)</span> — Jaccard <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(mesure du chevauchement entre deux ensembles de mots)</span> &#8805; 0.85 sur 5-grams <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(séquences de 5 mots consécutifs utilisées pour comparer des textes)</span> — "Migrate java code" &#8776; "Migrate Java code" &#8594; supprimé</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num" style="background:#F0883E;">3</div>
+          <div class="step-content">
+            <div class="step-title">Règles métier</div>
+            <div class="step-desc">50–2048 tokens | ratio 0.3–10 | blacklist : password, secret, TODO, FIXME</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num" style="background:#1F6FEB;">4</div>
+          <div class="step-content">
+            <div class="step-title">Score qualité</div>
+            <div class="step-desc">30% heuristique (longueur, mots-clés) + 70% LLM judge AWS Bedrock <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(service cloud Amazon utilisé ici uniquement pour la préparation des données, pas pour l'inférence)</span> (0–10 sur précision + cohérence)</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num" style="background:#238636;">5</div>
+          <div class="step-content">
+            <div class="step-title">Split train/valid</div>
+            <div class="step-desc">90% train.jsonl + 10% valid.jsonl | <code style="background:#161B22;color:#56D364;padding:2px 6px;border-radius:3px;font-size:0.9em;">seed=42</code> <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(graine aléatoire fixe : garantit que le même résultat est reproduit à chaque exécution)</span> &#8594; reproductible à l'identique</div>
+          </div>
+        </div>
+      </div>
+      <div class="card b-green" style="flex:0 0 auto;flex-direction:row;justify-content:space-between;align-items:center;padding:12px 16px;">
+        <div style="display:flex;gap:20px;">
+          <span style="font-size:clamp(12px,1.1vw,14px);font-weight:700;">&#128230; train.jsonl</span>
+          <span style="font-size:clamp(12px,1.1vw,14px);font-weight:700;">&#128230; valid.jsonl</span>
+        </div>
+        <span style="font-size:clamp(12px,1.1vw,14px);color:#56D364;font-weight:700;">&#8594; Prêts pour mlx_lm.lora <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(outil d'entraînement local optimisé pour les puces Apple Silicon)</span></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 13 — GARANTIES QUALITÉ -->
+  <div class="slide" id="s13">
+    <div class="slide-header">
+      <span class="slide-step">Qualité</span>
+      <span class="slide-title">10 verrous — aucune donnée douteuse ne passe</span>
+    </div>
+    <div class="slide-body">
+      <div class="g2">
+        <div class="card" style="gap:5px;">
+          <div class="card-title" style="margin-bottom:6px;">Vérifications actives</div>
+          <div style="display:flex;flex-direction:column;gap:5px;flex:1 1 0;min-height:0;overflow:hidden;">
+            <div style="display:flex;align-items:center;gap:8px;font-size:clamp(10px,0.9vw,12px);min-height:0;"><span style="width:8px;height:8px;border-radius:50%;background:#1F6FEB;flex:0 0 8px;"></span><span style="flex:1;">Dédup exacte MD5</span><span style="background:#21262D;padding:1px 6px;border-radius:3px;color:#8B949E;font-size:10px;white-space:nowrap;">clean_raw + clean</span></div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:clamp(10px,0.9vw,12px);min-height:0;"><span style="width:8px;height:8px;border-radius:50%;background:#8957E5;flex:0 0 8px;"></span><span style="flex:1;">Dédup sémantique similarité cosinus <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(mesure mathématique de la ressemblance entre deux textes : 0 = rien en commun, 1 = identiques)</span> 0.92</span><span style="background:#21262D;padding:1px 6px;border-radius:3px;color:#8B949E;font-size:10px;white-space:nowrap;">clean_raw</span></div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:clamp(10px,0.9vw,12px);min-height:0;"><span style="width:8px;height:8px;border-radius:50%;background:#F0883E;flex:0 0 8px;"></span><span style="flex:1;">MinHash <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(technique rapide pour détecter les textes quasi-identiques)</span> Jaccard <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(mesure du chevauchement entre deux ensembles de mots)</span> 0.85</span><span style="background:#21262D;padding:1px 6px;border-radius:3px;color:#8B949E;font-size:10px;white-space:nowrap;">clean</span></div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:clamp(10px,0.9vw,12px);min-height:0;"><span style="width:8px;height:8px;border-radius:50%;background:#1F6FEB;flex:0 0 8px;"></span><span style="flex:1;">Syntaxe Python AST <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(vérification automatique que le code est syntaxiquement valide)</span></span><span style="background:#21262D;padding:1px 6px;border-radius:3px;color:#8B949E;font-size:10px;white-space:nowrap;">partout</span></div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:clamp(10px,0.9vw,12px);min-height:0;"><span style="width:8px;height:8px;border-radius:50%;background:#238636;flex:0 0 8px;"></span><span style="flex:1;">Syntaxe Java regex</span><span style="background:#21262D;padding:1px 6px;border-radius:3px;color:#8B949E;font-size:10px;white-space:nowrap;">fuser + generator</span></div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:clamp(10px,0.9vw,12px);min-height:0;"><span style="width:8px;height:8px;border-radius:50%;background:#F0883E;flex:0 0 8px;"></span><span style="flex:1;">Ratio longueur 0.10–12</span><span style="background:#21262D;padding:1px 6px;border-radius:3px;color:#8B949E;font-size:10px;white-space:nowrap;">transform + clean</span></div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:clamp(10px,0.9vw,12px);min-height:0;"><span style="width:8px;height:8px;border-radius:50%;background:#1F6FEB;flex:0 0 8px;"></span><span style="flex:1;">Pertinence adapter 0.05</span><span style="background:#21262D;padding:1px 6px;border-radius:3px;color:#8B949E;font-size:10px;white-space:nowrap;">clean_raw</span></div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:clamp(10px,0.9vw,12px);min-height:0;"><span style="width:8px;height:8px;border-radius:50%;background:#8957E5;flex:0 0 8px;"></span><span style="flex:1;">Couverture K-means <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(algorithme qui regroupe automatiquement les données similaires en clusters)</span> 8</span><span style="background:#21262D;padding:1px 6px;border-radius:3px;color:#8B949E;font-size:10px;white-space:nowrap;">clean_raw</span></div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:clamp(10px,0.9vw,12px);min-height:0;"><span style="width:8px;height:8px;border-radius:50%;background:#238636;flex:0 0 8px;"></span><span style="flex:1;">Blacklist secrets/TODO</span><span style="background:#21262D;padding:1px 6px;border-radius:3px;color:#8B949E;font-size:10px;white-space:nowrap;">clean</span></div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:clamp(10px,0.9vw,12px);min-height:0;"><span style="width:8px;height:8px;border-radius:50%;background:#DA3633;flex:0 0 8px;"></span><span style="flex:1;">Max 8 fails LLM &#8594; skip</span><span style="background:#21262D;padding:1px 6px;border-radius:3px;color:#8B949E;font-size:10px;white-space:nowrap;">generator</span></div>
+          </div>
+        </div>
+        <div class="card" style="gap:10px;">
+          <div class="card-title" style="margin-bottom:4px;">Backend embeddings <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(transformation d'un texte en une liste de nombres qui capture son sens)</span> (fallback auto)</div>
+          <div style="display:flex;flex-direction:column;gap:6px;flex:1 1 0;min-height:0;position:relative;">
+            <div style="position:absolute;left:11px;top:0;bottom:0;width:2px;border-left:2px dashed #30363D;z-index:0;"></div>
+            <div style="display:flex;gap:12px;align-items:flex-start;padding:8px 8px 8px 28px;background:#0F2A1A;border-radius:8px;position:relative;z-index:1;flex:1 1 0;min-height:0;">
+              <div>
+                <div style="font-size:clamp(11px,1vw,13px);font-weight:600;color:#56D364;">1. AWS Bedrock <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(service cloud Amazon utilisé ici uniquement pour la préparation des données, pas pour l'inférence)</span> Titan v2</div>
+                <div style="font-size:clamp(10px,0.85vw,11px);color:#8B949E;">1024 dim · 20 workers parallèles</div>
+              </div>
+            </div>
+            <div style="display:flex;gap:12px;align-items:flex-start;padding:8px 8px 8px 28px;background:#1F2937;border-radius:8px;position:relative;z-index:1;flex:1 1 0;min-height:0;">
+              <div>
+                <div style="font-size:clamp(11px,1vw,13px);font-weight:600;color:#58A6FF;">2. Ollama nomic-embed-text</div>
+                <div style="font-size:clamp(10px,0.85vw,11px);color:#8B949E;">768 dim · local · port 11434</div>
+              </div>
+            </div>
+            <div style="display:flex;gap:12px;align-items:flex-start;padding:8px 8px 8px 28px;background:#2A1F3E;border-radius:8px;position:relative;z-index:1;flex:1 1 0;min-height:0;">
+              <div>
+                <div style="font-size:clamp(11px,1vw,13px);font-weight:600;color:#8957E5;">3. sentence-transformers</div>
+                <div style="font-size:clamp(10px,0.85vw,11px);color:#8B949E;">768 dim · subprocess local</div>
+              </div>
+            </div>
+            <div style="display:flex;gap:12px;align-items:flex-start;padding:8px 8px 8px 28px;background:#21262D;border-radius:8px;position:relative;z-index:1;flex:1 1 0;min-height:0;">
+              <div>
+                <div style="font-size:clamp(11px,1vw,13px);font-weight:600;color:#8B949E;">4. TF-IDF <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(méthode statistique basique de comparaison de textes, disponible hors-ligne)</span></div>
+                <div style="font-size:clamp(10px,0.85vw,11px);color:#8B949E;">Fallback universel · toujours disponible</div>
+              </div>
+            </div>
+          </div>
+          <div style="font-size:clamp(10px,0.85vw,11px);color:#F0883E;background:#2D1F1A;border-radius:4px;padding:4px 8px;flex:0 0 auto;">Si TF-IDF <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(méthode statistique basique de comparaison de textes, disponible hors-ligne)</span> actif &#8594; scoring pertinence désactivé automatiquement</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 14 — 6 ADAPTERS -->
+  <div class="slide" id="s14">
+    <div class="slide-header">
+      <span class="slide-step">Migrator</span>
+      <span class="slide-title">6 modules spécialisés — données séparées par adapter <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(module spécialisé ajouté au modèle de base pour une tâche précise)</span></span>
+    </div>
+    <div class="slide-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr 1fr;gap:10px;flex:1 1 0;min-height:0;">
+        <div class="card b-green" style="min-height:0;">
+          <div class="card-title" style="color:#56D364;">java-to-python-translator</div>
+          <p>Traduit les classes Java en Python</p>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:auto;padding-top:4px;">
+            <span style="font-size:10px;background:#1A2332;border:1px solid #238636;color:#56D364;padding:1px 6px;border-radius:3px;flex:0 0 auto;">fuse</span>
+            <div style="display:flex;align-items:center;gap:8px;flex:1;">
+              <div class="gauge-bar"><div class="gauge-fill" style="width:100%;background:#238636;"></div></div>
+              <span class="gauge-pct" style="color:#56D364;">900/900 &#10003;</span>
+            </div>
+          </div>
+        </div>
+        <div class="card b-green" style="min-height:0;">
+          <div class="card-title" style="color:#56D364;">junit-to-pytest-translator</div>
+          <p>Convertit les tests JUnit en pytest</p>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:auto;padding-top:4px;">
+            <span style="font-size:10px;background:#1A2332;border:1px solid #238636;color:#56D364;padding:1px 6px;border-radius:3px;flex:0 0 auto;">fuse</span>
+            <div style="display:flex;align-items:center;gap:8px;flex:1;">
+              <div class="gauge-bar"><div class="gauge-fill" style="width:100%;background:#238636;"></div></div>
+              <span class="gauge-pct" style="color:#56D364;">600/600 &#10003;</span>
+            </div>
+          </div>
+        </div>
+        <div class="card b-green" style="min-height:0;">
+          <div class="card-title" style="color:#56D364;">quality-reviewer</div>
+          <p>Évalue la qualité du code Python migré</p>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:auto;padding-top:4px;">
+            <span style="font-size:10px;background:#2D1F1A;border:1px solid #F0883E;color:#F0883E;padding:1px 6px;border-radius:3px;flex:0 0 auto;">doc_to_code</span>
+            <div style="display:flex;align-items:center;gap:8px;flex:1;">
+              <div class="gauge-bar"><div class="gauge-fill" style="width:100%;background:#238636;"></div></div>
+              <span class="gauge-pct" style="color:#56D364;">1000/1000 &#10003;</span>
+            </div>
+          </div>
+        </div>
+        <div class="card b-orange" style="min-height:0;">
+          <div class="card-title c-orange">spring-config-migrator</div>
+          <p>Migre les configs Spring Boot vers Python</p>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:auto;padding-top:4px;">
+            <span style="font-size:10px;background:#1A2332;border:1px solid #238636;color:#56D364;padding:1px 6px;border-radius:3px;flex:0 0 auto;">fuse</span>
+            <div style="display:flex;align-items:center;gap:8px;flex:1;">
+              <div class="gauge-bar"><div class="gauge-fill" style="width:40%;background:#F0883E;"></div></div>
+              <span class="gauge-pct" style="color:#F0883E;">400/1000 &#128260;</span>
+            </div>
+          </div>
+        </div>
+        <div class="card b-orange" style="min-height:0;">
+          <div class="card-title c-orange">jpa-hibernate-sqlalchemy</div>
+          <p>Traduit les entités JPA en SQLAlchemy</p>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:auto;padding-top:4px;">
+            <span style="font-size:10px;background:#1A2332;border:1px solid #238636;color:#56D364;padding:1px 6px;border-radius:3px;flex:0 0 auto;">fuse</span>
+            <div style="display:flex;align-items:center;gap:8px;flex:1;">
+              <div class="gauge-bar"><div class="gauge-fill" style="width:38%;background:#F0883E;"></div></div>
+              <span class="gauge-pct" style="color:#F0883E;">400/1060 &#128260;</span>
+            </div>
+          </div>
+        </div>
+        <div class="card b-green" style="min-height:0;">
+          <div class="card-title" style="color:#56D364;">pipeline-orchestrator</div>
+          <p>Orchestre le pipeline LangGraph</p>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:auto;padding-top:4px;">
+            <span style="font-size:10px;background:#2D1F1A;border:1px solid #F0883E;color:#F0883E;padding:1px 6px;border-radius:3px;flex:0 0 auto;">doc_to_code</span>
+            <div style="display:flex;align-items:center;gap:8px;flex:1;">
+              <div class="gauge-bar"><div class="gauge-fill" style="width:100%;background:#238636;"></div></div>
+              <span class="gauge-pct" style="color:#56D364;">300/300 &#10003;</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="agnostic-badge">
+        <span class="ab-label">Autres projets :</span>
+        <span class="ab-item"><span class="ab-dot" style="background:#1F6FEB;"></span>RH : hr-onboarding-qa · contract-summarizer</span>
+        <span class="ab-item"><span class="ab-dot" style="background:#F0883E;"></span>Legal : sensitivity-classifier · doc-summarizer</span>
+        <span class="ab-item"><span class="ab-dot" style="background:#8957E5;"></span>Python2&#8594;3 : migration-version-adapter</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 15 — ÉTAT ACTUEL -->
+  <div class="slide" id="s15">
+    <div class="slide-header">
+      <span class="slide-step">État actuel</span>
+      <span class="slide-title">Migrator — Juin 2026</span>
+    </div>
+    <div class="slide-body">
+      <div class="g4" style="flex:0 0 auto;height:22%;">
+        <div class="card metric">
+          <div class="metric-value c-blue">15 250</div>
+          <div class="metric-label">Records collectés</div>
+        </div>
+        <div class="card metric">
+          <div class="metric-value c-orange">2 770</div>
+          <div class="metric-label">Records qualifiés</div>
+        </div>
+        <div class="card metric">
+          <div class="metric-value c-purple">3 600</div>
+          <div class="metric-label">Paires formées</div>
+        </div>
+        <div class="card metric">
+          <div class="metric-value" style="color:#56D364;">74%</div>
+          <div class="metric-label">de la cible atteinte</div>
+        </div>
+      </div>
+      <div class="funnel">
+        <div class="funnel-row">
+          <div class="funnel-label">Collecte brute · 15 250</div>
+          <div class="funnel-bar" style="width:100%;background:#1F6FEB;">100%</div>
+        </div>
+        <div class="funnel-row">
+          <div class="funnel-label">Après clean_raw · 2 770</div>
+          <div class="funnel-bar" style="width:18%;background:#F0883E;min-width:60px;">18%</div>
+        </div>
+        <div class="funnel-row">
+          <div class="funnel-label">Paires formées · 3 600</div>
+          <div class="funnel-bar" style="width:74%;background:#8957E5;">74% de cible</div>
+        </div>
+        <div class="funnel-row">
+          <div class="funnel-label">Fine-tuning <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(spécialisation d'un modèle d'IA généraliste sur une tâche précise grâce à des exemples)</span> ready · En cours...</div>
+          <div class="funnel-bar" style="width:13%;background:#21262D;border:1px dashed #30363D;min-width:60px;color:#8B949E;">...</div>
+        </div>
+      </div>
+      <div class="g4" style="flex:0 0 auto;">
+        <div class="card b-orange" style="gap:4px;min-height:0;">
+          <div class="card-title c-orange" style="font-size:11px;">1. Compléter génération</div>
+          <p style="font-size:clamp(9px,0.8vw,11px);">spring-config + jpa · ~2 350 paires · ~8 €</p>
+        </div>
+        <div class="card b-blue" style="gap:4px;min-height:0;">
+          <div class="card-title c-blue" style="font-size:11px;">2. Clean final</div>
+          <p style="font-size:clamp(9px,0.8vw,11px);">Pipeline nettoyage &#8594; Étape 2 sur les paires</p>
+        </div>
+        <div class="card b-purple" style="gap:4px;min-height:0;">
+          <div class="card-title c-purple" style="font-size:11px;">3. Contrôle qualité</div>
+          <p style="font-size:clamp(9px,0.8vw,11px);">Inspection d'un échantillon aléatoire</p>
+        </div>
+        <div class="card b-red" style="gap:4px;min-height:0;">
+          <div class="card-title c-red" style="font-size:11px;">4. Modèle de base</div>
+          <p style="font-size:clamp(9px,0.8vw,11px);">Bloqué ZScaler · Whitelist en cours</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 16 — CONCLUSION -->
+  <div class="slide" id="s16">
+    <div class="slide-header">
+      <span class="slide-step">Conclusion</span>
+      <span class="slide-title">Un pipeline conçu pour durer</span>
+    </div>
+    <div class="slide-body">
+      <div class="g3">
+        <div class="card b-blue" style="align-items:center;text-align:center;justify-content:center;gap:12px;">
+          <div style="font-size:clamp(32px,5vw,56px);">&#128274;</div>
+          <div class="card-title c-blue" style="font-size:clamp(14px,1.6vw,20px);">Souveraineté totale</div>
+          <p>Zéro cloud en inférence production. Données sensibles jamais exposées. Air-gap possible pour projets classifiés.</p>
+        </div>
+        <div class="card b-green" style="align-items:center;text-align:center;justify-content:center;gap:12px;">
+          <div style="font-size:clamp(32px,5vw,56px);">&#10003;</div>
+          <div class="card-title" style="color:#56D364;font-size:clamp(14px,1.6vw,20px);">Qualité garantie</div>
+          <p>10 vérifications software à chaque étape. AST <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(vérification automatique que le code est syntaxiquement valide)</span>, similarité cosinus <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(mesure mathématique de la ressemblance entre deux textes : 0 = rien en commun, 1 = identiques)</span>, ratio, blacklist, clustering. Reproductible (<code style="background:#161B22;color:#56D364;padding:2px 6px;border-radius:3px;font-size:0.9em;">seed=42</code> <span style="color:#8B949E;font-style:italic;font-size:0.85em;">(graine aléatoire fixe : garantit que le même résultat est reproduit à chaque exécution)</span>).</p>
+        </div>
+        <div class="card b-purple" style="align-items:center;text-align:center;justify-content:center;gap:12px;">
+          <div style="font-size:clamp(32px,5vw,56px);">&#128260;</div>
+          <div class="card-title c-purple" style="font-size:clamp(14px,1.6vw,20px);">Réutilisable</div>
+          <p>Un fichier YAML suffit. Java&#8594;Python, chatbot RH, Legal Defense, migration Python 2&#8594;3 — même infrastructure.</p>
+        </div>
+      </div>
+      <div style="text-align:center;font-size:13px;color:#8B949E;padding:12px 0;flex:0 0 auto;">
+        Technology &amp; Innovation · Capgemini · Confidentiel Interne · Juin 2026
+      </div>
+    </div>
+  </div>
+
+</div><!-- /#deck -->
+
+<div id="nav">
+  <button onclick="go(-1)" id="btn-prev" disabled>&#8592;</button>
+  <span id="progress-text">1 / 16</span>
+  <div id="progress-bar"><div id="progress-fill"></div></div>
+  <button onclick="go(1)" id="btn-next">&#8594;</button>
+</div>
+
+<script>
+let cur = 0;
+const slides = document.querySelectorAll('.slide');
+const N = slides.length;
+function go(d) {
+  slides[cur].classList.remove('active');
+  cur = (cur + d + N) % N;
+  slides[cur].classList.add('active');
+  document.getElementById('progress-text').textContent = (cur+1) + ' / ' + N;
+  document.getElementById('progress-fill').style.width = ((cur+1)/N*100) + '%';
+  document.getElementById('btn-prev').disabled = cur === 0;
+  document.getElementById('btn-next').disabled = cur === N-1;
+}
+document.addEventListener('keydown', e => {
+  if (e.key==='ArrowRight' || e.key===' ') go(1);
+  if (e.key==='ArrowLeft') go(-1);
+});
+</script>
+</body>
+</html>

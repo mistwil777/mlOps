@@ -1,0 +1,50 @@
+# Transform template: semantic_pair_match
+# Joins records from two languages by semantic similarity of their descriptions.
+# Used by pipeline/transform.py and agents/semantic_pair_matcher.py
+#
+# Compatible collectors: doc_crawl, web_crawl (neutral schema: description + code + lang)
+# Required project params: src_lang, tgt_lang
+#
+# How it works:
+#   1. Records from both languages are loaded
+#   2. Descriptions are embedded via pipeline.utils.embeddings
+#   3. Records are matched by cosine similarity on descriptions
+#   4. Pairs above min_similarity threshold are assembled as training pairs
+
+id: semantic_pair_match
+description: Join bilingual records by semantic similarity of their descriptions
+
+input_schema:
+  # Semantic join — not a key-based join like code_migration
+  match_by: semantic_description
+  # Field to embed for semantic matching (natural language description)
+  match_field: description
+  # Source code field
+  input_field: code
+  # Filter: which records are the input side (source language)
+  input_filter:
+    field: lang
+    value: "{{src_lang}}"
+  # Output code field
+  output_field: code
+  # Filter: which records are the output side (target language)
+  output_filter:
+    field: lang
+    value: "{{tgt_lang}}"
+  # Minimum cosine similarity to accept a match
+  min_similarity: 0.75
+
+# Instruction prepended to the prompt
+instruction_template: |
+  Migrate the following {{src_lang}} code to {{tgt_lang}}.
+
+  ```{{src_lang}}
+  {{input}}
+  ```
+
+params_required:
+  - src_lang
+  - tgt_lang
+
+params_optional:
+  - min_similarity  # override default threshold

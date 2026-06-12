@@ -101,12 +101,12 @@ class LoraTrainer:
     ) -> str:
         hf_path = self.model_config.get("hf_path", model)
         parts = [
-            _MLX_PYTHON, "-m", "mlx_lm.lora",
+            _MLX_PYTHON, "-m", "mlx_lm", "lora",
             "--model", hf_path,
             "--train",
             "--data", data_path,
             "--batch-size", str(config.get("batch_size", 4)),
-            "--lora-layers", str(config.get("lora_layers", 16)),
+            "--num-layers", str(config.get("lora_layers", 16)),
             "--iters", str(config.get("iters", 1000)),
             "--learning-rate", str(config.get("learning_rate", 1e-4)),
             "--steps-per-eval", str(config.get("steps_per_eval", 100)),

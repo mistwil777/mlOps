@@ -136,8 +136,17 @@ export const startCollect      = (body: { project_id: string; topic?: string; ma
   req<CollectJob>('/data/collect', { method: 'POST', body: JSON.stringify(body) });
 export const startFuse         = (body: { project_id: string; lang_pair: string; adapter_name?: string; max_fused?: number; llm_model?: string }) =>
   req<CollectJob>('/data/fuse', { method: 'POST', body: JSON.stringify(body) });
+export const startSemanticMatch   = (body: { project_id: string; lang_pair: string; adapter_name?: string; threshold?: number; max_pairs?: number }) =>
+  req<CollectJob>('/data/semantic-match', { method: 'POST', body: JSON.stringify(body) });
+export const startDiscoverSources   = (body: { project_id: string; lang_pair: string; adapter_name?: string; max_sources?: number }) =>
+  req<CollectJob>('/data/discover-sources', { method: 'POST', body: JSON.stringify(body) });
+export const getGenerateEstimate    = (projectId: string) =>
+  req<{ total_needed: number; cost_usd: number; cost_eur: number; per_adapter: any[] }>(`/data/generate-pairs/estimate/${projectId}`);
+export const startGeneratePairs     = (body: { project_id: string; dry_run?: boolean }) =>
+  req<CollectJob>('/data/generate-pairs', { method: 'POST', body: JSON.stringify(body) });
 export const getAdapterCoverage = (projectId: string) => req<AdapterCoverageResult>(`/data/adapter-coverage/${projectId}`);
 export const getCollectStatus  = (jobId: string) => req<JobStatus>(`/data/collect/${jobId}/status`);
+export const getCollectHistory = (projectId: string) => req<Record<string, { status: string; ts: string; pairs?: number }>>(`/data/collect-history/${projectId}`);
 // Review — pipeline-aware
 export const getQualitySummary   = (projectId: string) => req<QualitySummary>(`/data/review/${projectId}/quality-summary`);
 export const getRejected         = (projectId: string, step?: string, page = 0, pageSize = 20) =>
@@ -149,6 +158,12 @@ export const flagRecord          = (projectId: string, body: { index: number; ac
 export const rescueRecord        = (projectId: string, body: { index: number; action: 'rescue'; corrections?: Record<string, string>; note?: string }) =>
   req<{ ok: boolean; rescued_from: string; record: unknown }>(`/data/review/${projectId}/rescue`, { method: 'POST', body: JSON.stringify(body) });
 export const getReviewStats      = (projectId: string) => req<ReviewStats>(`/data/review/${projectId}/stats`);
+export const startCleanRaw     = (body: { project_id: string; adapter?: string; dry_run?: boolean }) =>
+  req<CollectJob>('/data/clean-raw', { method: 'POST', body: JSON.stringify(body) });
+export const cancelCleanRaw      = (jobId: string) =>
+  req<{ status: string; job_id: string }>(`/data/clean-raw/${jobId}`, { method: 'DELETE' });
+export const getCleanRawEstimate = (projectId: string) =>
+  req<{ raw_records: number; est_min_low: number; est_min_high: number; est_label: string }>(`/data/clean-raw/estimate/${projectId}`);
 export const startPipeline     = (body: { project_id: string; threshold?: number }) =>
   req<CollectJob>('/data/pipeline', { method: 'POST', body: JSON.stringify(body) });
 export const getPipelineStatus = (jobId: string) => req<JobStatus>(`/data/pipeline/${jobId}/status`);

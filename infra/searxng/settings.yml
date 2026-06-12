@@ -1,0 +1,44 @@
+# SearXNG minimal override — only what we need to change
+# SearXNG fills in all other defaults automatically
+
+use_default_settings: true
+
+general:
+  debug: false
+  instance_name: "mlops-awa"
+
+search:
+  safe_search: 0
+  formats:
+    - html
+    - json
+
+server:
+  secret_key: "mlops-searxng-local-secret"
+  limiter: false
+  public_instance: false
+
+ui:
+  default_theme: simple
+
+# Only keep engines useful for code documentation discovery
+engines:
+  - name: google
+    engine: google
+    shortcut: g
+
+  - name: bing
+    engine: bing
+    shortcut: b
+
+  - name: duckduckgo
+    engine: duckduckgo
+    shortcut: d
+
+  - name: github
+    engine: github
+    shortcut: gh
+
+  - name: stackoverflow
+    engine: stackoverflow
+    shortcut: so

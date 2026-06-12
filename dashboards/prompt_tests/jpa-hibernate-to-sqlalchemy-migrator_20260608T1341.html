@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8">
+<title>Prompt Test — jpa-hibernate-to-sqlalchemy-migrator</title>
+<style>
+body{font-family:monospace;margin:2em;color:#1a1a2e}
+table{border-collapse:collapse;width:100%;margin:1em 0}
+th,td{border:1px solid #ccc;padding:8px;text-align:left}
+th{background:#003366;color:#fff}
+pre{background:#f5f5f5;padding:6px;font-size:10pt}
+h2{color:#003366} h3{margin-top:1.5em}
+.badge{background:#2e7d32;color:#fff;padding:2px 8px;border-radius:3px;font-size:9pt}
+</style></head><body>
+<h1>Test comparatif de prompts</h1>
+<p><strong>Adapter:</strong> jpa-hibernate-to-sqlalchemy-migrator &nbsp;|&nbsp;
+   <strong>Direction:</strong> java → python &nbsp;|&nbsp;
+   <strong>Samples:</strong> 10 &nbsp;|&nbsp;
+   <strong>Date:</strong> 2026-06-08</p>
+<p><strong>Gagnant:</strong> <span class="badge">Baseline</span>
+   (avg LLM judge = 0.500)</p>
+
+<h2>Résumé</h2>
+<table>
+  <tr><th>Variant</th><th>Syntaxe OK</th><th>Score LLM moyen</th><th>Paires scorées</th></tr>
+  <tr style="background:#e8f5e9"><td><strong>Baseline 🏆</strong></td><td>90%</td><td>0.500 / 1.0</td><td>10/10</td></tr><tr><td><strong>Migration context</strong></td><td>80%</td><td>0.500 / 1.0</td><td>10/10</td></tr><tr><td><strong>Few-shot example</strong></td><td>80%</td><td>0.500 / 1.0</td><td>10/10</td></tr><tr><td><strong>Strict output fmt</strong></td><td>70%</td><td>0.480 / 1.0</td><td>10/10</td></tr>
+</table>
+
+<h2>Détails par sample</h2>
+<h3>Baseline (v1_baseline)</h3><table><tr><td>Sample 1</td><td>Syntax: ✓</td><td>LLM score: 0.30</td><td><pre style='max-width:500px;overflow:auto'>from itertools import permutations
+from collections import Counter
+
+def main(args):
+    test_sequences = [
+        ["TA", "AAG", "TA", "GAA", "TA"],
+        ["CATTAGGG", "ATTAG", "GGG", "TA"],
+       </pre></td></tr><tr><td>Sample 2</td><td>Syntax: ✓</td><td>LLM score: 0.80</td><td><pre style='max-width:500px;overflow:auto'>import numpy as np
+
+def filter(a, b, signal):
+    result = np.zeros_like(signal)
+    for i in range(len(signal)):
+        tmp = 0.0
+        for j in range(len(b)):
+            if i - j < 0: continue
+ </pre></td></tr><tr><td>Sample 3</td><td>Syntax: ✗</td><td>LLM score: 0.40</td><td><pre style='max-width:500px;overflow:auto'>```python
+from math import pi, radians, degrees
+from decimal import Decimal, getcontext
+
+# Set precision for Decimal
+getcontext().prec = 7
+
+class AnglesNormalizationAndConversion:
+
+    DEGREE = 360
+  </pre></td></tr><tr><td>Sample 4</td><td>Syntax: ✓</td><td>LLM score: 0.40</td><td><pre style='max-width:500px;overflow:auto'>import random
+from collections import namedtuple
+
+class Program:
+    def __init__(self):
+        self.sequence = []
+        self.random = random.Random()
+
+    def generate(self, amount):
+        for _</pre></td></tr><tr><td>Sample 5</td><td>Syntax: ✓</td><td>LLM score: 0.40</td><td><pre style='max-width:500px;overflow:auto'>from itertools import permutations
+from collections import Counter
+
+class BioinformaticsGlobalAlignment:
+
+    @staticmethod
+    def main(aArgs):
+        testSequences = [
+            ["TA", "AAG", "TA</pre></td></tr><tr><td>Sample 6</td><td>Syntax: ✓</td><td>LLM score: 0.60</td><td><pre style='max-width:500px;overflow:auto'>import math
+
+class BinomialTransform:
+
+    @staticmethod
+    def main():
+        sequences = [
+            [1, 1, 2, 5, 14, 42, 132, 429, 1430, 4862, 16796, 58786, 208012, 742900, 2674440, 9694845],
+ </pre></td></tr><tr><td>Sample 7</td><td>Syntax: ✓</td><td>LLM score: 0.60</td><td><pre style='max-width:500px;overflow:auto'>import math
+
+class BinomialTransform:
+
+    @staticmethod
+    def main():
+        sequences = [
+            [1, 1, 2, 5, 14, 42, 132, 429, 1430, 4862, 16796, 58786, 208012, 742900, 2674440, 9694845],
+ </pre></td></tr><tr><td>Sample 8</td><td>Syntax: ✓</td><td>LLM score: 0.60</td><td><pre style='max-width:500px;overflow:auto'>from functools import lru_cache
+from itertools import islice
+from typing import Callable, List, Dict, Tuple
+
+class BoustrophedonTransform:
+
+    @staticmethod
+    def main():
+        BoustrophedonTrans</pre></td></tr><tr><td>Sample 9</td><td>Syntax: ✓</td><td>LLM score: 0.30</td><td><pre style='max-width:500px;overflow:auto'>from typing import List
+import random
+import io
+import contextlib
+
+class Base:
+    def __init__(self, a: int, c: int, g: int, t: int):
+        self.a = a
+        self.c = c
+        self.g = g
+        </pre></td></tr><tr><td>Sample 10</td><td>Syntax: ✓</td><td>LLM score: 0.60</td><td><pre style='max-width:500px;overflow:auto'>from typing import List
+
+class BWT:
+    STX = "\u0002"
+    ETX = "\u0003"
+
+    def bwt(self, s: str) -> str:
+        if self.STX in s or self.ETX in s:
+            raise ValueError("String cannot cont</pre></td></tr></table><h3>Migration context (v2_migration_context)</h3><table><tr><td>Sample 1</td><td>Syntax: ✗</td><td>LLM score: 0.30</td><td><pre style='max-width:500px;overflow:auto'>from itertools import permutations
+from collections import Counter
+
+def main(args):
+    test_sequences = [
+        ["TA", "AAG", "TA", "GAA", "TA"],
+        ["CATTAGGG", "ATTAG", "GGG", "TA"],
+       </pre></td></tr><tr><td>Sample 2</td><td>Syntax: ✓</td><td>LLM score: 0.80</td><td><pre style='max-width:500px;overflow:auto'>def filter(a, b, signal):
+    result = [0.0] * len(signal)
+    for i in range(len(signal)):
+        tmp = 0.0
+        for j in range(len(b)):
+            if i - j < 0: continue
+            tmp += b[j]</pre></td></tr><tr><td>Sample 3</td><td>Syntax: ✗</td><td>LLM score: 0.40</td><td><pre style='max-width:500px;overflow:auto'>```python
+from math import pi, fmod
+from decimal import Decimal, getcontext
+
+getcontext().prec = 7
+
+class AnglesNormalizationAndConversion:
+
+    DEGREE = 360
+    GRADIAN = 400
+    MIL = 6400
+    RADIA</pre></td></tr><tr><td>Sample 4</td><td>Syntax: ✓</td><td>LLM score: 0.40</td><td><pre style='max-width:500px;overflow:auto'>import random
+from collections import namedtuple
+
+class SequenceMutation:
+    def __init__(self):
+        self.sequence = []
+        self.random = random.Random()
+
+    def generate(self, amount):
+    </pre></td></tr><tr><td>Sample 5</td><td>Syntax: ✓</td><td>LLM score: 0.30</td><td><pre style='max-width:500px;overflow:auto'>from itertools import permutations
+from collections import Counter
+
+def main(aArgs):
+    test_sequences = [
+        ["TA", "AAG", "TA", "GAA", "TA"],
+        ["CATTAGGG", "ATTAG", "GGG", "TA"],
+      </pre></td></tr><tr><td>Sample 6</td><td>Syntax: ✓</td><td>LLM score: 0.50</td><td><pre style='max-width:500px;overflow:auto'>import math
+
+class BinomialTransform:
+
+    @staticmethod
+    def main(args):
+        sequences = [
+            [1, 1, 2, 5, 14, 42, 132, 429, 1430, 4862, 16796, 58786, 208012, 742900, 2674440, 9694845</pre></td></tr><tr><td>Sample 7</td><td>Syntax: ✓</td><td>LLM score: 0.60</td><td><pre style='max-width:500px;overflow:auto'>import math
+
+class BinomialTransform:
+
+    @staticmethod
+    def main(args):
+        sequences = [
+            [1, 1, 2, 5, 14, 42, 132, 429, 1430, 4862, 16796, 58786, 208012, 742900, 2674440, 9694845</pre></td></tr><tr><td>Sample 8</td><td>Syntax: ✓</td><td>LLM score: 0.60</td><td><pre style='max-width:500px;overflow:auto'>from functools import lru_cache
+from itertools import islice
+from math import prod
+from typing import Callable, Dict, List, Tuple
+
+class BoustrophedonTransform:
+
+    @staticmethod
+    def main():
+    </pre></td></tr><tr><td>Sample 9</td><td>Syntax: ✓</td><td>LLM score: 0.40</td><td><pre style='max-width:500px;overflow:auto'>import random
+import io
+from typing import List, NamedTuple
+
+class Base(NamedTuple):
+    a: int
+    c: int
+    g: int
+    t: int
+
+    def total(self):
+        return self.a + self.c + self.g + self.t
+</pre></td></tr><tr><td>Sample 10</td><td>Syntax: ✓</td><td>LLM score: 0.70</td><td><pre style='max-width:500px;overflow:auto'>from typing import List
+
+class BWT:
+    STX = '\u0002'
+    ETX = '\u0003'
+
+    def bwt(self, s: str) -> str:
+        if self.STX in s or self.ETX in s:
+            raise ValueError("String cannot cont</pre></td></tr></table><h3>Few-shot example (v3_few_shot)</h3><table><tr><td>Sample 1</td><td>Syntax: ✗</td><td>LLM score: 0.40</td><td><pre style='max-width:500px;overflow:auto'>```python
+from itertools import permutations
+from collections import Counter
+
+class BioinformaticsGlobalAlignment:
+
+    def main(self, aArgs):
+        test_sequences = [
+            ["TA", "AAG", "TA"</pre></td></tr><tr><td>Sample 2</td><td>Syntax: ✓</td><td>LLM score: 0.80</td><td><pre style='max-width:500px;overflow:auto'>class DigitalFilter:
+    @staticmethod
+    def filter(a, b, signal):
+        result = [0.0] * len(signal)
+        for i in range(len(signal)):
+            tmp = 0.0
+            for j in range(len(b)):</pre></td></tr><tr><td>Sample 3</td><td>Syntax: ✓</td><td>LLM score: 0.50</td><td><pre style='max-width:500px;overflow:auto'>from decimal import Decimal, getcontext
+
+class AnglesNormalizationAndConversion:
+
+    def __init__(self):
+        getcontext().prec = 10
+        self.format_angle = "{:.6f}"
+        self.format_conv =</pre></td></tr><tr><td>Sample 4</td><td>Syntax: ✓</td><td>LLM score: 0.30</td><td><pre style='max-width:500px;overflow:auto'>import random
+import io
+import textwrap
+
+class Base:
+    def __init__(self, a, c, g, t):
+        self.a = a
+        self.c = c
+        self.g = g
+        self.t = t
+
+    def total(self):
+        retur</pre></td></tr><tr><td>Sample 5</td><td>Syntax: ✗</td><td>LLM score: 0.40</td><td><pre style='max-width:500px;overflow:auto'>```python
+from itertools import permutations
+from collections import Counter
+
+class BioinformaticsGlobalAlignment:
+
+    @staticmethod
+    def main(aArgs):
+        test_sequences = [
+            ["TA",</pre></td></tr><tr><td>Sample 6</td><td>Syntax: ✓</td><td>LLM score: 0.60</td><td><pre style='max-width:500px;overflow:auto'>import numpy as np
+
+class BinomialTransform:
+
+    def main(self):
+        sequences = [
+            [1, 1, 2, 5, 14, 42, 132, 429, 1430, 4862, 16796, 58786, 208012, 742900, 2674440, 9694845],
+        </pre></td></tr><tr><td>Sample 7</td><td>Syntax: ✓</td><td>LLM score: 0.60</td><td><pre style='max-width:500px;overflow:auto'>import math
+
+class BinomialTransform:
+
+    @staticmethod
+    def main(args):
+        sequences = [
+            [1, 1, 2, 5, 14, 42, 132, 429, 1430, 4862, 16796, 58786, 208012, 742900, 2674440, 9694845</pre></td></tr><tr><td>Sample 8</td><td>Syntax: ✓</td><td>LLM score: 0.40</td><td><pre style='max-width:500px;overflow:auto'>from functools import lru_cache
+import itertools
+
+class BoustrophedonTransform:
+
+    def __init__(self):
+        self.primes = [2]
+        self.fibonacci_cache = {}
+        self.factorial_cache = {}
+ </pre></td></tr><tr><td>Sample 9</td><td>Syntax: ✓</td><td>LLM score: 0.30</td><td><pre style='max-width:500px;overflow:auto'>from typing import List
+import random
+import io
+import collections
+
+class Base:
+    def __init__(self, a: int, c: int, g: int, t: int):
+        self.a = a
+        self.c = c
+        self.g = g
+       </pre></td></tr><tr><td>Sample 10</td><td>Syntax: ✓</td><td>LLM score: 0.70</td><td><pre style='max-width:500px;overflow:auto'>from typing import List
+
+class BWT:
+    STX = '\u0002'
+    ETX = '\u0003'
+
+    def bwt(self, s: str) -> str:
+        if self.STX in s or self.ETX in s:
+            raise ValueError("String cannot cont</pre></td></tr></table><h3>Strict output fmt (v4_strict_output)</h3><table><tr><td>Sample 1</td><td>Syntax: ✗</td><td>LLM score: 0.30</td><td><pre style='max-width:500px;overflow:auto'>```python
+from itertools import permutations
+from collections import Counter
+
+var0 = []
+var1 = []
+var2 = []
+var3 = []
+var4 = type
+var5 = staticmethod
+var6 = type
+var7 = class
+
+@var7
+class Bioinformati</pre></td></tr><tr><td>Sample 2</td><td>Syntax: ✓</td><td>LLM score: 0.60</td><td><pre style='max-width:500px;overflow:auto'>class DigitalFilter:
+    @staticmethod
+    def filter(a, b, signal):
+        result = [0.0] * len(signal)
+        for i in range(len(signal)):
+            tmp = 0.0
+            for j in range(len(b)):</pre></td></tr><tr><td>Sample 3</td><td>Syntax: ✓</td><td>LLM score: 0.60</td><td><pre style='max-width:500px;overflow:auto'>from decimal import Decimal, getcontext
+
+# Title:  Angles (geometric), normalization and conversion
+
+class AnglesNormalizationAndConversion:
+
+    def __init__(self):
+        getcontext().prec = 10
+   </pre></td></tr><tr><td>Sample 4</td><td>Syntax: ✓</td><td>LLM score: 0.40</td><td><pre style='max-width:500px;overflow:auto'>import random
+import io
+import textwrap
+
+class Base:
+    def __init__(self, a, c, g, t):
+        self.a = a
+        self.c = c
+        self.g = g
+        self.t = t
+
+    def total(self):
+        retur</pre></td></tr><tr><td>Sample 5</td><td>Syntax: ✗</td><td>LLM score: 0.40</td><td><pre style='max-width:500px;overflow:auto'>```python
+from itertools import permutations
+from collections import Counter
+
+class BioinformaticsGlobalAlignment:
+
+    @staticmethod
+    def main(aArgs):
+        testSequences = [
+            ["TA", </pre></td></tr><tr><td>Sample 6</td><td>Syntax: ✗</td><td>LLM score: 0.40</td><td><pre style='max-width:500px;overflow:auto'>```python
+from math import comb
+
+class BinomialTransform:
+
+    def main(self, args):
+        sequences = [
+            [1, 1, 2, 5, 14, 42, 132, 429, 1430, 4862, 16796, 58786, 208012, 742900, 2674440,</pre></td></tr><tr><td>Sample 7</td><td>Syntax: ✓</td><td>LLM score: 0.60</td><td><pre style='max-width:500px;overflow:auto'>import math
+
+class BinomialTransform:
+
+    @staticmethod
+    def main(args):
+        sequences = [
+            [1, 1, 2, 5, 14, 42, 132, 429, 1430, 4862, 16796, 58786, 208012, 742900, 2674440, 9694845</pre></td></tr><tr><td>Sample 8</td><td>Syntax: ✓</td><td>LLM score: 0.40</td><td><pre style='max-width:500px;overflow:auto'>from functools import lru_cache
+from itertools import count
+from typing import Callable, List, Dict
+
+class BoustrophedonTransform:
+
+    def __init__(self):
+        self.primes: List[int] = []
+        </pre></td></tr><tr><td>Sample 9</td><td>Syntax: ✓</td><td>LLM score: 0.40</td><td><pre style='max-width:500px;overflow:auto'>from io import StringIO, BufferedReader
+from typing import List
+import random
+
+class Base:
+    def __init__(self, a: int, c: int, g: int, t: int):
+        self.a = a
+        self.c = c
+        self.g </pre></td></tr><tr><td>Sample 10</td><td>Syntax: ✓</td><td>LLM score: 0.70</td><td><pre style='max-width:500px;overflow:auto'>from typing import List
+
+class BWT:
+    STX = "\u0002"
+    ETX = "\u0003"
+
+    def bwt(self, s: str) -> str:
+        if self.STX in s or self.ETX in s:
+            raise ValueError("String cannot cont</pre></td></tr></table>
+</body></html>

@@ -29,6 +29,19 @@ services:
     volumes:
       - qdrant_data:/qdrant/storage
 
+  # ── SearXNG meta-search engine ─────────────────────────────────────────
+  # AWA source discovery: aggregates Google, Bing, DuckDuckGo, GitHub, ArXiv
+  # No API key required — self-hosted, Green IT compliant
+  searxng:
+    image: searxng/searxng:latest
+    ports:
+      - "8889:8080"
+    volumes:
+      - ./infra/searxng:/etc/searxng:rw
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8889
+    restart: unless-stopped
+
   # ── MinIO object storage ────────────────────────────────────────────────
   # Phase 2: DVC remote + model artifact storage
   # minio:

@@ -5,7 +5,7 @@ description: Besoin d'un model et ses adapters lora pour faire fonctionner Migra
 classification: interne
 domain: code
 task_type: generation
-model: qwen2.5-coder-7b-4bit
+model: qwen2.5-coder-14b-instruct-4bit
 model_format: qwen
 rag_collection: patterns_migrator
 baseline:
@@ -43,7 +43,9 @@ adapters:
     résolues en amont) et n''accède jamais au pom.xml. Gère la conversion des patterns
     OOP Java en idiomes Python natifs : dataclasses, typing, compréhensions, context
     managers, exceptions, etc. Produit un fichier .py autonome et syntaxiquement valide.'
-  estimated_pairs: 900
+  estimated_pairs: 400
+  pair_strategy: fuse
+  lang_pair: java-python
   rag_recommended: false
   source_configs:
   - label: Rosetta Code — migration Java/Python
@@ -109,7 +111,9 @@ adapters:
   role: specialist
   description: Convertit les fichiers de tests JUnit (annotations, assertions, fixtures)
     en tests pytest Python valides et idiomatiques, utilisé par le nœud AM-TestMigration.
-  estimated_pairs: 600
+  estimated_pairs: 200
+  pair_strategy: fuse
+  lang_pair: java-python
   rag_recommended: false
   source_configs:
   - label: pytest official docs
@@ -167,7 +171,9 @@ adapters:
     Java : détecte les erreurs de traduction idiomatique, les anti-patterns non-pythoniques,
     les incohérences logiques par rapport au code source Java d''origine, et produit
     un score de confiance par fichier migré avec des suggestions de correction ciblées.'
-  estimated_pairs: 1000
+  estimated_pairs: 300
+  pair_strategy: doc_to_code
+  lang_pair: null
   rag_recommended: false
   source_configs:
   - label: PEP 8 — style guide officiel Python
@@ -239,7 +245,9 @@ adapters:
     pour Flask, FastAPI ou Pydantic Settings, en préservant la sémantique des profils,
     des variables d'environnement, des datasources, des ports, des clés de sécurité
     et des propriétés personnalisées.
-  estimated_pairs: 1000
+  estimated_pairs: 300
+  pair_strategy: fuse
+  lang_pair: java-python
   rag_recommended: false
   source_configs:
   - label: Spring Boot application properties reference
@@ -283,6 +291,11 @@ adapters:
   - label: Paires manuelles — profils multi-env, OAuth2, datasources
     collector_type: manual
     estimated_pairs: 250
+  - label: Exemples Spring Boot config synthétiques — Java
+    collector_type: synthetic
+    value: spring-config-java-synthetic
+    lang_hint: java
+    estimated_pairs: 150
   data_sources:
   - Spring Boot application properties (officiel)
   - Pydantic Settings + FastAPI + Flask config docs
@@ -328,7 +341,9 @@ adapters:
     Spring Data JPA et les mappings Hibernate XML en modèles SQLAlchemy (Core et ORM)
     ou Tortoise ORM Python idiomatiques, en préservant la sémantique relationnelle,
     les contraintes, les index et les stratégies d'héritage.
-  estimated_pairs: 1060
+  estimated_pairs: 300
+  pair_strategy: fuse
+  lang_pair: java-python
   rag_recommended: false
   source_configs:
   - label: SQLAlchemy ORM — Mapping Classes
@@ -373,6 +388,11 @@ adapters:
   - label: Paires manuelles — héritage JPA, embeddable, JPQL
     collector_type: manual
     estimated_pairs: 200
+  - label: Exemples JPA/Hibernate synthétiques — Java
+    collector_type: synthetic
+    value: jpa-hibernate-java-synthetic
+    lang_hint: java
+    estimated_pairs: 150
   data_sources:
   - SQLAlchemy ORM + Core docs
   - Hibernate ORM + Jakarta JPA specs
@@ -426,7 +446,9 @@ adapters:
   description: Orchestre le pipeline de migration en interprétant l'état global LangGraph,
     route vers le bon agent manager selon la phase active, et synthétise les résultats
     partiels pour produire un rapport de migration cohérent.
-  estimated_pairs: 300
+  estimated_pairs: 150
+  pair_strategy: doc_to_code
+  lang_pair: null
   rag_recommended: false
   source_configs:
   - label: LangGraph — official docs
@@ -525,7 +547,7 @@ software_components:
 transform:
   template: code_migration
   params:
-    src_lang: python
-    tgt_lang: java
-    lang_pair_key: python-java
+    src_lang: java
+    tgt_lang: python
+    lang_pair_key: java-python
 id: migrator

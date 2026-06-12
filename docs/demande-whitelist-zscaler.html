@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Demande d'autorisation Zscaler — Projet MLOps IA Souveraine</title>
+<style>
+  @page { margin: 2cm 2.5cm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", Arial, sans-serif;
+    font-size: 11pt;
+    color: #1a1a2e;
+    line-height: 1.6;
+    background: #fff;
+  }
+
+  /* ── En-tête ── */
+  .header {
+    border-bottom: 3px solid #003366;
+    padding-bottom: 16px;
+    margin-bottom: 28px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+  }
+  .header-left h1 {
+    font-size: 16pt;
+    color: #003366;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+  .header-left .subtitle {
+    font-size: 10pt;
+    color: #555;
+    margin-top: 4px;
+  }
+  .header-right {
+    text-align: right;
+    font-size: 9.5pt;
+    color: #555;
+    line-height: 1.8;
+  }
+  .badge {
+    display: inline-block;
+    background: #003366;
+    color: #fff;
+    font-size: 8.5pt;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 3px;
+    letter-spacing: 0.05em;
+  }
+  .badge.orange { background: #c85000; }
+
+  /* ── Sections ── */
+  h2 {
+    font-size: 12pt;
+    color: #003366;
+    font-weight: 700;
+    border-left: 4px solid #003366;
+    padding-left: 10px;
+    margin: 28px 0 12px 0;
+  }
+  h3 {
+    font-size: 10.5pt;
+    color: #1a1a2e;
+    font-weight: 700;
+    margin: 18px 0 6px 0;
+  }
+  p { margin-bottom: 8px; }
+
+  /* ── Bloc contexte ── */
+  .context-box {
+    background: #f0f4fa;
+    border-left: 4px solid #003366;
+    padding: 14px 18px;
+    margin-bottom: 20px;
+    border-radius: 0 4px 4px 0;
+  }
+
+  /* ── Tableau des URLs ── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 9.5pt;
+    margin: 12px 0 20px 0;
+  }
+  th {
+    background: #003366;
+    color: #fff;
+    padding: 8px 10px;
+    text-align: left;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+  }
+  td {
+    padding: 7px 10px;
+    border-bottom: 1px solid #dde4f0;
+    vertical-align: top;
+  }
+  tr:nth-child(even) td { background: #f7f9fc; }
+  .url-cell {
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 9pt;
+    color: #003366;
+    word-break: break-all;
+  }
+  .tag {
+    display: inline-block;
+    font-size: 8pt;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .tag.embed { background: #e3f0ff; color: #003399; }
+  .tag.llm   { background: #fff0e0; color: #994400; }
+  .tag.reg   { background: #eafbe7; color: #1a6600; }
+
+  /* ── Impact ── */
+  .impact-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin: 12px 0;
+  }
+  .impact-card {
+    border: 1px solid #dde4f0;
+    border-radius: 5px;
+    padding: 12px 14px;
+  }
+  .impact-card .icon { font-size: 16pt; margin-bottom: 4px; }
+  .impact-card .label { font-size: 8.5pt; color: #666; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+  .impact-card .value { font-size: 10pt; font-weight: 600; color: #1a1a2e; margin-top: 2px; }
+
+  /* ── Tableau de synthèse (protocoles) ── */
+  .proto-table td:first-child { font-weight: 600; width: 22%; }
+  .proto-table td:nth-child(2) { width: 28%; }
+
+  /* ── Justification technique ── */
+  .tech-note {
+    background: #fffbf0;
+    border: 1px solid #f0d080;
+    border-radius: 4px;
+    padding: 12px 16px;
+    font-size: 9.5pt;
+    margin: 12px 0;
+  }
+  .tech-note strong { color: #994400; }
+
+  /* ── Signature ── */
+  .signature {
+    margin-top: 36px;
+    border-top: 1px solid #ccc;
+    padding-top: 20px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 40px;
+    font-size: 9.5pt;
+  }
+  .sig-block .sig-label { color: #666; font-size: 8.5pt; margin-bottom: 4px; }
+  .sig-block .sig-name  { font-weight: 700; font-size: 11pt; }
+  .sig-line { border-top: 1px solid #999; margin-top: 36px; padding-top: 4px; color: #999; font-size: 8pt; }
+
+  /* ── Pied de page ── */
+  .footer {
+    margin-top: 40px;
+    padding-top: 12px;
+    border-top: 1px solid #ddd;
+    font-size: 8pt;
+    color: #888;
+    text-align: center;
+  }
+
+  /* ── Print ── */
+  @media print {
+    .impact-grid { grid-template-columns: 1fr 1fr; }
+    table { page-break-inside: avoid; }
+    h2 { page-break-after: avoid; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════ EN-TÊTE -->
+<div class="header">
+  <div class="header-left">
+    <h1>Demande d'autorisation réseau — Zscaler</h1>
+    <div class="subtitle">Projet MLOps · IA Souveraine · Infrastructure Machine Learning</div>
+  </div>
+  <div class="header-right">
+    <span class="badge">CONFIDENTIEL INTERNE</span><br>
+    Date : 2 juin 2026<br>
+    Émetteur : Wilfried Leroulier<br>
+    Direction : Technology &amp; Innovation<br>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ OBJET -->
+<div class="context-box">
+  <strong>Objet :</strong> Autorisation d'accès à des ressources techniques externes nécessaires au
+  téléchargement de modèles d'IA et de bibliothèques de Machine Learning, dans le cadre du projet
+  MLOps de production de modèles de langage locaux (souverains, sans inférence cloud en production).
+  Les accès demandés sont <strong>unidirectionnels en lecture seule</strong> (téléchargement), limités
+  à la phase de développement, et ne transportent aucune donnée client ni donnée classifiée.
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ CONTEXTE -->
+<h2>1. Contexte du projet</h2>
+
+<p>
+  Le projet <strong>MLOps IA Souveraine</strong> a pour objectif de produire des modèles de langage
+  (LLM) fine-tunés localement, déployables en environnement client on-premise ou air-gapped.
+  L'infrastructure vise une <strong>souveraineté totale</strong> : zéro appel cloud en production,
+  100&nbsp;% inférence locale.
+</p>
+<p>
+  La machine de développement est un <strong>MacBook Pro M4 Pro 48&nbsp;Go</strong>
+  (macOS Tahoe 26.4). Le fine-tuning utilise le framework <strong>MLX-LM</strong> (Apple Silicon),
+  la vectorisation <strong>Qdrant</strong>, et le serving local <strong>Ollama</strong>.
+</p>
+<p>
+  Plusieurs composants essentiels du pipeline nécessitent un accès réseau unique lors de leur
+  installation initiale afin de télécharger les artefacts binaires (poids de modèles, bibliothèques
+  compilées). Une fois téléchargés, ces artefacts sont utilisés exclusivement en local.
+</p>
+
+<!-- ═══════════════════════════════════════════════════════════ IMPACT -->
+<h2>2. Impact du blocage actuel</h2>
+
+<div class="impact-grid">
+  <div class="impact-card">
+    <div class="icon">🔴</div>
+    <div class="label">Pipeline bloqué</div>
+    <div class="value">Embeddings sémantiques indisponibles</div>
+  </div>
+  <div class="impact-card">
+    <div class="icon">🔴</div>
+    <div class="label">Pipeline bloqué</div>
+    <div class="value">LLM de génération non téléchargeable</div>
+  </div>
+  <div class="impact-card">
+    <div class="icon">🟡</div>
+    <div class="label">Dégradé</div>
+    <div class="value">Matching sémantique fallback TF-IDF (qualité réduite)</div>
+  </div>
+  <div class="impact-card">
+    <div class="icon">🟡</div>
+    <div class="label">Dégradé</div>
+    <div class="value">Pas d'augmentation de données via LLM local</div>
+  </div>
+</div>
+
+<div class="tech-note">
+  <strong>Erreur Zscaler observée :</strong>
+  Les requêtes vers <code>registry.ollama.ai</code> et <code>huggingface.co</code> sont redirigées
+  vers <code>web-notification.capgemini.com</code> avec le motif
+  <em>«&nbsp;Not allowed to browse Generative AI and ML Applications category&nbsp;»</em>
+  (règle Zscaler #1508972, catégorie : Generative AI and ML Applications).
+  <br><br>
+  <strong>Preuve complémentaire (log Ollama, 2 juin 2026) :</strong>
+  Le démarrage du serveur local Ollama génère les avertissements suivants, confirmant l'interception
+  HTTP par ZScaler — la réponse reçue est du HTML (page de blocage) au lieu de JSON :
+  <br><br>
+  <code>
+  WARN model_recommendations.go:168 msg="model recommendations refresh failed" error="invalid character '&lt;' looking for beginning of value"<br>
+  WARN model_show_cache.go:152 msg="model show cloud cache hydration failed" error="invalid character '&lt;' looking for beginning of value"
+  </code>
+  <br><br>
+  Ces erreurs sont 100&nbsp;% reproductibles sur le réseau Capgemini.
+  Le serveur Ollama lui-même fonctionne localement
+  (<code>127.0.0.1:11434</code>, GPU Metal détecté) mais ne peut pas télécharger de modèles.
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ URLS -->
+<h2>3. URLs à autoriser</h2>
+
+<h3>3.1 — Ollama (serving local + modèles d'embedding)</h3>
+<p>Ollama est un serveur d'inférence 100&nbsp;% local. Le registre est nécessaire uniquement pour le
+téléchargement initial des modèles (.gguf). Après installation, aucun trafic sortant n'est généré.</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Domaine / URL</th>
+      <th>Usage</th>
+      <th>Type</th>
+      <th>Protocole</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="url-cell">registry.ollama.ai</td>
+      <td>Registre de modèles — manifestes et poids GGUF</td>
+      <td><span class="tag reg">Registre</span></td>
+      <td>HTTPS/443</td>
+    </tr>
+    <tr>
+      <td class="url-cell">ollama.com</td>
+      <td>Site officiel — documentation et mises à jour</td>
+      <td><span class="tag reg">Registre</span></td>
+      <td>HTTPS/443</td>
+    </tr>
+  </tbody>
+</table>
+
+<p><strong>Modèles requis via Ollama :</strong></p>
+<table>
+  <thead>
+    <tr><th>Modèle</th><th>Taille</th><th>Usage</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>nomic-embed-text</code></td>
+      <td>~274 Mo</td>
+      <td><span class="tag embed">Embedding</span> Vectorisation sémantique locale (RAG, matching)</td>
+    </tr>
+    <tr>
+      <td><code>qwen2.5-coder:7b</code></td>
+      <td>~4,7 Go</td>
+      <td><span class="tag llm">LLM</span> Génération et augmentation de données de code</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>3.2 — Hugging Face (bibliothèques Python et modèles)</h3>
+<p>Hugging Face est le dépôt de référence pour les bibliothèques d'IA open-source (transformers,
+sentence-transformers, tokenizers) et les poids de modèles open-source. Les téléchargements sont
+mis en cache localement après le premier accès.</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Domaine / URL</th>
+      <th>Usage</th>
+      <th>Type</th>
+      <th>Protocole</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="url-cell">huggingface.co</td>
+      <td>Interface web — documentation, pages de modèles</td>
+      <td><span class="tag reg">Registre</span></td>
+      <td>HTTPS/443</td>
+    </tr>
+    <tr>
+      <td class="url-cell">cdn-lfs.huggingface.co</td>
+      <td>Téléchargement des poids de modèles (LFS)</td>
+      <td><span class="tag embed">Modèles</span></td>
+      <td>HTTPS/443</td>
+    </tr>
+    <tr>
+      <td class="url-cell">cdn-lfs-us-1.huggingface.co</td>
+      <td>CDN US — poids de modèles (redirection LFS)</td>
+      <td><span class="tag embed">Modèles</span></td>
+      <td>HTTPS/443</td>
+    </tr>
+  </tbody>
+</table>
+
+<p><strong>Modèles requis via Hugging Face :</strong></p>
+<table>
+  <thead>
+    <tr><th>Modèle (repo HF)</th><th>Taille</th><th>Usage</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>nomic-ai/nomic-embed-text-v1.5</code></td>
+      <td>~550 Mo</td>
+      <td><span class="tag embed">Embedding</span> Vectorisation sémantique haute qualité (multilingual)</td>
+    </tr>
+    <tr>
+      <td><code>Qwen/Qwen2.5-Coder-7B-Instruct-4bit</code></td>
+      <td>~4,5 Go</td>
+      <td><span class="tag llm">LLM</span> Modèle de base — fine-tuning LoRA migration de code</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>3.3 — PyPI (bibliothèques Python open-source)</h3>
+<p>Dépôt officiel des paquets Python. Déjà partiellement accessible — des bibliothèques spécifiques
+au ML sont toutefois bloquées par la catégorisation Zscaler.</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Domaine / URL</th>
+      <th>Usage</th>
+      <th>Type</th>
+      <th>Protocole</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="url-cell">pypi.org</td>
+      <td>Index des paquets Python</td>
+      <td><span class="tag reg">Registre</span></td>
+      <td>HTTPS/443</td>
+    </tr>
+    <tr>
+      <td class="url-cell">files.pythonhosted.org</td>
+      <td>Téléchargement des archives (.whl, .tar.gz)</td>
+      <td><span class="tag reg">Registre</span></td>
+      <td>HTTPS/443</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ═══════════════════════════════════════════════════════════ NOUVEAUX BLOCAGES -->
+<h2>3bis. Nouveaux blocages identifiés — mise à jour 4 juin 2026</h2>
+
+<div class="tech-note" style="border-left-color:#cc0000; background:#fff5f5;">
+  <strong>⚠ Escalade : ZScaler bloque désormais le partage de connexion mobile</strong><br><br>
+  En l'absence de whitelist, le développeur a tenté de contourner le blocage réseau Capgemini
+  en utilisant un <strong>partage de connexion 4G depuis son téléphone personnel</strong>
+  (procédure standard de développement hors-bureau). ZScaler intercepte et bloque également
+  cette connexion, empêchant tout accès aux ressources techniques listées ci-dessus même via
+  un réseau extérieur à l'infrastructure Capgemini.<br><br>
+  <strong>Conséquence directe :</strong> le développeur ne peut pas télécharger les modèles
+  d'IA nécessaires par aucun moyen depuis son poste de travail Capgemini, quelle que soit
+  la connexion réseau utilisée. L'avancement du projet MLOps est bloqué depuis le 2 juin 2026.
+</div>
+
+<h3>3bis.1 — SearXNG (moteur de recherche interne auto-hébergé)</h3>
+<p>
+  Pour réduire la dépendance aux APIs externes et respecter les principes de souveraineté,
+  l'équipe a déployé <strong>SearXNG</strong> — un méta-moteur de recherche 100&nbsp;% open-source
+  auto-hébergé dans Docker sur le poste local. SearXNG agrège Google, Bing, DuckDuckGo et GitHub
+  en un seul appel interne, sans transmettre de données à des tiers au-delà des requêtes de
+  recherche standard.<br><br>
+  ZScaler bloque les requêtes HTTPS sortantes du container Docker vers les moteurs de recherche
+  en injectant son certificat SSL, ce qui cause des erreurs
+  <code>SSL: CERTIFICATE_VERIFY_FAILED</code> à l'intérieur du container.
+  Le service SearXNG démarre correctement mais ne peut retourner aucun résultat.
+</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Domaine / URL</th>
+      <th>Usage</th>
+      <th>Type</th>
+      <th>Protocole</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="url-cell">*.google.com</td>
+      <td>Moteur de recherche — agrégation SearXNG</td>
+      <td><span class="tag reg">Recherche</span></td>
+      <td>HTTPS/443</td>
+    </tr>
+    <tr>
+      <td class="url-cell">*.bing.com</td>
+      <td>Moteur de recherche — agrégation SearXNG</td>
+      <td><span class="tag reg">Recherche</span></td>
+      <td>HTTPS/443</td>
+    </tr>
+    <tr>
+      <td class="url-cell">html.duckduckgo.com</td>
+      <td>Moteur de recherche — agrégation SearXNG + fallback direct</td>
+      <td><span class="tag reg">Recherche</span></td>
+      <td>HTTPS/443</td>
+    </tr>
+    <tr>
+      <td class="url-cell">api.search.brave.com</td>
+      <td>API Brave Search — fallback lorsque DuckDuckGo rate-limite (gratuit, 2000 req/mois)</td>
+      <td><span class="tag reg">Recherche</span></td>
+      <td>HTTPS/443</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="tech-note">
+  <strong>Contexte technique :</strong> Ces accès ne servent qu'à la <em>découverte de sources de documentation</em>
+  publiques (tutoriels Java/Python sur baeldung.com, programiz.com, docs.oracle.com...) utilisées comme données
+  d'entraînement. Aucune donnée interne n'est transmise. Les requêtes sont du type
+  <code>"jpa java tutorial code example"</code> — strictement des recherches de documentation technique publique.
+  <br><br>
+  <strong>Erreur observée dans les logs Docker (4 juin 2026) :</strong><br>
+  <code>ssl.SSLCertVerificationError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed:
+  unable to get local issuer certificate</code><br>
+  Le certificat ZScaler n'est pas présent dans le trust store du container SearXNG.
+</div>
+
+<h3>3bis.2 — Partage de connexion mobile (nouveau blocage)</h3>
+<p>
+  ZScaler est configuré pour s'appliquer sur le poste de travail indépendamment de l'interface
+  réseau active. Le client ZScaler installé sur le MacBook Pro intercepte les connexions HTTPS
+  même lorsque le poste est connecté via <strong>partage de connexion 4G/5G personnel</strong>,
+  hors du réseau Capgemini.<br><br>
+  Ce comportement est inhabituel et va au-delà de la politique de filtrage standard qui
+  s'applique typiquement au réseau d'entreprise uniquement.
+  Il empêche tout contournement temporaire en dehors des horaires ou des locaux Capgemini.
+</p>
+
+<div class="tech-note" style="border-left-color:#cc0000;">
+  <strong>Impact opérationnel :</strong> Le développeur ne dispose d'aucun moyen de télécharger
+  les artefacts techniques requis (modèles ~8 Go, bibliothèques ML) depuis son poste de travail
+  Capgemini, quel que soit le réseau utilisé. Le seul contournement actuel est d'utiliser un
+  ordinateur personnel distinct, ce qui contrevient aux règles de sécurité Capgemini sur la
+  séparation des environnements de travail. <strong>La situation est bloquante sans issue
+  technique acceptable.</strong>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ JUSTIFICATION -->
+<h2>4. Justification de sécurité</h2>
+
+<table class="proto-table">
+  <thead>
+    <tr><th>Critère</th><th>Valeur</th><th>Détail</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Direction du flux</td>
+      <td>Entrant uniquement (download)</td>
+      <td>Aucune donnée interne ou classifiée n'est envoyée vers l'extérieur</td>
+    </tr>
+    <tr>
+      <td>Fréquence</td>
+      <td>Ponctuelle (installation)</td>
+      <td>Téléchargements uniques, mis en cache localement — pas de trafic récurrent</td>
+    </tr>
+    <tr>
+      <td>Nature des données</td>
+      <td>Binaires open-source</td>
+      <td>Poids de modèles et bibliothèques sous licence MIT / Apache 2.0</td>
+    </tr>
+    <tr>
+      <td>Usage en production</td>
+      <td>100 % local</td>
+      <td>Après installation, zéro appel réseau — inférence on-premise exclusivement</td>
+    </tr>
+    <tr>
+      <td>Données traitées</td>
+      <td>Aucune donnée client</td>
+      <td>Pipeline en phase R&amp;D sur données synthétiques et open-source uniquement</td>
+    </tr>
+    <tr>
+      <td>Périmètre</td>
+      <td>Poste développeur unique</td>
+      <td>MacBook Pro M4 Pro (wlerouli) — pas de déploiement réseau d'entreprise</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="tech-note">
+  <strong>Note sur la catégorie Zscaler bloquée :</strong>
+  La catégorie «&nbsp;Generative AI and ML Applications&nbsp;» inclut des dépôts d'artefacts
+  techniques (poids de modèles, bibliothèques compilées) qui ne sont pas des outils d'IA
+  en ligne (ChatGPT, Copilot, etc.). Les accès demandés correspondent à des
+  <strong>registres de téléchargement technique</strong> (équivalents à Docker Hub ou npm)
+  et non à des services de génération d'IA en ligne.
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ SYNTHÈSE -->
+<h2>5. Récapitulatif de la demande</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Domaine</th>
+      <th>Protocole</th>
+      <th>Sens</th>
+      <th>Durée</th>
+      <th>Priorité</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="url-cell">registry.ollama.ai</td>
+      <td>HTTPS/443</td>
+      <td>Entrant</td>
+      <td>Permanente</td>
+      <td><span class="tag llm">CRITIQUE</span></td>
+    </tr>
+    <tr>
+      <td class="url-cell">ollama.com</td>
+      <td>HTTPS/443</td>
+      <td>Entrant</td>
+      <td>Permanente</td>
+      <td><span class="tag embed">HAUTE</span></td>
+    </tr>
+    <tr>
+      <td class="url-cell">huggingface.co</td>
+      <td>HTTPS/443</td>
+      <td>Entrant</td>
+      <td>Permanente</td>
+      <td><span class="tag llm">CRITIQUE</span></td>
+    </tr>
+    <tr>
+      <td class="url-cell">cdn-lfs.huggingface.co</td>
+      <td>HTTPS/443</td>
+      <td>Entrant</td>
+      <td>Permanente</td>
+      <td><span class="tag llm">CRITIQUE</span></td>
+    </tr>
+    <tr>
+      <td class="url-cell">cdn-lfs-us-1.huggingface.co</td>
+      <td>HTTPS/443</td>
+      <td>Entrant</td>
+      <td>Permanente</td>
+      <td><span class="tag llm">CRITIQUE</span></td>
+    </tr>
+    <tr>
+      <td class="url-cell">pypi.org</td>
+      <td>HTTPS/443</td>
+      <td>Entrant</td>
+      <td>Permanente</td>
+      <td><span class="tag embed">HAUTE</span></td>
+    </tr>
+    <tr>
+      <td class="url-cell">files.pythonhosted.org</td>
+      <td>HTTPS/443</td>
+      <td>Entrant</td>
+      <td>Permanente</td>
+      <td><span class="tag embed">HAUTE</span></td>
+    </tr>
+    <tr style="background:#fff5f5;">
+      <td class="url-cell">html.duckduckgo.com</td>
+      <td>HTTPS/443</td>
+      <td>Sortant (recherche)</td>
+      <td>Permanente</td>
+      <td><span class="tag embed">HAUTE</span></td>
+    </tr>
+    <tr style="background:#fff5f5;">
+      <td class="url-cell">api.search.brave.com</td>
+      <td>HTTPS/443</td>
+      <td>Sortant (recherche)</td>
+      <td>Permanente</td>
+      <td><span class="tag embed">HAUTE</span></td>
+    </tr>
+    <tr style="background:#fff5f5;">
+      <td class="url-cell">*.google.com / *.bing.com</td>
+      <td>HTTPS/443</td>
+      <td>Sortant (recherche)</td>
+      <td>Permanente</td>
+      <td><span class="tag embed">MOYENNE</span></td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="tech-note" style="border-left-color:#cc0000; background:#fff5f5; margin-top:20px;">
+  <strong>⚠ Demande complémentaire urgente — Partage de connexion mobile :</strong><br>
+  Autoriser le poste de travail MacBook Pro (wlerouli) à utiliser sa connexion réseau native
+  lorsqu'il est connecté via partage de connexion mobile personnel (4G/5G), sans interception
+  ZScaler des flux HTTPS sortants. Cette autorisation permettrait au développeur de télécharger
+  les artefacts techniques (<em>one-shot, ~10 Go</em>) hors du réseau Capgemini, sans impact
+  sur la politique de sécurité en production.
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ SIGNATURE -->
+<div class="signature">
+  <div class="sig-block">
+    <div class="sig-label">Demandeur</div>
+    <div class="sig-name">Wilfried Leroulier</div>
+    <div style="font-size:9pt; color:#555; margin-top:2px;">Direction Technology &amp; Innovation<br>Capgemini</div>
+    <div class="sig-line">Signature &amp; date</div>
+  </div>
+  <div class="sig-block">
+    <div class="sig-label">Validé par (N+1 / RSSI)</div>
+    <div class="sig-name">&nbsp;</div>
+    <div style="font-size:9pt; color:#555; margin-top:2px;">&nbsp;<br>&nbsp;</div>
+    <div class="sig-line">Signature &amp; date</div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ PIED -->
+<div class="footer">
+  Document généré automatiquement — Projet MLOps IA Souveraine · Capgemini ·
+  Créé le 2 juin 2026 · <strong>Mis à jour le 4 juin 2026</strong> (ajout blocages SearXNG/Docker + partage connexion mobile) ·
+  CONFIDENTIEL INTERNE — Ne pas diffuser hors du périmètre Capgemini
+</div>
+
+</body>
+</html>

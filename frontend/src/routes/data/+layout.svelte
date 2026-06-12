@@ -6,8 +6,8 @@
     { href: '/data',          label: 'Santé des données' },
     { href: '/data/collect',  label: 'Collecte AWA' },
     { href: '/data/ingest',   label: 'Ingestion manuelle' },
-    { href: '/data/review',   label: 'Revue humaine' },
     { href: '/data/pipeline', label: 'Pipeline nettoyage' },
+    { href: '/data/review',   label: 'Contrôle qualité' },
     { href: '/data/search',   label: 'Recherche data' },
   ];
 

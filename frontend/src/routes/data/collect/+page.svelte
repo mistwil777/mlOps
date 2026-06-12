@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { getProjects, startCollect, startFuse, getCollectStatus, getAdapterCoverage, advisorRecommendSources } from '$lib/api';
+  import { getProjects, startCollect, startFuse, startSemanticMatch, startDiscoverSources, getCollectStatus, getAdapterCoverage, advisorRecommendSources, getCollectHistory } from '$lib/api';
   import type { Project, ProjectAdapter, SourceSuggestion, AdapterCoverageResult } from '$lib/types';
 
   let projects: Project[] = $state([]);
@@ -26,7 +26,7 @@
   let queueIdx = $state(-1);   // -1 = not running
   let batchRunning = $state(false);
 
-  // ── source history (localStorage) ────────────────────────────────────────
+  // ── source history (server-side via data_lineage) ────────────────────────
   type SourceHistoryEntry = { status: 'completed' | 'failed'; ts: string; pairs?: number };
   let sourceHistory = $state<Record<string, SourceHistoryEntry>>({});
 
@@ -34,23 +34,16 @@
     return `${projectId}__${adapterName}__${sourceValue}`;
   }
 
-  function loadHistory(projectId: string) {
+  async function loadHistory(projectId: string) {
     try {
-      const raw = localStorage.getItem(`collect_history__${projectId}`);
-      sourceHistory = raw ? JSON.parse(raw) : {};
+      sourceHistory = await getCollectHistory(projectId) as Record<string, SourceHistoryEntry>;
     } catch { sourceHistory = {}; }
-  }
-
-  function saveHistory(projectId: string) {
-    try {
-      localStorage.setItem(`collect_history__${projectId}`, JSON.stringify(sourceHistory));
-    } catch {}
   }
 
   function markSourceDone(projectId: string, adapterName: string, sourceValue: string, status: 'completed' | 'failed') {
     const k = sourceKey(projectId, adapterName, sourceValue);
     sourceHistory = { ...sourceHistory, [k]: { status, ts: new Date().toISOString() } };
-    saveHistory(projectId);
+    // No local save needed — data_lineage is updated server-side on collect completion
   }
 
   function getSourceStatus(adapterName: string, sourceValue: string): SourceHistoryEntry | null {
@@ -200,22 +193,127 @@
 
   // ── shared logs ──────────────────────────────────────────────────────────
   let logs: string[] = $state([]);
+  let logsCopied = $state(false);
 
-  // Flat list of all sources across adapters
+  function copyLogs() {
+    navigator.clipboard.writeText(logs.join('\n')).then(() => {
+      logsCopied = true;
+      setTimeout(() => logsCopied = false, 2000);
+    });
+  }
+
+  // Accordion state — which adapter names are expanded (L2 visible)
+  let expandedAdapters: Set<string> = $state(new Set());
+  // Session-only exclusions — sources excluded from next batch (not persisted)
+  let excludedSources: Set<string> = $state(new Set());
+  // Session-only discovered sources per adapter — populated by source_discoverer, not persisted to YAML
+  let discoveredSources: Record<string, Array<{url: string; label: string; lang: string; concept: string}>> = $state({});
+  let discoveringAdapter: string | null = $state(null);
+
+  function toggleAdapter(name: string) {
+    const next = new Set(expandedAdapters);
+    next.has(name) ? next.delete(name) : next.add(name);
+    expandedAdapters = next;
+  }
+
+  function toggleExclude(adapterName: string, sourceValue: string) {
+    if (!selectedProject) return;
+    const k = sourceKey(selectedProject.id, adapterName, sourceValue);
+    const next = new Set(excludedSources);
+    next.has(k) ? next.delete(k) : next.add(k);
+    excludedSources = next;
+  }
+
+  async function discoverSources(adapterName: string, langPair: string) {
+    if (!selectedProject || discoveringAdapter) return;
+    discoveringAdapter = adapterName;
+    // Auto-expand so user sees results appear when done
+    const next = new Set(expandedAdapters);
+    next.add(adapterName);
+    expandedAdapters = next;
+    logs = [...logs, `\n── AWA : recherche de sources pour ${adapterName} (${langPair}) ──`];
+    try {
+      const res = await startDiscoverSources({
+        project_id: selectedProject.id,
+        lang_pair: langPair,
+        adapter_name: adapterName,
+        max_sources: 5,
+      });
+      // Stream logs then fetch results from dedicated endpoint
+      openSSE(res.job_id, async (status) => {
+        discoveringAdapter = null;
+        if (status === 'completed') {
+          try {
+            const resultsRes = await fetch(`/api/data/discover-sources/${res.job_id}/results`);
+            const data = await resultsRes.json();
+            const sources: Array<{url: string; label: string; lang_hint: string; concept: string}> = data.sources ?? [];
+            if (sources.length > 0) {
+              const found = sources.map(s => ({
+                url: s.url,
+                label: s.label || `${s.concept} (${s.lang_hint})`,
+                lang: s.lang_hint,
+                concept: s.concept,
+              }));
+              discoveredSources = { ...discoveredSources, [adapterName]: found };
+              logs = [...logs, `✓ ${found.length} source(s) découverte(s) — visible dans la liste ci-dessous`];
+            } else {
+              logs = [...logs, `ℹ Aucune nouvelle source trouvée pour ${adapterName}`];
+            }
+          } catch (e) {
+            logs = [...logs, `⚠ Impossible de lire les résultats: ${(e as Error).message}`];
+          }
+        }
+      }, () => { discoveringAdapter = null; });
+    } catch (e) {
+      logs = [...logs, `ERROR découverte: ${(e as Error).message}`];
+      discoveringAdapter = null;
+    }
+  }
+
+  // Flat list of all sources across adapters — includes session-discovered, respects exclusions
   const allSources = $derived(
-    (selectedProject?.adapters ?? []).flatMap(adapter =>
-      (adapter.source_configs ?? []).map(sc => ({ adapter, source: sc }))
-    )
+    (selectedProject?.adapters ?? []).flatMap(adapter => {
+      // Existing declared sources
+      const declared = (adapter.source_configs ?? [])
+        .filter(sc => !excludedSources.has(sourceKey(selectedProject!.id, adapter.name, sc.value)))
+        .map(sc => ({ adapter, source: sc }));
+      // Session-discovered sources (not yet in YAML)
+      const discovered = (discoveredSources[adapter.name] ?? [])
+        .filter(d => !excludedSources.has(sourceKey(selectedProject!.id, adapter.name, d.url)))
+        .map(d => ({
+          adapter,
+          source: {
+            collector_type: 'doc_crawl' as const,
+            value: d.url,
+            label: `[AWA] ${d.label}`,
+            lang_hint: d.lang,
+            estimated_pairs: 50,
+            _discovered: true,
+          }
+        }));
+      return [...declared, ...discovered];
+    })
   );
 
   const hasAdapters = $derived((selectedProject?.adapters ?? []).length > 0);
   const running = $derived(singleRunning || batchRunning || fuseRunning);
+  const fuseAdaptersWithPair = $derived(
+    (selectedProject?.adapters ?? []).filter((a: any) => a.pair_strategy === 'fuse' && a.lang_pair)
+  );
 
-  // collect unique lang_pair_keys declared as fusible in source_configs
+  // Collect unique lang_pair keys from adapters with pair_strategy=fuse.
+  // Primary source: adapter.lang_pair (e.g. "java-python").
+  // Fallback: source_configs[].lang_pair_key (legacy).
   const fusiblePairKeys = $derived((() => {
     if (!selectedProject) return [] as string[];
     const keys = new Set<string>();
     for (const adapter of selectedProject.adapters ?? []) {
+      // Primary: adapter-level lang_pair (set by project config)
+      if (adapter.pair_strategy === 'fuse' && adapter.lang_pair) {
+        keys.add(adapter.lang_pair);
+        continue;
+      }
+      // Fallback: source_config fusible flag
       for (const sc of adapter.source_configs ?? []) {
         if (sc.fusible && sc.lang_pair_key) keys.add(sc.lang_pair_key);
       }
@@ -223,10 +321,10 @@
     return [...keys];
   })());
 
-  // fallback: infer fusion candidates from doc_crawl lang_hints when no lang_pair_key set
+  // Fallback: infer from doc_crawl lang_hints only when no explicit key found
   const docLangPairs = $derived((() => {
     if (!selectedProject) return [] as string[];
-    if (fusiblePairKeys.length > 0) return [] as string[]; // prefer explicit keys
+    if (fusiblePairKeys.length > 0) return [] as string[];
     const langs = new Set<string>();
     for (const adapter of selectedProject.adapters ?? []) {
       for (const sc of adapter.source_configs ?? []) {
@@ -240,7 +338,7 @@
     projects = await getProjects().catch(() => []);
     if (projects.length > 0) {
       selectedProject = projects[0];
-      loadHistory(projects[0].id);
+      await loadHistory(projects[0].id);
       await loadCoverage();
     }
   });
@@ -256,7 +354,7 @@
     queueStatuses = [];
     queueIdx = -1;
     coverage = null;
-    if (selectedProject) loadHistory(selectedProject.id);
+    if (selectedProject) await loadHistory(selectedProject.id);
     await loadCoverage();
   }
 
@@ -503,6 +601,54 @@
     }
   }
 
+  let semanticRunning = $state(false);
+  let semanticStatus  = $state<'idle' | 'running' | 'completed' | 'failed'>('idle');
+
+  async function handleSemanticMatchAdapter(adapterName: string, langPair: string) {
+    if (!selectedProject || semanticRunning) return;
+    semanticRunning = true;
+    semanticStatus = 'running';
+    logs = [...logs, `\n── Matching sémantique ${adapterName} (${langPair}) ──`];
+    try {
+      const res = await startSemanticMatch({
+        project_id: selectedProject.id,
+        lang_pair: langPair,
+        adapter_name: adapterName,
+      });
+      openSSE(res.job_id, (s) => {
+        semanticRunning = false;
+        semanticStatus = s === 'completed' ? 'completed' : 'failed';
+        loadCoverage();
+      }, () => {});
+    } catch (e) {
+      logs = [...logs, `ERROR matching sémantique: ${(e as Error).message}`];
+      semanticRunning = false;
+      semanticStatus = 'failed';
+    }
+  }
+
+  async function handleSemanticMatch(langPair: string) {
+    if (!selectedProject || semanticRunning) return;
+    semanticRunning = true;
+    semanticStatus = 'running';
+    logs = [...logs, `\n── Matching sémantique ${langPair} ──`];
+    try {
+      const res = await startSemanticMatch({
+        project_id: selectedProject.id,
+        lang_pair: langPair,
+      });
+      openSSE(res.job_id, (s) => {
+        semanticRunning = false;
+        semanticStatus = s === 'completed' ? 'completed' : 'failed';
+        loadCoverage();
+      }, () => {});
+    } catch (e) {
+      logs = [...logs, `ERROR matching sémantique: ${(e as Error).message}`];
+      semanticRunning = false;
+      semanticStatus = 'failed';
+    }
+  }
+
   const QUEUE_STATUS_ICONS: Record<QueueStatus, string> = {
     pending:   '○',
     running:   '⟳',
@@ -554,14 +700,20 @@
       {:else if coverage}
         <div class="global-bar mb-12">
           <div class="global-bar-label">
-            <span class="bar-count">{coverage.total_collected}</span>
-            <span class="hint">/ {coverage.total_target} paires cibles</span>
+            {#if coverage.phase === 'collecting'}
+              <span class="bar-count">{coverage.total_raw}</span>
+              <span class="hint"> records bruts collectés</span>
+              <span class="hint ml-8">— fusion en attente → {coverage.total_target} paires cibles</span>
+            {:else}
+              <span class="bar-count">{coverage.total_collected}</span>
+              <span class="hint">/ {coverage.total_target} paires cibles</span>
+            {/if}
             {#if coverage.untagged > 0}
               <span class="hint ml-8">({coverage.untagged} non taguées)</span>
             {/if}
           </div>
           <div class="progress-track">
-            <div class="progress-fill" style="width:{Math.min(100, Math.round(coverage.total_collected / Math.max(coverage.total_target,1) * 100))}%"></div>
+            <div class="progress-fill" style="width:{coverage.phase === 'collecting' ? Math.min(100, Math.round(coverage.total_raw / Math.max(coverage.total_target * 3, 1) * 100)) : Math.min(100, Math.round(coverage.total_collected / Math.max(coverage.total_target,1) * 100))}%"></div>
           </div>
         </div>
 
@@ -575,14 +727,21 @@
               </div>
               <div class="cov-bar-wrap">
                 <div class="cov-progress-track">
-                  <div class="cov-progress-fill" class:fill-ok={cov && cov.pct >= 80} style="width:{cov ? Math.min(100, cov.pct) : 0}%"></div>
+                  <div class="cov-progress-fill"
+                    class:fill-ok={cov && (cov.pair_strategy === 'fuse' && cov.fused_pairs === 0 ? cov.collected > 0 : cov.pct >= 80)}
+                    style="width:{cov ? (cov.pair_strategy === 'fuse' && cov.fused_pairs === 0 ? Math.min(100, Math.round(cov.collected / Math.max(cov.target, 1) * 100)) : Math.min(100, cov.pct)) : 0}%">
+                  </div>
                 </div>
                 <span class="cov-numbers">
-                  {cov?.collected ?? 0} / {cov?.target ?? adapter.estimated_pairs}
-                  {#if cov && cov.missing > 0}
-                    <span class="missing-badge">−{cov.missing}</span>
-                  {:else if cov && cov.pct >= 100}
-                    <span class="ok-badge">✓</span>
+                  {#if cov?.pair_strategy === 'fuse' && (cov?.fused_pairs ?? 0) === 0}
+                    {cov.collected} records
+                  {:else}
+                    {cov?.collected ?? 0} / {cov?.target ?? adapter.estimated_pairs}
+                    {#if cov && cov.missing > 0}
+                      <span class="missing-badge">−{cov.missing}</span>
+                    {:else if cov && cov.pct >= 100}
+                      <span class="ok-badge">✓</span>
+                    {/if}
                   {/if}
                 </span>
               </div>
@@ -598,7 +757,7 @@
     <div class="card mb-16">
       <div class="card-header mb-12">
         <div class="card-title">Sources disponibles</div>
-        <div style="display:flex; gap:8px; align-items:center">
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
           <span class="hint">{allSources.length} source{allSources.length > 1 ? 's' : ''}</span>
           {#if batchRunning}
             <button class="btn btn-danger btn-sm" onclick={stopBatch}>⏹ Arrêter</button>
@@ -615,6 +774,25 @@
                 ↺ Tout relancer
               </button>
             {/if}
+          {/if}
+          {#if fuseAdaptersWithPair.length > 0}
+            <button
+              class="btn btn-ghost btn-sm"
+              disabled={!!discoveringAdapter || running}
+              title="Lancer AWA sur tous les adapters de traduction séquentiellement"
+              onclick={async () => {
+                for (const adapter of fuseAdaptersWithPair) {
+                  await new Promise<void>(resolve => {
+                    discoverSources(adapter.name, adapter.lang_pair);
+                    const check = setInterval(() => {
+                      if (!discoveringAdapter) { clearInterval(check); resolve(); }
+                    }, 500);
+                  });
+                }
+              }}
+            >
+              {discoveringAdapter ? `⟳ AWA : ${discoveringAdapter.split('-').slice(0,2).join('-')}…` : `🔍 AWA tout (${fuseAdaptersWithPair.length})`}
+            </button>
           {/if}
         </div>
       </div>
@@ -636,51 +814,139 @@
       {/if}
 
       {#each selectedProject.adapters ?? [] as adapter}
-        {#if (adapter.source_configs ?? []).length > 0}
-          {@const cov = adapterCov(adapter.name)}
-          <div class="adapter-section mb-12">
-            <div class="adapter-name mb-6">
-              <span class="role-badge role-badge--{adapter.role}">{adapter.role === 'orchestrator' ? 'ORCH' : 'SPEC'}</span>
-              {adapter.name}
-              <span class="hint">~{adapter.estimated_pairs} paires cibles</span>
-              {#if cov && cov.missing > 0}
-                <span class="missing-badge">−{cov.missing} manquantes</span>
-              {:else if cov && cov.pct >= 100}
-                <span class="ok-badge">✓ complet</span>
-              {/if}
-            </div>
-            <div class="sources-list">
+        {@const cov = adapterCov(adapter.name)}
+        {@const adapterEmpty = !cov || (cov.collected ?? 0) === 0}
+        {@const isExpanded = expandedAdapters.has(adapter.name)}
+        {@const discoveredForAdapter = discoveredSources[adapter.name] ?? []}
+        {@const totalSrc = (adapter.source_configs ?? []).length + discoveredForAdapter.length}
+        {@const adapterDone = (adapter.source_configs ?? []).filter(
+          sc => getSourceStatus(adapter.name, sc.value)?.status === 'completed'
+        ).length}
+        {@const adapterPending =
+          // Declared sources: not completed, not failed, not excluded
+          (adapter.source_configs ?? []).filter(sc => {
+            const hist = getSourceStatus(adapter.name, sc.value);
+            return hist?.status !== 'completed'
+              && hist?.status !== 'failed'
+              && !excludedSources.has(sourceKey(selectedProject.id, adapter.name, sc.value));
+          }).length
+          // AWA-discovered sources not excluded (never failed — new)
+          + discoveredForAdapter.filter(
+            d => !excludedSources.has(sourceKey(selectedProject.id, adapter.name, d.url))
+          ).length
+        }
+
+        <div class="adapter-section mb-8" class:adapter-empty={adapterEmpty}>
+          <!-- L1 — toujours visible -->
+          <div class="adapter-l1">
+            <button class="btn-expand" onclick={() => toggleAdapter(adapter.name)}
+                    title="{isExpanded ? 'Masquer' : 'Voir'} les {totalSrc} sources">
+              {isExpanded ? '▾' : '▸'}
+            </button>
+            <span class="role-badge role-badge--{adapter.role}">
+              {adapter.role === 'orchestrator' ? 'ORCH' : 'SPEC'}
+            </span>
+            <span class="adapter-l1-name">{adapter.name}</span>
+            <span class="hint" style="font-size:11px;white-space:nowrap">
+              {adapterDone}/{totalSrc} sources
+            </span>
+            {#if adapterEmpty}
+              <span class="missing-badge">aucune donnée</span>
+            {:else if cov && cov.missing > 0}
+              <span class="missing-badge" style="font-size:11px">−{cov.missing}</span>
+            {:else if cov && cov.pct >= 100}
+              <span class="ok-badge">✓</span>
+            {/if}
+            <!-- AWA discover button — always shown for fuse adapters -->
+            {#if adapter.lang_pair}
+              <button class="btn btn-ghost btn-sm"
+                disabled={!!discoveringAdapter || running}
+                title="AWA recherche des pages couvrant les mêmes concepts en {adapter.lang_pair}"
+                onclick={() => discoverSources(adapter.name, adapter.lang_pair)}>
+                {discoveringAdapter === adapter.name ? '⟳ Recherche…' : '🔍 AWA'}
+              </button>
+            {/if}
+            <!-- Collect button -->
+            {#if adapterPending > 0}
+              <button class="btn btn-primary btn-sm" disabled={running}
+                onclick={() => {
+                  const toRun = allSources.filter(s => s.adapter.name === adapter.name);
+                  queue = toRun; queueStatuses = toRun.map(() => 'pending' as QueueStatus);
+                  queueIdx = 0; batchRunning = true; logs = []; runNextInQueue();
+                }}>
+                ▶ Collecter ({adapterPending})
+              </button>
+            {:else if totalSrc > 0}
+              <button class="btn btn-ghost btn-sm" disabled={running}
+                onclick={() => {
+                  const toRun = (adapter.source_configs ?? []).map(sc => ({ adapter, source: sc }));
+                  queue = toRun; queueStatuses = toRun.map(() => 'pending' as QueueStatus);
+                  queueIdx = 0; batchRunning = true; logs = []; runNextInQueue();
+                }}>
+                ↺ Relancer
+              </button>
+            {/if}
+          </div>
+
+          <!-- L2 — sources, visible uniquement si expanded -->
+          {#if isExpanded}
+            <div class="sources-list" style="margin-top:6px">
+              <!-- Sources découvertes par AWA en session -->
+              {#each discoveredSources[adapter.name] ?? [] as d}
+                {@const isExcluded = excludedSources.has(sourceKey(selectedProject.id, adapter.name, d.url))}
+                <div class="source-row-wrap source-discovered" class:source-excluded={isExcluded}>
+                  <div class="source-row source-row--new">
+                    <span class="collector-badge collector-badge--doc_crawl">DOCS</span>
+                    <span class="source-badge-new">AWA</span>
+                    <span class="source-label">{d.concept} ({d.lang})</span>
+                    <span class="source-pairs">~50 records</span>
+                    <span class="source-value mono">{d.url}</span>
+                  </div>
+                  <button class="btn-exclude"
+                    onclick={() => toggleExclude(adapter.name, d.url)}
+                    title={isExcluded ? 'Réintégrer' : 'Exclure du batch'}>
+                    {isExcluded ? '↩' : '✕'}
+                  </button>
+                </div>
+              {/each}
+              <!-- Sources déclarées dans la config -->
               {#each adapter.source_configs as sc}
                 {@const isSelected = selectedSource?.source === sc}
                 {@const hist = getSourceStatus(adapter.name, sc.value)}
-                <button
-                  class="source-row"
-                  class:source-row--selected={isSelected}
-                  class:source-row--done={hist?.status === 'completed'}
-                  class:source-row--failed={hist?.status === 'failed'}
-                  onclick={() => selectedSource = isSelected ? null : { adapter, source: sc }}
-                >
-                  <span class="collector-badge collector-badge--{sc.collector_type}">
-                    {COLLECTOR_LABELS[sc.collector_type] ?? sc.collector_type}
-                  </span>
-                  <span class="source-label">{sc.label}</span>
-                  {#if sc.fusible}
-                    <span class="fusible-badge" title="Fusionnable — paire {sc.lang_pair_key}">⚡</span>
-                  {/if}
-                  {#if hist}
-                    <span class="source-hist source-hist--{hist.status}" title="Dernière collecte : {new Date(hist.ts).toLocaleString('fr')}">
-                      {hist.status === 'completed' ? '✓' : '✗'}
+                {@const isExcluded = excludedSources.has(sourceKey(selectedProject.id, adapter.name, sc.value))}
+                <div class="source-row-wrap" class:source-excluded={isExcluded}>
+                  <button
+                    class="source-row"
+                    class:source-row--selected={isSelected}
+                    class:source-row--done={hist?.status === 'completed'}
+                    class:source-row--failed={hist?.status === 'failed'}
+                    onclick={() => selectedSource = isSelected ? null : { adapter, source: sc }}
+                  >
+                    <span class="collector-badge collector-badge--{sc.collector_type}">
+                      {COLLECTOR_LABELS[sc.collector_type] ?? sc.collector_type}
                     </span>
-                  {/if}
-                  {#if sc.estimated_pairs}
-                    <span class="source-pairs">~{sc.estimated_pairs} paires</span>
-                  {/if}
-                  <span class="source-value mono">{sc.value}</span>
-                </button>
+                    <span class="source-label">{sc.label}</span>
+                    {#if hist}
+                      <span class="source-hist source-hist--{hist.status}"
+                            title="Dernière collecte : {new Date(hist.ts).toLocaleString('fr')}">
+                        {hist.status === 'completed' ? '✓' : '✗'}
+                      </span>
+                    {/if}
+                    {#if sc.estimated_pairs}
+                      <span class="source-pairs">~{sc.estimated_pairs} records</span>
+                    {/if}
+                    <span class="source-value mono">{sc.value}</span>
+                  </button>
+                  <button class="btn-exclude"
+                    onclick={() => toggleExclude(adapter.name, sc.value)}
+                    title={isExcluded ? 'Réintégrer dans le prochain batch' : 'Exclure du prochain batch (session)'}>
+                    {isExcluded ? '↩' : '✕'}
+                  </button>
+                </div>
               {/each}
             </div>
-          </div>
-        {/if}
+          {/if}
+        </div>
       {/each}
 
       <!-- Ajout manuel d'une source -->
@@ -823,42 +1089,111 @@
     {/if}
   {/if}
 
-  <!-- Fusion doc pairs -->
-  {#if selectedProject && (fusiblePairKeys.length > 0 || docLangPairs.length >= 2)}
-    {@const fusionTargets = fusiblePairKeys.length > 0
-      ? fusiblePairKeys.map(k => { const [src, ...rest] = k.split('-'); return { key: k, label: `${src} → ${rest.join('-')}` }; })
-      : getFusionPairs(docLangPairs)}
+  <!-- Formation des paires — adapters fuse -->
+  {#if selectedProject && fuseAdaptersWithPair.length > 0}
+    {@const matchableAdapters = fuseAdaptersWithPair.filter((a: any) => {
+      const cov = coverage?.adapters?.find((c: any) => c.adapter_name === a.name);
+      // Already matched = fused_pairs > 0
+      if ((cov?.fused_pairs ?? 0) > 0) return false;
+      // Matchable = has BOTH java AND python records in clean_raw
+      return (cov?.clean_raw_java ?? 0) > 0 && (cov?.clean_raw_python ?? 0) > 0;
+    })}
     <div class="card mb-16">
       <div class="card-header mb-8">
-        <div class="card-title">Fusion sémantique</div>
-        <span class="hint">Génère des paires de migration à partir des docs collectées</span>
+        <div class="card-title">Formation des paires bilingues</div>
+        <span class="hint">{matchableAdapters.length}/{fuseAdaptersWithPair.length} adapters prêts à matcher</span>
       </div>
-      <p class="hint mb-10">
-        Collectez d'abord les sources <span class="collector-badge collector-badge--doc_crawl">Docs</span>
-        pour chaque langue, puis lancez la fusion — le moteur aligne sémantiquement les paires
-        source/cible et génère des exemples de migration via LLM.
-      </p>
-      <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-        {#each fusionTargets as fp}
-          <button
-            class="btn btn-primary btn-sm"
-            onclick={() => handleFuse(fp.key)}
-            disabled={running}
-          >
-            {fuseRunning ? '⟳ Fusion en cours…' : `⚡ Fusionner ${fp.label}`}
-          </button>
-        {/each}
-        {#if fuseRunning}
-          <button class="btn btn-ghost btn-sm" onclick={() => { es?.close(); fuseRunning = false; fuseStatus = 'failed'; }}>
-            ✕ Annuler
-          </button>
-        {/if}
-        {#if fuseStatus === 'completed'}
-          <span class="ok-badge">✓ Fusion terminée</span>
-        {:else if fuseStatus === 'failed'}
-          <span class="missing-badge">✗ Fusion échouée</span>
-        {/if}
-      </div>
+
+      {#if matchableAdapters.length === 0}
+        <p class="hint">Aucun adapter n'a de données dans clean_raw. Lancez d'abord la collecte puis le nettoyage (Étape 1, Pipeline nettoyage).</p>
+      {:else}
+        <p class="hint mb-10">
+          Le moteur embed les descriptions, calcule la similarité cosinus et assemble les paires Java→Python. Zéro LLM, vérification AST.
+        </p>
+
+        <!-- Semantic match -->
+        <div style="margin-bottom:12px">
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;font-weight:600;">
+            🧠 Matching sémantique — <span style="color:var(--green);font-weight:400;">recommandé</span>
+            <span class="hint" style="font-weight:400"> · Cosinus sur descriptions, zéro LLM, vérification AST</span>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <!-- Bouton "Tout matcher" si plusieurs adapters prêts -->
+            {#if matchableAdapters.length > 1}
+              <button
+                class="btn btn-primary btn-sm"
+                disabled={semanticRunning || running}
+                onclick={async () => {
+                  for (const adapter of matchableAdapters) {
+                    await new Promise<void>(resolve => {
+                      handleSemanticMatchAdapter(adapter.name, adapter.lang_pair);
+                      const check = setInterval(() => {
+                        if (!semanticRunning) { clearInterval(check); resolve(); }
+                      }, 500);
+                    });
+                  }
+                }}
+              >
+                {semanticRunning ? '⟳ En cours…' : `🧠 Tout matcher (${matchableAdapters.length})`}
+              </button>
+              <span class="hint" style="font-size:11px">ou par adapter :</span>
+            {/if}
+            <!-- Bouton par adapter matchable -->
+            {#each matchableAdapters as adapter}
+              {@const cov = coverage?.adapters?.find((a: any) => a.adapter_name === adapter.name)}
+              <button
+                class="btn btn-primary btn-sm"
+                onclick={() => handleSemanticMatchAdapter(adapter.name, adapter.lang_pair)}
+                disabled={semanticRunning || running}
+                title={`Java: ${cov?.clean_raw_java ?? 0} · Python: ${cov?.clean_raw_python ?? 0}`}
+              >
+                {semanticRunning ? '⟳' : '🧠'} {adapter.name.split('-').slice(0,3).join('-')}
+                <span style="font-size:10px;opacity:.7;margin-left:4px">J:{cov?.clean_raw_java ?? 0}/P:{cov?.clean_raw_python ?? 0}</span>
+              </button>
+            {/each}
+            {#if semanticStatus === 'completed'}
+              <span class="ok-badge">✓ Matching terminé</span>
+            {:else if semanticStatus === 'failed'}
+              <span class="missing-badge">✗ Matching échoué</span>
+            {/if}
+          </div>
+          <!-- Adapters non prêts — informatif -->
+          {#if fuseAdaptersWithPair.length > matchableAdapters.length}
+            {@const notReady = fuseAdaptersWithPair.filter((a: any) => !matchableAdapters.includes(a))}
+            <div style="margin-top:8px;font-size:11px;color:var(--text-dim)">
+              En attente de données : {notReady.map((a: any) => a.name.split('-').slice(0,2).join('-')).join(', ')}
+            </div>
+          {/if}
+        </div>
+
+        <!-- LLM fuse (fallback) -->
+        <div>
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;font-weight:600;">
+            ⚡ Fusion LLM — <span style="color:var(--text-muted);font-weight:400;">fallback (modèle local requis)</span>
+          </div>
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+          {#each [...new Set(fuseAdaptersWithPair.map((a: any) => a.lang_pair))] as langPair}
+            <button
+              class="btn btn-ghost btn-sm"
+              onclick={() => handleFuse(langPair)}
+              disabled={fuseRunning || running}
+            >
+              {fuseRunning ? '⟳ Fusion en cours…' : `⚡ Fusionner ${langPair}`}
+            </button>
+          {/each}
+          {#if fuseRunning}
+            <button class="btn btn-ghost btn-sm" onclick={() => { es?.close(); fuseRunning = false; fuseStatus = 'failed'; }}>
+              ✕ Annuler
+            </button>
+          {/if}
+          {#if fuseStatus === 'completed'}
+            <span class="ok-badge">✓ Fusion terminée</span>
+          {:else if fuseStatus === 'failed'}
+            <span class="missing-badge">✗ Fusion échouée</span>
+          {/if}
+          </div>
+        </div>
+      {/if}
     </div>
   {/if}
 
@@ -870,8 +1205,8 @@
         <button
           class="btn btn-ghost btn-sm"
           title="Copier les logs"
-          onclick={() => navigator.clipboard.writeText(logs.join('\n'))}
-        >⧉ Copier</button>
+          onclick={copyLogs}
+        >{logsCopied ? '✓ Copié' : '⧉ Copier'}</button>
       </div>
       <div id="log-box" class="log-box">
         {#each logs as line}
@@ -948,7 +1283,21 @@
   .queue-icon--failed    { color:var(--red); }
   @keyframes spin { to { transform:rotate(360deg); } }
 
-  .adapter-section { border-left:2px solid var(--border); padding-left:12px; }
+  .adapter-section { border-left:2px solid var(--border); padding-left:10px; }
+  .adapter-empty { border-left-color:rgba(255,80,80,.5); }
+  .adapter-l1 { display:flex; align-items:center; gap:6px; flex-wrap:wrap; padding:3px 0; }
+  .adapter-l1-name { font-size:12px; font-weight:600; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .btn-expand { background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:13px; padding:0 2px; line-height:1; flex-shrink:0; width:16px; }
+  .btn-expand:hover { color:var(--text); }
+  .source-row-wrap { display:flex; align-items:center; gap:3px; }
+  .source-row-wrap .source-row { flex:1; min-width:0; }
+  .btn-exclude { background:none; border:1px solid transparent; border-radius:var(--radius); color:var(--text-dim); cursor:pointer; font-size:11px; padding:2px 5px; flex-shrink:0; opacity:0; transition:opacity .15s; }
+  .source-row-wrap:hover .btn-exclude { opacity:1; }
+  .btn-exclude:hover { color:var(--red); border-color:rgba(255,80,80,.4); }
+  .source-excluded .source-row { opacity:0.35; }
+  .source-excluded .btn-exclude { opacity:1; color:var(--accent); border-color:rgba(91,152,248,.4); }
+  .source-row--new { border-color:rgba(91,152,248,.3); background:rgba(91,152,248,.04); }
+  .source-badge-new { font-size:9px; font-weight:700; padding:1px 5px; border-radius:999px; background:rgba(91,152,248,.2); color:#58a6ff; border:1px solid rgba(91,152,248,.4); white-space:nowrap; flex-shrink:0; }
   .adapter-name {
     display:flex; align-items:center; gap:8px;
     font-size:12px; font-weight:600; color:var(--text);

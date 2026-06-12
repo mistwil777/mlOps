@@ -207,7 +207,7 @@ class RosettaCollector:
                     if code:
                         records.append({
                             "task_name":    task_name,
-                            "lang":         lang,
+                            "lang":         lang.lower(),  # normalize to lowercase for pipeline consistency
                             "code":         code,
                             "source_url":   _ROSETTA_BASE + task_name.replace(" ", "_"),
                             "collected_at": datetime.now(timezone.utc).isoformat(),

@@ -143,6 +143,19 @@ def _code_score(r: dict[str, Any]) -> float:
             score += 0.15
         else:
             score -= 0.1
+    elif lang == "java":
+        # Java-specific structural signals — no AST available, use regex heuristics
+        JAVA_KEYWORDS = ("public ", "private ", "protected ", "class ", "interface ",
+                         "void ", "static ", "extends ", "implements ", "@Override",
+                         "System.out", "throws ", "new ", "return ")
+        java_hits = sum(1 for kw in JAVA_KEYWORDS if kw in code)
+        if java_hits >= 2:
+            score += 0.15
+        elif java_hits == 1:
+            score += 0.05
+        # Balanced braces = valid structure hint
+        if code.count("{") > 0 and code.count("{") == code.count("}"):
+            score += 0.05
 
     if code.count("\n") >= 3:
         score += 0.1
@@ -594,6 +607,7 @@ def clean_adapter_records(
     n_clusters: int = N_CLUSTERS_DEFAULT,
     dry_run: bool = False,
     domain: str = "code",
+    adapter_cfg: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run the full clean_raw pipeline for one adapter. Returns report dict."""
     report: dict[str, Any] = {
@@ -610,7 +624,8 @@ def clean_adapter_records(
     # 2. Heuristic scoring + filter
     records = score_records(records, domain=domain)
     before = len(records)
-    records = [r for r in records if r.get("_heuristic_score", 0) >= QUALITY_THRESHOLD]
+    quality_thr = (adapter_cfg or {}).get("quality_threshold", QUALITY_THRESHOLD)
+    records = [r for r in records if r.get("_heuristic_score", 0) >= quality_thr]
     report["steps"]["heuristic_filter"] = len(records)
     logger.info("[%s] Heuristic filter: %d → %d", adapter_name, before, len(records))
 
@@ -632,8 +647,9 @@ def clean_adapter_records(
         records = score_relevance(records, vecs, adapter_description)
         # Soft filter: only drop if very clearly irrelevant
         before = len(records)
-        records_filtered = [r for r in records if r.get("_relevance_score", 1.0) >= RELEVANCE_THRESHOLD]
-        vecs = [vecs[i] for i, r in enumerate(records) if r.get("_relevance_score", 1.0) >= RELEVANCE_THRESHOLD]
+        relevance_thr = (adapter_cfg or {}).get("relevance_threshold", RELEVANCE_THRESHOLD)
+        records_filtered = [r for r in records if r.get("_relevance_score", 1.0) >= relevance_thr]
+        vecs = [vecs[i] for i, r in enumerate(records) if r.get("_relevance_score", 1.0) >= relevance_thr]
         records = records_filtered
         report["steps"]["relevance_filter"] = len(records)
         logger.info("[%s] Relevance filter: %d → %d", adapter_name, before, len(records))
@@ -738,6 +754,7 @@ def main() -> None:
             n_clusters=args.n_clusters,
             dry_run=args.dry_run,
             domain=domain,
+            adapter_cfg=adapter,
         )
         if isinstance(result, tuple):
             report, cleaned = result
@@ -756,7 +773,9 @@ def main() -> None:
             write_jsonl(out_path, stripped)
             logger.info("[%s] Written %d records → %s", name, len(stripped), out_path)
 
-    # Print summary
+    # Lookup pair_strategy per adapter for display context
+    adapter_strategies = {a["name"]: a.get("pair_strategy", "doc_to_code") for a in cfg.get("adapters", [])}
+
     print("\n── clean_raw report ──────────────────────────────────────────")
     for name, rep in full_report["adapters"].items():
         inp  = rep.get("input_count", 0)
@@ -764,9 +783,11 @@ def main() -> None:
         act  = rep.get("action", "")
         aug  = rep.get("steps", {}).get("augmentation", 0)
         gaps = rep.get("steps", {}).get("coverage", {}).get("gap_clusters", [])
-        aug_str  = f"  +{aug} augmented" if aug else ""
-        gap_str  = f"  {len(gaps)} coverage gaps" if gaps else ""
-        print(f"  {name:<45} {inp:>5} → {out:>5}{aug_str}{gap_str}  [{act}]")
+        aug_str      = f"  +{aug} augmented" if aug else ""
+        gap_str      = f"  {len(gaps)} coverage gaps" if gaps else ""
+        strategy     = adapter_strategies.get(name, "doc_to_code")
+        strategy_str = "  [→ awaiting pair_fuser]" if strategy == "fuse" else ""
+        print(f"  {name:<45} {inp:>5} → {out:>5}{aug_str}{gap_str}  [{act}]{strategy_str}")
     print()
 
     if args.report:

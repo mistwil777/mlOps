@@ -4,7 +4,7 @@
 ## Project Context
 MLOps infrastructure for producing fine-tuned local models.
 Goal: complete AI sovereignty — 100% local inference, zero cloud calls in production.
-Current scope: Migrator (Python→Java migration). Future: HR, Legal, Sales, Defense.
+Current scope: Migrator (Java→Python migration). Future: HR, Legal, Sales, Defense.
 
 Company: Capgemini — ~50% of clients in Defense sector (sovereignty constraints, classified data).
 

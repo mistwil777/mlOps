@@ -117,10 +117,12 @@ def _transform_matched(
             continue
 
         instruction = _resolve(instruction_template, {**params, "input": input_code})
+        adapter_name = in_rec.get("adapter_name") or out_rec.get("adapter_name")
         pairs.append({
             "prompt":       instruction,
             "completion":   output_code,
             "source_url":   in_rec.get("source_url"),
+            "adapter_name": adapter_name,
             "meta": {
                 match_by:   key,
                 "src_lang": params.get("src_lang"),
@@ -163,11 +165,70 @@ def _transform_direct(
             "completion":   output_val,
             "lang":         lang,
             "source_url":   rec.get("source_url"),
+            "adapter_name": rec.get("adapter_name"),
             "meta": {
                 "lang":   lang,
                 "tokens": len(instruction.split()) + len(output_val.split()),
             },
             "collected_at": datetime.now(timezone.utc).isoformat(),
+        })
+
+    return pairs
+
+
+def _transform_semantic(
+    records: list[dict[str, Any]],
+    schema: dict[str, Any],
+    params: dict[str, str],
+    instruction_template: str,
+) -> list[dict[str, Any]]:
+    """
+    Semantic join: match records from two languages by cosine similarity
+    on a natural-language description field.
+
+    Delegates to agents.semantic_pair_matcher.SemanticPairMatcher so that
+    both transform.py and the standalone CLI share the same logic.
+    """
+    from agents.semantic_pair_matcher import SemanticPairMatcher  # noqa: PLC0415
+
+    src_lang   = _resolve(schema.get("input_filter", {}).get("value", ""), params)
+    tgt_lang   = _resolve(schema.get("output_filter", {}).get("value", ""), params)
+    threshold  = float(schema.get("min_similarity", 0.75))
+    input_filt = schema.get("input_filter", {})
+    out_filt   = schema.get("output_filter", {})
+    in_ff      = input_filt.get("field")
+    out_ff     = out_filt.get("field")
+
+    src_records = [r for r in records if in_ff  and str(r.get(in_ff,  "")).lower() == src_lang.lower()]
+    tgt_records = [r for r in records if out_ff and str(r.get(out_ff, "")).lower() == tgt_lang.lower()]
+
+    matcher = SemanticPairMatcher(
+        source_lang=src_lang,
+        target_lang=tgt_lang,
+        threshold=threshold,
+    )
+    raw_pairs = matcher.match(src_records, tgt_records)
+
+    # Wrap each raw pair in the instruction template for consistency with other transforms
+    pairs: list[dict[str, Any]] = []
+    for p in raw_pairs:
+        instruction = _resolve(instruction_template, {**params, "input": p["prompt"]}).strip()
+        pairs.append({
+            "prompt":       instruction,
+            "completion":   p["completion"],
+            "source_lang":  p["source_lang"],
+            "target_lang":  p["target_lang"],
+            "source_desc":  p.get("source_desc"),
+            "target_desc":  p.get("target_desc"),
+            "similarity":   p.get("similarity"),
+            "source_url":   p.get("source_url"),
+            "target_url":   p.get("target_url"),
+            "meta": {
+                "src_lang":   src_lang,
+                "tgt_lang":   tgt_lang,
+                "similarity": p.get("similarity"),
+            },
+            "collected_at": p.get("collected_at"),
         })
 
     return pairs
@@ -199,7 +260,9 @@ def transform(
                 f"Provided: {list(params.keys())}"
             )
 
-    if "match_by" in schema:
+    if schema.get("match_by") == "semantic_description":
+        pairs = _transform_semantic(records, schema, params, instruction_template)
+    elif "match_by" in schema:
         pairs = _transform_matched(records, schema, params, instruction_template)
     else:
         pairs = _transform_direct(records, schema, params, instruction_template)
