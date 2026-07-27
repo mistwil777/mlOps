@@ -55,7 +55,25 @@ Développée chez Capgemini pour des contextes à haute exigence de souverainet�
 
 ---
 
-## Installation en 5 étapes
+## Démarrage des services
+
+Le dashboard MLOps est une application web full-stack (SvelteKit + FastAPI).
+
+```bash
+# 1. Démarrer le backend (FastAPI)
+source .venv/bin/activate
+python -m uvicorn api.main:app --port 8001 --reload &
+
+# 2. Démarrer le frontend (SvelteKit)
+cd frontend && npm run dev
+# Accessible sur http://localhost:5173
+```
+
+> **Note multi-projets :** si un autre service occupe le port 8000, utiliser 8001 pour le backend mlOps et adapter `frontend/vite.config.js` en conséquence (`'/api': 'http://localhost:8001'`).
+
+---
+
+## Installation complète
 
 ```bash
 # 1. Cloner le repo
@@ -69,11 +87,14 @@ source .venv/bin/activate
 # 3. Installer les dépendances
 pip install -r requirements.txt
 
-# 4. Configurer l'environnement
+# 4. Installer les dépendances frontend
+cd frontend && npm install && cd ..
+
+# 5. Configurer l'environnement
 cp .env.example .env
 # Éditer .env avec vos valeurs (AWS credentials pour la baseline Nova Pro, etc.)
 
-# 5. Vérifier l'installation
+# 6. Vérifier l'installation
 python -m pytest tests/ -v
 ```
 
