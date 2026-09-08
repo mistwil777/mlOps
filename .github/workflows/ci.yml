@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "feat/**", "fix/**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── pair-forge agent ──────────────────────────────────────────────────────
+  pair-forge:
+    name: pair-forge / smoke tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: Install workspace members
+        run: |
+          uv sync --frozen
+          uv pip install -e agents/pair-forge/ -e agents/agent-tester/
+
+      - name: Dependency status (pair-forge)
+        run: uv run python -m pair_forge check
+        continue-on-error: true
+
+      - name: Smoke tests — pair-forge (PDF / RTF / DOCX)
+        run: |
+          uv run pytest \
+            agents/pair-forge/pair_forge/tests/smoke/test_pdf.py \
+            agents/pair-forge/pair_forge/tests/smoke/test_rtf.py \
+            agents/pair-forge/pair_forge/tests/smoke/test_docx.py \
+            -v
+
+      - name: Smoke tests — pair-forge (OCR — optional)
+        run: uv run pytest agents/pair-forge/pair_forge/tests/smoke/test_ocr.py -v
+        continue-on-error: true
+
+      - name: Smoke tests — agent-tester
+        run: uv run pytest agents/agent-tester/agent_tester/tests/smoke/ -v
+
+      - name: agent-tester validates pair-forge (level 1 + 2)
+        run: |
+          uv run python -m agent_tester run --agent agents/pair-forge --level 1
+          uv run python -m agent_tester run --agent agents/pair-forge --level 2
+
+  # ── MLOps pipeline ────────────────────────────────────────────────────────
+  pipeline:
+    name: pipeline / unit tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: Install workspace
+        run: uv sync --frozen
+
+      - name: Run pipeline unit tests
+        run: |
+          uv run pytest tests/ -q --ignore=tests/integration
+        # Integration tests require Qdrant + Bedrock — not available in CI
+        # Run them locally with: make test
+
+  # ── Lint ──────────────────────────────────────────────────────────────────
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: Install workspace
+        run: uv sync --frozen
+
+      - name: Ruff check
+        run: uv run ruff check agents/ pipeline/ api/
+
+      - name: Ruff format check
+        run: uv run ruff format --check agents/ pipeline/ api/

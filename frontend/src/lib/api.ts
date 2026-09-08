@@ -146,6 +146,15 @@ export const startGeneratePairs     = (body: { project_id: string; dry_run?: boo
   req<CollectJob>('/data/generate-pairs', { method: 'POST', body: JSON.stringify(body) });
 export const getAdapterCoverage = (projectId: string) => req<AdapterCoverageResult>(`/data/adapter-coverage/${projectId}`);
 export const getCollectStatus  = (jobId: string) => req<JobStatus>(`/data/collect/${jobId}/status`);
+export const startIngestRaw    = (projectId: string, file: File, source: string, adapterName?: string) => {
+  const fd = new FormData();
+  fd.append('file', file);
+  const params = new URLSearchParams({ source_description: source });
+  if (adapterName) params.set('adapter_name', adapterName);
+  return fetch(`/api/data/ingest-raw/${projectId}?${params}`, { method: 'POST', body: fd })
+    .then(r => { if (!r.ok) throw new Error(r.statusText); return r.json() as Promise<{ job_id: string }>; });
+};
+export const getIngestRawStatus = (jobId: string) => req<JobStatus>(`/data/ingest-raw/${jobId}/status`);
 export const getCollectHistory = (projectId: string) => req<Record<string, { status: string; ts: string; pairs?: number }>>(`/data/collect-history/${projectId}`);
 // Review — pipeline-aware
 export const getQualitySummary   = (projectId: string) => req<QualitySummary>(`/data/review/${projectId}/quality-summary`);

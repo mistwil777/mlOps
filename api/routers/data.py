@@ -1525,6 +1525,110 @@ async def ingest_file(
     }
 
 
+# ── Raw Ingestion Agent (async) ────────────────────────────────────────────────
+
+@router.post("/ingest-raw/{project_id}")
+async def ingest_raw_start(
+    project_id: str,
+    file: UploadFile = File(...),
+    source_description: str = "raw_upload",
+    adapter_name: str | None = None,
+) -> dict[str, Any]:
+    """Accept any file type, extract content, generate and validate pairs via LLM agent."""
+    config = _load_project_config(project_id)
+
+    content = await file.read()
+    if len(content) > 200 * 1024 * 1024:
+        raise HTTPException(413, "File too large (max 200 MB)")
+
+    tmp_path = Path(f"/tmp/_mlops_ingest_{project_id}_{file.filename}")
+    tmp_path.write_bytes(content)
+
+    job_id = f"ingest-raw-{uuid.uuid4().hex[:8]}"
+    _JOBS[job_id] = {
+        "status":     "running",
+        "lines":      [],
+        "project_id": project_id,
+        "filename":   file.filename,
+        "started_at": datetime.now(timezone.utc).timestamp(),
+    }
+    asyncio.create_task(_run_ingest_raw(job_id, tmp_path, source_description, adapter_name, config))
+    return {"job_id": job_id}
+
+
+async def _run_ingest_raw(
+    job_id: str,
+    file_path: Path,
+    source: str,
+    adapter_name: str | None,
+    config: dict,
+) -> None:
+    from pipeline.ingest.agent import IngestionAgent  # noqa: PLC0415
+
+    try:
+        agent = IngestionAgent(project_id=config["id"], config=config)
+        summary: dict = {}
+
+        for log in agent.run(file_path, source, adapter_name):
+            if log.get("summary"):
+                summary = log
+            else:
+                line = f"[{log.get('level','info').upper()}] {log.get('msg','')}"
+                _JOBS[job_id]["lines"].append(line)
+            await asyncio.sleep(0)
+
+        _JOBS[job_id]["status"]      = "completed"
+        _JOBS[job_id]["result"]      = summary
+        _JOBS[job_id]["finished_at"] = datetime.now(timezone.utc).timestamp()
+    except Exception as exc:  # noqa: BLE001
+        _JOBS[job_id]["status"] = "failed"
+        _JOBS[job_id]["lines"].append(f"ERROR: {exc}")
+        _JOBS[job_id]["finished_at"] = datetime.now(timezone.utc).timestamp()
+    finally:
+        file_path.unlink(missing_ok=True)
+
+
+@router.get("/ingest-raw/{job_id}/stream")
+async def ingest_raw_stream(job_id: str):
+    """Stream log lines for a running ingest-raw job (SSE)."""
+    if job_id not in _JOBS:
+        raise HTTPException(404, f"Job {job_id} not found")
+
+    async def event_gen():
+        sent = 0
+        while True:
+            job   = _JOBS.get(job_id, {})
+            lines = job.get("lines", [])
+            while sent < len(lines):
+                yield {"data": lines[sent]}
+                sent += 1
+            if job.get("status") in ("completed", "failed"):
+                if job.get("result"):
+                    yield {"data": f"[SUMMARY] {json.dumps(job['result'])}"}
+                break
+            await asyncio.sleep(0.5)
+
+    return EventSourceResponse(event_gen())
+
+
+@router.get("/ingest-raw/{job_id}/status")
+async def ingest_raw_status(job_id: str) -> dict[str, Any]:
+    """Return current status of an ingest-raw job."""
+    if job_id not in _JOBS:
+        raise HTTPException(404, f"Job {job_id} not found")
+    j = _JOBS[job_id]
+    return {
+        "job_id":     job_id,
+        "status":     j.get("status"),
+        "lines":      j.get("lines", []),
+        "result":     j.get("result"),
+        "project_id": j.get("project_id"),
+        "filename":   j.get("filename"),
+        "started_at": j.get("started_at"),
+        "finished_at":j.get("finished_at"),
+    }
+
+
 # ── Data Lineage ──────────────────────────────────────────────────────────────
 
 def _ensure_lineage_table() -> None:

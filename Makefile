@@ -50,6 +50,7 @@ setup-python:
 	$(PYTHON) -m venv $(VENV)
 	$(VENV)/bin/pip install -U pip
 	$(VENV)/bin/pip install -r requirements.txt
+	$(VENV)/bin/pip install -e agents/pair-forge/ -e agents/agent-tester/
 
 setup-ui:
 	cd frontend && npm install

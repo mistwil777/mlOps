@@ -86,3 +86,13 @@ experiments/*.db-wal
 dashboards/_app/
 dashboards/index.html
 dashboards/favicon.svg
+
+# ATLAS agents — developed in the ATLAS repo, consumed here as dependencies
+agents/
+
+# Generated Dockerfiles (produced by agent CLI)
+Dockerfile.pair-forge
+Dockerfile.agent-tester
+
+# UV lock + workspace pyproject (workspace managed separately)
+uv.lock

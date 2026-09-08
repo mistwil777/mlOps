@@ -550,4 +550,16 @@ transform:
     src_lang: java
     tgt_lang: python
     lang_pair_key: java-python
+ingestion:
+  pair_generator:
+    provider: bedrock
+    model_id: amazon.nova-lite-v1:0
+    temperature: 0.3
+  pair_judge:
+    provider: bedrock
+    model_id: us.amazon.nova-pro-v1:0
+    temperature: 0.1
+    min_score: 0.8
+    auto_correct: true
+    max_retries: 2
 id: migrator
