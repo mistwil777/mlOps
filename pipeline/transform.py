@@ -25,6 +25,7 @@ import yaml
 
 from pipeline.utils.jsonl import read_jsonl, write_jsonl
 from pipeline.utils.logger import get_logger
+from pipeline.utils.schema import canonicalize, validate_pairs
 
 logger = get_logger("mlops.transform")
 
@@ -261,14 +262,32 @@ def transform(
             )
 
     if schema.get("match_by") == "semantic_description":
-        pairs = _transform_semantic(records, schema, params, instruction_template)
+        raw_pairs = _transform_semantic(records, schema, params, instruction_template)
     elif "match_by" in schema:
-        pairs = _transform_matched(records, schema, params, instruction_template)
+        raw_pairs = _transform_matched(records, schema, params, instruction_template)
     else:
-        pairs = _transform_direct(records, schema, params, instruction_template)
+        raw_pairs = _transform_direct(records, schema, params, instruction_template)
+
+    # Normalize to canonical schema — stable format regardless of source
+    defaults = {
+        "lang_pair": params.get("lang_pair_key") or (
+            f"{params['src_lang']}-{params['tgt_lang']}"
+            if "src_lang" in params and "tgt_lang" in params else None
+        ),
+        "domain": params.get("domain"),
+        "source_type": params.get("source_type"),
+    }
+    pairs = [canonicalize(p, defaults={k: v for k, v in defaults.items() if v}) for p in raw_pairs]
+
+    issues = validate_pairs(pairs, require_adapter=False)
+    if issues:
+        logger.warning(
+            "Transform '%s': %d validation issue(s) — first: %s",
+            template_id, len(issues), issues[0],
+        )
 
     logger.info("Transform '%s': %d records → %d pairs", template_id, len(records), len(pairs))
-    return pairs
+    return [p.to_dict() for p in pairs]
 
 
 def main() -> None:
