@@ -9,6 +9,7 @@ from typing import Any
 
 import yaml
 
+from pipeline.utils.evaluators import evaluate as _evaluate_pair
 from pipeline.utils.jsonl import read_jsonl
 from pipeline.utils.llm import call_llm as _call_llm
 from pipeline.utils.logger import get_logger, log_metric
@@ -55,13 +56,6 @@ def _call_nova_pro(prompt: str) -> tuple[str, float]:
     return completion, latency
 
 
-def _is_valid_response(text: str) -> bool:
-    """Heuristic: non-empty, not an error message, has some structure."""
-    if not text or len(text.strip()) < 10:
-        return False
-    error_patterns = ["error:", "traceback", "exception:", "i'm sorry", "i cannot"]
-    lower = text.lower()
-    return not any(p in lower for p in error_patterns)
 
 
 class ModelEvaluator:
@@ -75,7 +69,10 @@ class ModelEvaluator:
         test_jsonl: Path | str,
         n: int = 50,
         port: int = 8080,
+        domain: str | None = None,
     ) -> dict[str, Any]:
+        if domain is None:
+            domain = self.config.get("domain", "code")
         records = read_jsonl(test_jsonl)
         if n < len(records):
             import random  # noqa: PLC0415
@@ -91,18 +88,22 @@ class ModelEvaluator:
             completion, latency = _call_local_model(r["prompt"], model_path, port)
             latencies.append(latency)
 
-            valid = _is_valid_response(completion)
-            if valid:
+            reference = r.get("completion")
+            eval_result = _evaluate_pair(completion, reference, domain)
+            if eval_result.correct:
                 pass_count += 1
 
-            rl = rouge_l_score(completion, r["completion"])
+            rl = rouge_l_score(completion, reference) if reference else 0.0
             rouge_scores.append(rl)
 
             results.append({
                 "prompt": r["prompt"][:200],
-                "reference": r["completion"][:200],
+                "reference": (reference or "")[:200],
                 "hypothesis": completion[:200],
-                "valid_response": valid,
+                "valid_response": eval_result.correct,
+                "evaluator_method": eval_result.method,
+                "evaluator_score": eval_result.score,
+                "evaluator_detail": eval_result.detail,
                 "rouge_l": rl,
                 "latency_ms": latency,
             })

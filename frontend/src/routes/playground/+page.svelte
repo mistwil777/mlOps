@@ -33,21 +33,34 @@
   let saveStatus = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
   let selectedProject = $state('');
 
-  let compareResults: Array<{
-    prompt_preview: string;
-    local: { completion: string | null; latency_ms: number | null; rouge_l?: number; valid?: boolean };
-    nova_pro: { completion: string | null; latency_ms: number | null; rouge_l?: number; valid?: boolean };
-  }> = $state([]);
+  type ModelResult = {
+    completion: string | null; latency_ms: number | null; valid?: boolean;
+    evaluator_method?: string; evaluator_score?: number; evaluator_detail?: string | null;
+    error?: string;
+  };
+  let compareResults: Array<{ prompt_preview: string; local: ModelResult; nova_pro: ModelResult }> = $state([]);
   let compareStats: {
     n: number;
+    domain: string;
+    evaluator_mode: string;
     local: { pass_rate: number; ci_low: number; ci_high: number; ci_margin: number };
     nova_pro: { pass_rate: number; ci_low: number; ci_high: number; ci_margin: number };
-    mcnemar: { p_value: number; significant: boolean; winner: string; interpretation: string; mode: string };
+    mcnemar: {
+      b: number; c: number; discordant: number; reliable: boolean; reliability_warning: string | null;
+      p_value: number; significant: boolean; winner: string; interpretation: string;
+    };
     sample_size: { sufficient: boolean; current_margin: number; recommended_n: number; message: string };
     references_used: number;
   } | null = $state(null);
   let comparing = $state(false);
   let compareError = $state('');
+
+  // Test sets
+  type TestSetMeta = { name: string; versions: { version: number; saved_at: string; n_prompts: number; description: string | null }[] };
+  let testSets = $state<TestSetMeta[]>([]);
+  let testSetName = $state('');
+  let saveTestSetStatus = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  let loadingTestSet = $state(false);
 
   let error = $state('');
 
@@ -55,6 +68,31 @@
     projects = await getProjects().catch(() => []);
     if (projects.length > 0) { ragProject = projects[0].id; selectedProject = projects[0].id; }
   });
+
+  async function loadTestSets() {
+    if (!selectedProject) return;
+    const r = await fetch(`/api/playground/testsets/${selectedProject}`).catch(() => null);
+    if (r?.ok) testSets = await r.json();
+  }
+
+  async function loadTestSet(name: string) {
+    loadingTestSet = true;
+    try {
+      const r = await fetch(`/api/playground/testsets/${selectedProject}/${name}`);
+      if (!r.ok) return;
+      const d = await r.json();
+      const n = d.prompts.length;
+      comparePromptList = d.prompts;
+      compareRefs = d.reference_completions ?? Array(n).fill('');
+      refVisible = Array(n).fill(false);
+      suggestions = Array(n).fill([]);
+      promptSuggestions = Array(n).fill([]);
+      suggestingPrompt = Array(n).fill(false);
+      suggesting = Array(n).fill(false);
+    } finally {
+      loadingTestSet = false;
+    }
+  }
 
   onDestroy(() => es?.close());
 
@@ -136,7 +174,7 @@
     compareError = '';
     compareResults = [];
     compareStats = null;
-    saveStatus = 'idle';
+    saveTestSetStatus = 'idle';
 
     const refs = compareRefs.map(r => r.trim() || null);
     const hasRefs = refs.some(Boolean);
@@ -147,6 +185,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompts: lines,
+          project_id: selectedProject || null,
           max_tokens: maxTokens,
           temperature,
           ...(hasRefs ? { reference_completions: refs } : {}),
@@ -214,13 +253,13 @@
 
   async function suggestPrompt(i: number) {
     if (!selectedProject) return;
-    const query = comparePromptList[i].trim() || 'migration java python';
     const sp = [...suggestingPrompt]; sp[i] = true; suggestingPrompt = sp;
     try {
       const r = await fetch('/api/playground/suggest-reference', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: query, project_id: selectedProject, top_k: 3, mode: 'prompt' }),
+        // empty prompt → backend returns random sample (cold-start browsing)
+        body: JSON.stringify({ prompt: comparePromptList[i].trim(), project_id: selectedProject, top_k: 3 }),
       });
       if (!r.ok) return;
       const d = await r.json();
@@ -230,24 +269,30 @@
     }
   }
 
-  async function saveMcNemarSession() {
+  async function saveTestSet() {
     if (!compareStats || !compareResults.length) return;
-    saveStatus = 'saving';
+    if (!testSetName.trim()) return;
+    saveTestSetStatus = 'saving';
     try {
-      const r = await fetch('/api/playground/save-mcnemar-session', {
+      const r = await fetch('/api/playground/testsets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           project_id: selectedProject,
+          name: testSetName.trim(),
           prompts: comparePromptList.map(s => s.trim()).filter(Boolean),
           reference_completions: compareRefs.map(r => r.trim() || null),
-          stats: compareStats,
-          results: compareResults,
+          description: `McNemar session — ${compareStats.n} prompts, domain: ${compareStats.domain}`,
         }),
       });
-      saveStatus = r.ok ? 'saved' : 'error';
+      if (r.ok) {
+        saveTestSetStatus = 'saved';
+        await loadTestSets();
+      } else {
+        saveTestSetStatus = 'error';
+      }
     } catch {
-      saveStatus = 'error';
+      saveTestSetStatus = 'error';
     }
   }
 
@@ -332,18 +377,31 @@
       <div class="mcnemar-header">
         <div>
           <div class="section-title" style="margin-bottom:2px">Test McNemar — Local vs Nova Pro</div>
-          <div class="mcnemar-subtitle">Renseignez des réponses de référence pour un test statistique fiable (ROUGE-L ≥ 0.4).</div>
+          <div class="mcnemar-subtitle">Renseignez des réponses de référence pour un test statistique fiable (exécution Python ou ROUGE-L).</div>
         </div>
-        {#if projects.length > 0}
-          <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-muted)">
-            Projet pour suggestions
-            <select bind:value={selectedProject} class="param-input" style="min-width:120px">
-              {#each projects as p}
-                <option value={p.id}>{p.id}</option>
-              {/each}
-            </select>
-          </label>
-        {/if}
+        <div style="display:flex; flex-direction:column; gap:6px; align-items:flex-end">
+          {#if projects.length > 0}
+            <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-muted)">
+              Projet
+              <select bind:value={selectedProject} class="param-input" style="min-width:120px" onchange={loadTestSets}>
+                {#each projects as p}
+                  <option value={p.id}>{p.id}</option>
+                {/each}
+              </select>
+            </label>
+          {/if}
+          {#if testSets.length > 0}
+            <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-muted)">
+              Charger test set
+              <select class="param-input" style="min-width:160px" onchange={(e) => loadTestSet((e.target as HTMLSelectElement).value)} disabled={loadingTestSet}>
+                <option value="">-- choisir --</option>
+                {#each testSets as ts}
+                  <option value={ts.name}>{ts.name} ({ts.versions.at(-1)?.n_prompts ?? '?'} prompts, v{ts.versions.length})</option>
+                {/each}
+              </select>
+            </label>
+          {/if}
+        </div>
       </div>
 
       <div class="prompt-list">
@@ -471,33 +529,51 @@
         </div>
         <div class="mcnemar-row">
           <span class="mcnemar-label">Test McNemar</span>
-          <span class="mcnemar-mode {compareStats.mcnemar.mode === 'reference' ? 'mode-ref' : 'mode-heuristic'}"
-                title={compareStats.mcnemar.mode === 'reference' ? 'ROUGE-L ≥ 0.4 sur réponses de référence' : 'Heuristique (non-vide + sans erreur) — peu fiable'}>
-            {compareStats.mcnemar.mode === 'reference' ? '✓ fiable' : '⚠ indicatif'}
+          <span class="mcnemar-discordant" title="b+c : paires où les modèles divergent">
+            {compareStats.mcnemar.discordant} paires discordantes
           </span>
-          <span class="mcnemar-verdict {compareStats.mcnemar.significant ? 'significant' : 'tie'}">
+          <span class="mcnemar-mode {compareStats.evaluator_mode === 'reference' ? 'mode-ref' : 'mode-heuristic'}"
+                title={compareStats.evaluator_mode === 'reference'
+                  ? `Critère : ${compareStats.domain === 'code' ? 'exécution Python / AST' : 'ROUGE-L ≥ 0.4'}`
+                  : 'Heuristique (non-vide + sans erreur) — peu fiable'}>
+            {compareStats.mcnemar.reliable
+              ? (compareStats.evaluator_mode === 'reference' ? '✓ fiable' : '⚠ indicatif')
+              : '✗ insuffisant'}
+          </span>
+          <span class="mcnemar-verdict {compareStats.mcnemar.significant && compareStats.mcnemar.reliable ? 'significant' : 'tie'}">
             {compareStats.mcnemar.interpretation}
           </span>
         </div>
-        {#if compareStats.mcnemar.mode === 'heuristic'}
+        {#if !compareStats.mcnemar.reliable}
+          <div class="mcnemar-hint mcnemar-hint-warn">
+            {compareStats.mcnemar.reliability_warning}
+            Ajoutez plus de prompts (minimum 10 paires discordantes).
+          </div>
+        {:else if compareStats.evaluator_mode === 'heuristic'}
           <div class="mcnemar-hint">
-            Ajoutez des réponses de référence par prompt pour un test McNemar fiable (ROUGE-L ≥ 0.4).
-            Utilisez le bouton "Suggérer" pour pré-remplir depuis les données d'entraînement.
+            Critère actuel : heuristique. Ajoutez des réponses de référence pour un test fiable
+            ({compareStats.domain === 'code' ? 'exécution Python / AST' : 'ROUGE-L ≥ 0.4'}).
           </div>
         {/if}
       </div>
     {/if}
 
     {#if compareResults.length > 0}
-      <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px">
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px; flex-wrap:wrap">
+        <input
+          bind:value={testSetName}
+          class="param-input"
+          placeholder="Nom du test set (ex: migrator-baseline)"
+          style="min-width:220px"
+        />
         <button
-          class="btn {saveStatus === 'saved' ? 'btn-ghost' : 'btn-primary'}"
-          onclick={saveMcNemarSession}
-          disabled={saveStatus === 'saving' || saveStatus === 'saved'}
+          class="btn {saveTestSetStatus === 'saved' ? 'btn-ghost' : 'btn-primary'}"
+          onclick={saveTestSet}
+          disabled={saveTestSetStatus === 'saving' || saveTestSetStatus === 'saved' || !testSetName.trim()}
         >
-          {saveStatus === 'saving' ? '⟳ Enregistrement…' : saveStatus === 'saved' ? '✓ Session enregistrée' : '↓ Enregistrer la session McNemar'}
+          {saveTestSetStatus === 'saving' ? '⟳ Enregistrement…' : saveTestSetStatus === 'saved' ? '✓ Test set enregistré' : '↓ Enregistrer comme test set'}
         </button>
-        {#if saveStatus === 'error'}
+        {#if saveTestSetStatus === 'error'}
           <span style="font-size:11px; color:var(--red, #e66767)">Erreur lors de l'enregistrement.</span>
         {/if}
       </div>
@@ -506,36 +582,27 @@
         <div class="card" style="margin-bottom:12px; padding:16px">
           <div class="text-muted" style="font-size:12px; margin-bottom:10px">Prompt {i+1}: <span class="mono">{row.prompt_preview}…</span></div>
           <div class="compare-row">
-            <div class="compare-col">
-              <div class="compare-header">
-                <span class="badge badge-completed">Local (mlx_lm)</span>
-                {#if row.local.latency_ms !== null}
-                  <span class="text-muted" style="font-size:11px">{row.local.latency_ms?.toFixed(0)} ms</span>
-                {/if}
-                {#if row.local.rouge_l !== undefined}
-                  <span class="badge" style="background:rgba(130,110,255,0.1); color:var(--accent); border:1px solid var(--accent); padding:2px 8px; border-radius:4px; font-size:11px">
-                    ROUGE-L {(row.local.rouge_l * 100).toFixed(1)}%
-                    {(row.local.rouge_l ?? 0) >= 0.4 ? ' ✓' : ' ✗'}
-                  </span>
-                {/if}
+            {#each [['local', 'Local (mlx_lm)', 'badge-completed', '#0284c7'], ['nova_pro', 'Nova Pro', '', '#ff8c00']] as [key, label, cls, color]}
+              {@const side = key === 'local' ? row.local : row.nova_pro}
+              <div class="compare-col">
+                <div class="compare-header">
+                  <span class="badge {cls}" style={cls ? '' : `background:rgba(255,140,0,0.1); color:${color}; border:1px solid ${color}; padding:4px 8px; border-radius:4px; font-size:12px`}>{label}</span>
+                  {#if side.latency_ms !== null}
+                    <span class="text-muted" style="font-size:11px">{side.latency_ms?.toFixed(0)} ms</span>
+                  {/if}
+                  {#if side.evaluator_method}
+                    <span class="eval-badge eval-{side.evaluator_method?.replace('_', '-')}"
+                          title={side.evaluator_detail ?? side.evaluator_method}>
+                      {side.valid ? '✓' : '✗'} {side.evaluator_method}
+                      {#if side.evaluator_score !== undefined && side.evaluator_method !== 'heuristic'}
+                        ({(side.evaluator_score * 100).toFixed(0)}%)
+                      {/if}
+                    </span>
+                  {/if}
+                </div>
+                <pre class="compare-text">{side.completion ?? side.error ?? '—'}</pre>
               </div>
-              <pre class="compare-text">{row.local.completion ?? (row.local as any).error ?? '—'}</pre>
-            </div>
-            <div class="compare-col">
-              <div class="compare-header">
-                <span class="badge" style="background:rgba(255,140,0,0.1); color:#ff8c00; border:1px solid #ff8c00; padding:4px 8px; border-radius:4px; font-size:12px">Nova Pro</span>
-                {#if row.nova_pro.latency_ms !== null}
-                  <span class="text-muted" style="font-size:11px">{row.nova_pro.latency_ms?.toFixed(0)} ms</span>
-                {/if}
-                {#if row.nova_pro.rouge_l !== undefined}
-                  <span class="badge" style="background:rgba(255,140,0,0.08); color:#ff8c00; border:1px solid #ff8c00; padding:2px 8px; border-radius:4px; font-size:11px">
-                    ROUGE-L {(row.nova_pro.rouge_l * 100).toFixed(1)}%
-                    {(row.nova_pro.rouge_l ?? 0) >= 0.4 ? ' ✓' : ' ✗'}
-                  </span>
-                {/if}
-              </div>
-              <pre class="compare-text">{row.nova_pro.completion ?? (row.nova_pro as any).error ?? '—'}</pre>
-            </div>
+            {/each}
           </div>
         </div>
       {/each}
@@ -591,7 +658,16 @@
   .mcnemar-mode { font-size:11px; font-weight:600; padding:2px 7px; border-radius:4px; flex-shrink:0; cursor:default; }
   .mcnemar-mode.mode-ref { background:rgba(2,132,199,0.1); color:#0284c7; border:1px solid #0284c7; }
   .mcnemar-mode.mode-heuristic { background:rgba(245,158,11,0.1); color:#b45309; border:1px solid #f59e0b; }
+  .mcnemar-discordant { font-size:11px; color:var(--text-muted); font-family:var(--font-mono); }
   .mcnemar-hint { margin-top:8px; font-size:11px; color:var(--text-muted); border-top:1px solid var(--border); padding-top:8px; }
+  .mcnemar-hint-warn { color:#92400e; background:#fff8ed; border:1px solid #f59e0b; border-radius:var(--radius); padding:8px 12px; }
+  /* Evaluator method badges */
+  .eval-badge { font-size:10px; font-weight:600; padding:2px 7px; border-radius:4px; }
+  .eval-exec-python   { background:rgba(27,175,122,0.12); color:#1baf7a; border:1px solid #1baf7a; }
+  .eval-ast-python    { background:rgba(2,132,199,0.1);  color:#0284c7; border:1px solid #0284c7; }
+  .eval-rouge-l       { background:rgba(245,158,11,0.1); color:#b45309; border:1px solid #f59e0b; }
+  .eval-heuristic     { background:var(--surface-2);     color:var(--text-muted); border:1px solid var(--border); }
+  .eval-none          { display:none; }
   .prompt-block { display:flex; flex-direction:column; gap:4px; padding:10px; border:1px solid var(--border); border-radius:var(--radius); }
   .ref-row { display:flex; align-items:center; gap:8px; }
   .btn-ref-toggle { background:none; border:none; font-size:11px; color:var(--text-muted); cursor:pointer; padding:2px 4px; display:flex; align-items:center; gap:4px; }
