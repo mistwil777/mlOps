@@ -1,4 +1,4 @@
-"""Model delivery — package info and file downloads."""
+"""Model delivery — package info, compliance audit, and file downloads."""
 
 from __future__ import annotations
 
@@ -6,10 +6,12 @@ import zipfile
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
+import yaml
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
 from api.db import fetchall, fetchone
+from pipeline.utils.compliance import generate_compliance_report
 
 router = APIRouter(prefix="/api/models", tags=["delivery"])
 
@@ -87,6 +89,57 @@ def download_fused(model_id: str):
         media_type="application/zip",
         filename=f"{row['project_id']}-fused-{model_id}.zip",
     )
+
+
+@router.get("/{model_id}/compliance")
+def get_compliance_report(model_id: str):
+    """Generate a compliance audit report (NIS2 / AI Act / OIV) for a deployed model."""
+    row = fetchone(
+        """SELECT m.*, r.model_name, r.adapter_path, r.val_loss,
+                  p.name as project_name, p.id as project_id_col
+           FROM models m
+           LEFT JOIN runs r ON m.run_id = r.id
+           LEFT JOIN projects p ON m.project_id = p.id
+           WHERE m.id = ?""",
+        (model_id,),
+    )
+    if not row:
+        raise HTTPException(404, f"Model '{model_id}' not found")
+
+    # Load project config
+    project_id = row.get("project_id") or row.get("project_id_col", "")
+    cfg_path = Path("config/projects") / f"{project_id}.yaml"
+    if cfg_path.exists():
+        with cfg_path.open() as fh:
+            project_cfg = yaml.safe_load(fh) or {}
+    else:
+        project_cfg = {"id": project_id, "name": row.get("project_name", project_id)}
+
+    # Load latest eval metrics
+    eval_row = fetchone(
+        "SELECT * FROM evaluations WHERE run_id = ? ORDER BY created_at DESC LIMIT 1",
+        (row.get("run_id"),),
+    )
+    eval_metrics: dict = {}
+    if eval_row:
+        eval_metrics = {
+            "n":            eval_row.get("n_samples"),
+            "pass_rate":    eval_row.get("pass_rate"),
+            "rouge_l":      eval_row.get("rouge_l"),
+            "run_id":       row.get("run_id"),
+            "mlflow_run_id": eval_row.get("mlflow_run_id"),
+        }
+
+    model_info = {
+        "model_id":   model_id,
+        "model_name": row.get("model_name", ""),
+        "serving":    "ollama",
+        "bundle_type": "docker",
+        "docker_bundle": True,
+    }
+
+    report = generate_compliance_report(project_cfg, eval_metrics, model_info)
+    return report.to_dict()
 
 
 @router.get("/{model_id}/download/adapter")
