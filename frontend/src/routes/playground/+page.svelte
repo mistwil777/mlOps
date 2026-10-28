@@ -277,8 +277,11 @@
   <!-- ── COMPARE MODE ── -->
   {#if mode === 'compare'}
     <div class="card" style="margin-bottom:16px; padding:16px">
-      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px">
-        <div class="section-title" style="margin-bottom:0">Prompts à comparer</div>
+      <div class="mcnemar-header">
+        <div>
+          <div class="section-title" style="margin-bottom:2px">Test McNemar — Local vs Nova Pro</div>
+          <div class="mcnemar-subtitle">Renseignez des réponses de référence pour un test statistique fiable (ROUGE-L ≥ 0.4).</div>
+        </div>
         {#if projects.length > 0}
           <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-muted)">
             Projet pour suggestions
@@ -495,6 +498,8 @@
   .mcnemar-verdict { font-size:12px; color:var(--text); }
   .mcnemar-verdict.significant { color:#0284c7; font-weight:600; }
   .mcnemar-verdict.tie { color:var(--text-muted); }
+  .mcnemar-header { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:12px; }
+  .mcnemar-subtitle { font-size:11px; color:var(--text-muted); margin-top:0; }
   .mcnemar-mode { font-size:11px; font-weight:600; padding:2px 7px; border-radius:4px; flex-shrink:0; cursor:default; }
   .mcnemar-mode.mode-ref { background:rgba(2,132,199,0.1); color:#0284c7; border:1px solid #0284c7; }
   .mcnemar-mode.mode-heuristic { background:rgba(245,158,11,0.1); color:#b45309; border:1px solid #f59e0b; }
