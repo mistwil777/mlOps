@@ -26,8 +26,11 @@
   let compareRefs = $state<string[]>(['']);          // parallel reference answers
   let refVisible = $state<boolean[]>([false]);       // per-prompt toggle
   let suggesting = $state<boolean[]>([false]);       // per-prompt suggest spinner
-  type Suggestion = { prompt_preview: string; completion: string; completion_preview: string; similarity: number; adapter_name?: string };
-  let suggestions = $state<Suggestion[][]>([[]]);    // per-prompt suggestions
+  type Suggestion = { prompt: string; prompt_preview: string; completion: string; completion_preview: string; similarity: number; adapter_name?: string };
+  let suggestions = $state<Suggestion[][]>([[]]);         // per-prompt ref suggestions
+  let promptSuggestions = $state<Suggestion[][]>([[]]);   // per-prompt prompt suggestions
+  let suggestingPrompt = $state<boolean[]>([false]);
+  let saveStatus = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
   let selectedProject = $state('');
 
   let compareResults: Array<{
@@ -133,6 +136,7 @@
     compareError = '';
     compareResults = [];
     compareStats = null;
+    saveStatus = 'idle';
 
     const refs = compareRefs.map(r => r.trim() || null);
     const hasRefs = refs.some(Boolean);
@@ -164,6 +168,8 @@
     compareRefs = [...compareRefs, ''];
     refVisible = [...refVisible, false];
     suggestions = [...suggestions, []];
+    promptSuggestions = [...promptSuggestions, []];
+    suggestingPrompt = [...suggestingPrompt, false];
   }
 
   function removePrompt(i: number) {
@@ -171,6 +177,8 @@
     compareRefs = compareRefs.filter((_, j) => j !== i);
     refVisible = refVisible.filter((_, j) => j !== i);
     suggestions = suggestions.filter((_, j) => j !== i);
+    promptSuggestions = promptSuggestions.filter((_, j) => j !== i);
+    suggestingPrompt = suggestingPrompt.filter((_, j) => j !== i);
   }
 
   function toggleRef(i: number) {
@@ -197,6 +205,50 @@
   function pickSuggestion(i: number, completion: string) {
     compareRefs = compareRefs.map((r, j) => j === i ? completion : r);
     const sg = [...suggestions]; sg[i] = []; suggestions = sg;
+  }
+
+  function pickPromptSuggestion(i: number, prompt: string) {
+    comparePromptList = comparePromptList.map((p, j) => j === i ? prompt : p);
+    const ps = [...promptSuggestions]; ps[i] = []; promptSuggestions = ps;
+  }
+
+  async function suggestPrompt(i: number) {
+    if (!selectedProject) return;
+    const query = comparePromptList[i].trim() || 'migration java python';
+    const sp = [...suggestingPrompt]; sp[i] = true; suggestingPrompt = sp;
+    try {
+      const r = await fetch('/api/playground/suggest-reference', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: query, project_id: selectedProject, top_k: 3, mode: 'prompt' }),
+      });
+      if (!r.ok) return;
+      const d = await r.json();
+      const ps = [...promptSuggestions]; ps[i] = d.suggestions ?? []; promptSuggestions = ps;
+    } finally {
+      const sp2 = [...suggestingPrompt]; sp2[i] = false; suggestingPrompt = sp2;
+    }
+  }
+
+  async function saveMcNemarSession() {
+    if (!compareStats || !compareResults.length) return;
+    saveStatus = 'saving';
+    try {
+      const r = await fetch('/api/playground/save-mcnemar-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project_id: selectedProject,
+          prompts: comparePromptList.map(s => s.trim()).filter(Boolean),
+          reference_completions: compareRefs.map(r => r.trim() || null),
+          stats: compareStats,
+          results: compareResults,
+        }),
+      });
+      saveStatus = r.ok ? 'saved' : 'error';
+    } catch {
+      saveStatus = 'error';
+    }
   }
 
   function pct(v: number) { return `${(v * 100).toFixed(1)}%`; }
@@ -299,12 +351,35 @@
           <div class="prompt-block">
             <div class="prompt-list-item">
               <span class="prompt-num">{i + 1}</span>
-              <textarea
-                bind:value={comparePromptList[i]}
-                class="prompt-area"
-                rows="3"
-                placeholder="Entrez un prompt…"
-              ></textarea>
+              <div style="flex:1; display:flex; flex-direction:column; gap:4px">
+                <textarea
+                  bind:value={comparePromptList[i]}
+                  class="prompt-area"
+                  rows="3"
+                  placeholder="Entrez un prompt…"
+                ></textarea>
+                <div style="display:flex; align-items:center; gap:6px">
+                  <button
+                    class="btn btn-ghost"
+                    style="font-size:11px; padding:3px 10px"
+                    onclick={() => suggestPrompt(i)}
+                    disabled={suggestingPrompt[i] || !selectedProject}
+                  >
+                    {suggestingPrompt[i] ? '⟳' : '✦'} Suggérer un prompt
+                  </button>
+                </div>
+                {#if promptSuggestions[i]?.length > 0}
+                  <div class="suggestion-chips">
+                    <span class="text-muted" style="font-size:11px; margin-right:4px">Prompts proches :</span>
+                    {#each promptSuggestions[i] as s}
+                      <button class="chip" onclick={() => pickPromptSuggestion(i, s.prompt)} title={s.prompt}>
+                        <span class="chip-sim">{(s.similarity * 100).toFixed(0)}%</span>
+                        <span class="chip-preview">{s.prompt_preview}…</span>
+                      </button>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
               {#if comparePromptList.length > 1}
                 <button class="btn-remove" onclick={() => removePrompt(i)} title="Supprimer">✕</button>
               {/if}
@@ -414,6 +489,19 @@
     {/if}
 
     {#if compareResults.length > 0}
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px">
+        <button
+          class="btn {saveStatus === 'saved' ? 'btn-ghost' : 'btn-primary'}"
+          onclick={saveMcNemarSession}
+          disabled={saveStatus === 'saving' || saveStatus === 'saved'}
+        >
+          {saveStatus === 'saving' ? '⟳ Enregistrement…' : saveStatus === 'saved' ? '✓ Session enregistrée' : '↓ Enregistrer la session McNemar'}
+        </button>
+        {#if saveStatus === 'error'}
+          <span style="font-size:11px; color:var(--red, #e66767)">Erreur lors de l'enregistrement.</span>
+        {/if}
+      </div>
+
       {#each compareResults as row, i}
         <div class="card" style="margin-bottom:12px; padding:16px">
           <div class="text-muted" style="font-size:12px; margin-bottom:10px">Prompt {i+1}: <span class="mono">{row.prompt_preview}…</span></div>

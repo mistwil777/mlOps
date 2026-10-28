@@ -38,6 +38,15 @@ class SuggestReferenceRequest(BaseModel):
     prompt: str
     project_id: str
     top_k: int = 3
+    mode: str = "reference"   # "reference" | "prompt"
+
+
+class SaveMcNemarRequest(BaseModel):
+    project_id: str
+    prompts: list[str]
+    reference_completions: list[str | None]
+    stats: dict[str, Any]
+    results: list[dict[str, Any]]
 
 
 def _mlx_available() -> bool:
@@ -181,6 +190,7 @@ async def suggest_reference(req: SuggestReferenceRequest) -> dict[str, Any]:
 
     suggestions = [
         {
+            "prompt":         c["prompt"],
             "prompt_preview": c["prompt"][:120],
             "completion":     c["completion"],
             "completion_preview": c["completion"][:120],
@@ -191,6 +201,32 @@ async def suggest_reference(req: SuggestReferenceRequest) -> dict[str, Any]:
         for c, v in scored[: req.top_k]
     ]
     return {"suggestions": suggestions, "total_candidates": len(candidates)}
+
+
+@router.post("/save-mcnemar-session")
+async def save_mcnemar_session(req: SaveMcNemarRequest) -> dict[str, Any]:
+    """Persist a McNemar test session to datalake/projects/<id>/mcnemar/."""
+    import datetime  # noqa: PLC0415
+
+    out_dir = Path(f"datalake/projects/{req.project_id}/mcnemar")
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%S")
+    path = out_dir / f"session_{ts}.json"
+
+    payload = {
+        "saved_at": ts,
+        "project_id": req.project_id,
+        "prompts": req.prompts,
+        "reference_completions": req.reference_completions,
+        "stats": req.stats,
+        "results": req.results,
+    }
+
+    import json as _json  # noqa: PLC0415
+    path.write_text(_json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    return {"saved": True, "path": str(path), "session_id": f"session_{ts}"}
 
 
 @router.post("/compare")
