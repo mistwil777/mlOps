@@ -29,9 +29,15 @@ class InferRequest(BaseModel):
 class BatchRequest(BaseModel):
     prompts: list[str]
     model: str = "local"
-    reference_completions: list[str] | None = None
+    reference_completions: list[str | None] | None = None
     max_tokens: int = 512
     temperature: float = 0.1
+
+
+class SuggestReferenceRequest(BaseModel):
+    prompt: str
+    project_id: str
+    top_k: int = 3
 
 
 def _mlx_available() -> bool:
@@ -129,6 +135,64 @@ async def infer_stream(req: InferRequest):
     return EventSourceResponse(generator())
 
 
+@router.post("/suggest-reference")
+async def suggest_reference(req: SuggestReferenceRequest) -> dict[str, Any]:
+    """Find the closest training examples to a prompt in the project datalake.
+
+    Searches fine-tuning-ready/ JSONL files, ranks by TF-IDF cosine similarity,
+    returns top-k candidates so the user can pick one as a McNemar reference answer.
+    """
+    from pipeline.utils.jsonl import read_jsonl  # noqa: PLC0415
+    from pipeline.utils.embeddings import embed as _embed  # noqa: PLC0415
+    import math  # noqa: PLC0415
+
+    # Collect all training pairs for this project
+    candidates: list[dict[str, Any]] = []
+    for suffix in ("fine-tuning-ready", "processed"):
+        base = Path(f"datalake/projects/{req.project_id}") / suffix
+        if base.exists():
+            for f in base.rglob("*.jsonl"):
+                for r in read_jsonl(f):
+                    if r.get("prompt") and r.get("completion"):
+                        candidates.append(r)
+
+    if not candidates:
+        return {"suggestions": [], "warning": f"Aucun exemple trouvé pour le projet '{req.project_id}'."}
+
+    # Embed query + candidates (truncated for speed)
+    texts = [req.prompt[:300]] + [c["prompt"][:300] for c in candidates]
+    vecs = _embed(texts)
+
+    if not vecs or len(vecs) < 2:
+        return {"suggestions": [], "warning": "Embedding indisponible — suggestions impossibles."}
+
+    def _cosine(a: list[float], b: list[float]) -> float:
+        dot = sum(x * y for x, y in zip(a, b))
+        na = math.sqrt(sum(x * x for x in a))
+        nb = math.sqrt(sum(x * x for x in b))
+        return dot / (na * nb) if na and nb else 0.0
+
+    query_vec = vecs[0]
+    scored = sorted(
+        zip(candidates, vecs[1:]),
+        key=lambda pair: _cosine(query_vec, pair[1]),
+        reverse=True,
+    )
+
+    suggestions = [
+        {
+            "prompt_preview": c["prompt"][:120],
+            "completion":     c["completion"],
+            "completion_preview": c["completion"][:120],
+            "similarity":     round(_cosine(query_vec, v), 3),
+            "adapter_name":   c.get("adapter_name"),
+            "source_url":     c.get("source_url"),
+        }
+        for c, v in scored[: req.top_k]
+    ]
+    return {"suggestions": suggestions, "total_candidates": len(candidates)}
+
+
 @router.post("/compare")
 async def compare(req: BatchRequest) -> dict[str, Any]:
     """Compare local model vs Nova Pro on the same prompts.
@@ -149,19 +213,30 @@ async def compare(req: BatchRequest) -> dict[str, Any]:
     local_valid: list[bool] = []
     nova_valid: list[bool] = []
 
-    def _is_valid(text: str | None) -> bool:
+    _ROUGE_L_THRESHOLD = 0.4
+
+    def _is_valid_heuristic(text: str | None) -> bool:
         if not text or len(text.strip()) < 10:
             return False
         return not any(p in text.lower() for p in ["error:", "traceback", "i'm sorry", "i cannot"])
 
+    refs = req.reference_completions or []
+    has_references = any(r for r in refs if r)
+
     for i, prompt in enumerate(req.prompts):
         row: dict[str, Any] = {"prompt_preview": prompt[:100]}
+        ref = refs[i] if i < len(refs) else None
 
         # Local
         if local_ok:
             comp, lat = _call_mlx(prompt, req.max_tokens, req.temperature)
-            valid = _is_valid(comp)
-            row["local"] = {"completion": comp, "latency_ms": round(lat, 1), "valid": valid}
+            if ref:
+                rl = rouge_l_score(comp, ref)
+                valid = rl >= _ROUGE_L_THRESHOLD
+                row["local"] = {"completion": comp, "latency_ms": round(lat, 1), "valid": valid, "rouge_l": round(rl, 3)}
+            else:
+                valid = _is_valid_heuristic(comp)
+                row["local"] = {"completion": comp, "latency_ms": round(lat, 1), "valid": valid}
         else:
             valid = False
             row["local"] = {"completion": None, "latency_ms": None, "error": "server unavailable", "valid": False}
@@ -170,20 +245,17 @@ async def compare(req: BatchRequest) -> dict[str, Any]:
         # Nova Pro
         try:
             comp_n, lat_n = _call_nova(prompt, req.max_tokens, req.temperature)
-            valid_n = _is_valid(comp_n)
-            row["nova_pro"] = {"completion": comp_n, "latency_ms": round(lat_n, 1), "valid": valid_n}
+            if ref:
+                rl_n = rouge_l_score(comp_n, ref)
+                valid_n = rl_n >= _ROUGE_L_THRESHOLD
+                row["nova_pro"] = {"completion": comp_n, "latency_ms": round(lat_n, 1), "valid": valid_n, "rouge_l": round(rl_n, 3)}
+            else:
+                valid_n = _is_valid_heuristic(comp_n)
+                row["nova_pro"] = {"completion": comp_n, "latency_ms": round(lat_n, 1), "valid": valid_n}
         except Exception as exc:
             valid_n = False
             row["nova_pro"] = {"completion": None, "latency_ms": None, "error": str(exc), "valid": False}
         nova_valid.append(valid_n)
-
-        # ROUGE-L if reference available
-        if req.reference_completions and i < len(req.reference_completions):
-            ref = req.reference_completions[i]
-            if row["local"].get("completion"):
-                row["local"]["rouge_l"] = rouge_l_score(row["local"]["completion"], ref)
-            if row["nova_pro"].get("completion"):
-                row["nova_pro"]["rouge_l"] = rouge_l_score(row["nova_pro"]["completion"], ref)
 
         results.append(row)
 
@@ -218,8 +290,10 @@ async def compare(req: BatchRequest) -> dict[str, Any]:
             "significant": mcnemar.significant,
             "winner": mcnemar.winner,
             "interpretation": _mcnemar_message(mcnemar.winner, mcnemar.significant, mcnemar.p_value),
+            "mode": "reference" if has_references else "heuristic",
         },
         "sample_size": size_warn,
+        "references_used": sum(1 for r in refs if r),
     }
 
     return {"results": results, "n": n, "stats": stats}

@@ -23,6 +23,13 @@
 
   // Compare mode
   let comparePromptList = $state<string[]>(['']);
+  let compareRefs = $state<string[]>(['']);          // parallel reference answers
+  let refVisible = $state<boolean[]>([false]);       // per-prompt toggle
+  let suggesting = $state<boolean[]>([false]);       // per-prompt suggest spinner
+  type Suggestion = { prompt_preview: string; completion: string; completion_preview: string; similarity: number; adapter_name?: string };
+  let suggestions = $state<Suggestion[][]>([[]]);    // per-prompt suggestions
+  let selectedProject = $state('');
+
   let compareResults: Array<{
     prompt_preview: string;
     local: { completion: string | null; latency_ms: number | null; rouge_l?: number; valid?: boolean };
@@ -32,8 +39,9 @@
     n: number;
     local: { pass_rate: number; ci_low: number; ci_high: number; ci_margin: number };
     nova_pro: { pass_rate: number; ci_low: number; ci_high: number; ci_margin: number };
-    mcnemar: { p_value: number; significant: boolean; winner: string; interpretation: string };
+    mcnemar: { p_value: number; significant: boolean; winner: string; interpretation: string; mode: string };
     sample_size: { sufficient: boolean; current_margin: number; recommended_n: number; message: string };
+    references_used: number;
   } | null = $state(null);
   let comparing = $state(false);
   let compareError = $state('');
@@ -42,7 +50,7 @@
 
   onMount(async () => {
     projects = await getProjects().catch(() => []);
-    if (projects.length > 0) ragProject = projects[0].id;
+    if (projects.length > 0) { ragProject = projects[0].id; selectedProject = projects[0].id; }
   });
 
   onDestroy(() => es?.close());
@@ -126,11 +134,19 @@
     compareResults = [];
     compareStats = null;
 
+    const refs = compareRefs.map(r => r.trim() || null);
+    const hasRefs = refs.some(Boolean);
+
     try {
       const r = await fetch('/api/playground/compare', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompts: lines, max_tokens: maxTokens, temperature }),
+        body: JSON.stringify({
+          prompts: lines,
+          max_tokens: maxTokens,
+          temperature,
+          ...(hasRefs ? { reference_completions: refs } : {}),
+        }),
       });
       if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
       const d = await r.json();
@@ -141,6 +157,46 @@
     } finally {
       comparing = false;
     }
+  }
+
+  function addPrompt() {
+    comparePromptList = [...comparePromptList, ''];
+    compareRefs = [...compareRefs, ''];
+    refVisible = [...refVisible, false];
+    suggestions = [...suggestions, []];
+  }
+
+  function removePrompt(i: number) {
+    comparePromptList = comparePromptList.filter((_, j) => j !== i);
+    compareRefs = compareRefs.filter((_, j) => j !== i);
+    refVisible = refVisible.filter((_, j) => j !== i);
+    suggestions = suggestions.filter((_, j) => j !== i);
+  }
+
+  function toggleRef(i: number) {
+    refVisible = refVisible.map((v, j) => j === i ? !v : v);
+  }
+
+  async function suggestRef(i: number) {
+    if (!selectedProject || !comparePromptList[i].trim()) return;
+    const s = [...suggesting]; s[i] = true; suggesting = s;
+    try {
+      const r = await fetch('/api/playground/suggest-reference', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: comparePromptList[i].trim(), project_id: selectedProject, top_k: 3 }),
+      });
+      if (!r.ok) return;
+      const d = await r.json();
+      const sg = [...suggestions]; sg[i] = d.suggestions ?? []; suggestions = sg;
+    } finally {
+      const s2 = [...suggesting]; s2[i] = false; suggesting = s2;
+    }
+  }
+
+  function pickSuggestion(i: number, completion: string) {
+    compareRefs = compareRefs.map((r, j) => j === i ? completion : r);
+    const sg = [...suggestions]; sg[i] = []; suggestions = sg;
   }
 
   function pct(v: number) { return `${(v * 100).toFixed(1)}%`; }
@@ -221,25 +277,87 @@
   <!-- ── COMPARE MODE ── -->
   {#if mode === 'compare'}
     <div class="card" style="margin-bottom:16px; padding:16px">
-      <div class="section-title">Prompts à comparer</div>
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px">
+        <div class="section-title" style="margin-bottom:0">Prompts à comparer</div>
+        {#if projects.length > 0}
+          <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-muted)">
+            Projet pour suggestions
+            <select bind:value={selectedProject} class="param-input" style="min-width:120px">
+              {#each projects as p}
+                <option value={p.id}>{p.id}</option>
+              {/each}
+            </select>
+          </label>
+        {/if}
+      </div>
+
       <div class="prompt-list">
         {#each comparePromptList as _, i}
-          <div class="prompt-list-item">
-            <span class="prompt-num">{i + 1}</span>
-            <textarea
-              bind:value={comparePromptList[i]}
-              class="prompt-area"
-              rows="4"
-              placeholder="Entrez un prompt…"
-            ></textarea>
-            {#if comparePromptList.length > 1}
-              <button class="btn-remove" onclick={() => { comparePromptList = comparePromptList.filter((_, j) => j !== i); }} title="Supprimer">✕</button>
+          <div class="prompt-block">
+            <div class="prompt-list-item">
+              <span class="prompt-num">{i + 1}</span>
+              <textarea
+                bind:value={comparePromptList[i]}
+                class="prompt-area"
+                rows="3"
+                placeholder="Entrez un prompt…"
+              ></textarea>
+              {#if comparePromptList.length > 1}
+                <button class="btn-remove" onclick={() => removePrompt(i)} title="Supprimer">✕</button>
+              {/if}
+            </div>
+
+            <!-- Reference answer toggle -->
+            <div class="ref-row">
+              <button
+                class="btn-ref-toggle {refVisible[i] ? 'active' : ''}"
+                onclick={() => toggleRef(i)}
+              >
+                {refVisible[i] ? '▾' : '▸'} Référence attendue
+                {#if compareRefs[i]?.trim()}
+                  <span class="ref-filled">•</span>
+                {/if}
+              </button>
+              {#if refVisible[i]}
+                <button
+                  class="btn btn-ghost"
+                  style="font-size:11px; padding:3px 10px"
+                  onclick={() => suggestRef(i)}
+                  disabled={suggesting[i] || !selectedProject || !comparePromptList[i].trim()}
+                >
+                  {suggesting[i] ? '⟳' : '✦'} Suggérer
+                </button>
+              {/if}
+            </div>
+
+            {#if refVisible[i]}
+              <div class="ref-panel">
+                <textarea
+                  bind:value={compareRefs[i]}
+                  class="prompt-area"
+                  rows="3"
+                  placeholder="Réponse de référence (utilisée pour ROUGE-L dans McNemar)…"
+                  style="font-size:11px"
+                ></textarea>
+                {#if suggestions[i]?.length > 0}
+                  <div class="suggestion-chips">
+                    <span class="text-muted" style="font-size:11px; margin-right:4px">Exemples proches :</span>
+                    {#each suggestions[i] as s}
+                      <button class="chip" onclick={() => pickSuggestion(i, s.completion)} title={s.prompt_preview}>
+                        <span class="chip-sim">{(s.similarity * 100).toFixed(0)}%</span>
+                        <span class="chip-preview">{s.completion_preview}…</span>
+                      </button>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
             {/if}
           </div>
         {/each}
       </div>
+
       <div style="display:flex; gap:8px; margin-top:10px; align-items:center">
-        <button class="btn btn-ghost" onclick={() => { comparePromptList = [...comparePromptList, '']; }}>+ Ajouter un prompt</button>
+        <button class="btn btn-ghost" onclick={addPrompt}>+ Ajouter un prompt</button>
         <button class="btn btn-primary" onclick={handleCompare} disabled={comparing || comparePromptList.every(s => !s.trim())}>
           {comparing ? '⟳ Comparaison…' : '▶ Comparer local vs Nova Pro'}
         </button>
@@ -275,10 +393,20 @@
         </div>
         <div class="mcnemar-row">
           <span class="mcnemar-label">Test McNemar</span>
+          <span class="mcnemar-mode {compareStats.mcnemar.mode === 'reference' ? 'mode-ref' : 'mode-heuristic'}"
+                title={compareStats.mcnemar.mode === 'reference' ? 'ROUGE-L ≥ 0.4 sur réponses de référence' : 'Heuristique (non-vide + sans erreur) — peu fiable'}>
+            {compareStats.mcnemar.mode === 'reference' ? '✓ fiable' : '⚠ indicatif'}
+          </span>
           <span class="mcnemar-verdict {compareStats.mcnemar.significant ? 'significant' : 'tie'}">
             {compareStats.mcnemar.interpretation}
           </span>
         </div>
+        {#if compareStats.mcnemar.mode === 'heuristic'}
+          <div class="mcnemar-hint">
+            Ajoutez des réponses de référence par prompt pour un test McNemar fiable (ROUGE-L ≥ 0.4).
+            Utilisez le bouton "Suggérer" pour pré-remplir depuis les données d'entraînement.
+          </div>
+        {/if}
       </div>
     {/if}
 
@@ -294,7 +422,10 @@
                   <span class="text-muted" style="font-size:11px">{row.local.latency_ms?.toFixed(0)} ms</span>
                 {/if}
                 {#if row.local.rouge_l !== undefined}
-                  <span class="badge" style="background:rgba(130,110,255,0.1); color:var(--accent); border:1px solid var(--accent); padding:2px 8px; border-radius:4px; font-size:11px">ROUGE-L {(row.local.rouge_l * 100).toFixed(1)}%</span>
+                  <span class="badge" style="background:rgba(130,110,255,0.1); color:var(--accent); border:1px solid var(--accent); padding:2px 8px; border-radius:4px; font-size:11px">
+                    ROUGE-L {(row.local.rouge_l * 100).toFixed(1)}%
+                    {(row.local.rouge_l ?? 0) >= 0.4 ? ' ✓' : ' ✗'}
+                  </span>
                 {/if}
               </div>
               <pre class="compare-text">{row.local.completion ?? (row.local as any).error ?? '—'}</pre>
@@ -304,6 +435,12 @@
                 <span class="badge" style="background:rgba(255,140,0,0.1); color:#ff8c00; border:1px solid #ff8c00; padding:4px 8px; border-radius:4px; font-size:12px">Nova Pro</span>
                 {#if row.nova_pro.latency_ms !== null}
                   <span class="text-muted" style="font-size:11px">{row.nova_pro.latency_ms?.toFixed(0)} ms</span>
+                {/if}
+                {#if row.nova_pro.rouge_l !== undefined}
+                  <span class="badge" style="background:rgba(255,140,0,0.08); color:#ff8c00; border:1px solid #ff8c00; padding:2px 8px; border-radius:4px; font-size:11px">
+                    ROUGE-L {(row.nova_pro.rouge_l * 100).toFixed(1)}%
+                    {(row.nova_pro.rouge_l ?? 0) >= 0.4 ? ' ✓' : ' ✗'}
+                  </span>
                 {/if}
               </div>
               <pre class="compare-text">{row.nova_pro.completion ?? (row.nova_pro as any).error ?? '—'}</pre>
@@ -358,6 +495,22 @@
   .mcnemar-verdict { font-size:12px; color:var(--text); }
   .mcnemar-verdict.significant { color:#0284c7; font-weight:600; }
   .mcnemar-verdict.tie { color:var(--text-muted); }
+  .mcnemar-mode { font-size:11px; font-weight:600; padding:2px 7px; border-radius:4px; flex-shrink:0; cursor:default; }
+  .mcnemar-mode.mode-ref { background:rgba(2,132,199,0.1); color:#0284c7; border:1px solid #0284c7; }
+  .mcnemar-mode.mode-heuristic { background:rgba(245,158,11,0.1); color:#b45309; border:1px solid #f59e0b; }
+  .mcnemar-hint { margin-top:8px; font-size:11px; color:var(--text-muted); border-top:1px solid var(--border); padding-top:8px; }
+  .prompt-block { display:flex; flex-direction:column; gap:4px; padding:10px; border:1px solid var(--border); border-radius:var(--radius); }
+  .ref-row { display:flex; align-items:center; gap:8px; }
+  .btn-ref-toggle { background:none; border:none; font-size:11px; color:var(--text-muted); cursor:pointer; padding:2px 4px; display:flex; align-items:center; gap:4px; }
+  .btn-ref-toggle.active { color:var(--accent); }
+  .btn-ref-toggle:hover { color:var(--text); }
+  .ref-filled { color:var(--accent); font-size:14px; line-height:1; }
+  .ref-panel { padding:6px 0 0 22px; display:flex; flex-direction:column; gap:6px; }
+  .suggestion-chips { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:4px; }
+  .chip { background:var(--surface-2); border:1px solid var(--border); border-radius:6px; padding:4px 10px; font-size:11px; cursor:pointer; display:flex; gap:6px; align-items:center; max-width:360px; text-align:left; }
+  .chip:hover { border-color:var(--accent); background:rgba(2,132,199,0.06); }
+  .chip-sim { color:var(--accent); font-weight:700; flex-shrink:0; }
+  .chip-preview { color:var(--text); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
   .mb-12 { margin-bottom:12px; }
   .mb-16 { margin-bottom:16px; }
 </style>
