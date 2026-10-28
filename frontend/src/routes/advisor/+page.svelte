@@ -2,16 +2,25 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { onMount, tick } from 'svelte';
-  import { advisorRecommend, advisorAlternatives, advisorEvaluateSelection, advisorGetRecommendation, advisorFillGap, advisorResolveOverlap, advisorPatchAdapterSources } from '$lib/api';
-  import type { AdvisorRecommendation, AdvisorAdapter, SelectionEval, OverlapResolution, SourceSuggestion } from '$lib/types';
+  import { advisorRecommend, advisorAlternatives, advisorEvaluateSelection, advisorGetRecommendation, advisorFillGap, advisorResolveOverlap } from '$lib/api';
+  import type { AdvisorRecommendation, AdvisorAdapter, SelectionEval, OverlapResolution } from '$lib/types';
   import AdapterCard from '$lib/components/AdapterCard.svelte';
   import Topbar from '$lib/components/Topbar.svelte';
   import SovereigntyBadge from '$lib/components/SovereigntyBadge.svelte';
   import { setWizardHandoff } from '$lib/stores/wizard.svelte';
+  import SectionTabs from '$lib/components/SectionTabs.svelte';
+
+  const donneesTabs = [
+    { href: '/advisor',       label: 'Cadrage' },
+    { href: '/data/ingest',   label: 'Ingestion' },
+    { href: '/data/pipeline', label: 'Pipeline' },
+    { href: '/data/review',   label: 'Révision' },
+    { href: '/data/search',   label: 'Audit' },
+  ];
 
   // ── State ──────────────────────────────────────────────────────────────────
   const projectId = $derived($page.url.searchParams.get('project'));
-  const readOnly  = $derived(!!projectId);
+  const readOnly  = $derived(false);
 
   let need  = $state('');
   let model = $state('us.anthropic.claude-sonnet-4-6');
@@ -21,12 +30,10 @@
 
   let adapters = $state<AdvisorAdapter[]>([]);
   let orchestrator = $state<AdvisorAdapter | null>(null);
-  let showAllGlobalSources = $state(false);
   let altTarget   = $state<AdvisorAdapter | null>(null);
   let altLoading  = $state(false);
   let altError    = $state('');
   let alternatives = $state<AdvisorAdapter[]>([]);
-  let sourcesAdapter = $state<AdvisorAdapter | null>(null);
   let selEval    = $state<SelectionEval | null>(null);
   let evalLoading = $state(false);
   let evalError   = $state('');
@@ -49,6 +56,10 @@
   // Selection dirty flag — prevents auto-re-eval after manual apply actions
   let selectionDirty = $state(false);
 
+  // Software components accordion
+  let swOpen     = $state(false);
+  let swExpanded = $state<string | null>(null);
+
   // Overlap actions
   let overlapTarget      = $state<[string, string] | null>(null);
   let overlapLoading     = $state(false);
@@ -57,17 +68,6 @@
   let resolveAllLoading  = $state(false);
   interface ResolveAllEntry { pair: [string, string]; resolution: OverlapResolution; }
   let resolveAllResults  = $state<ResolveAllEntry[]>([]);
-
-  // Sources panel — editable source_configs per adapter
-  interface NewSourceForm {
-    label: string; collector_type: string; value: string;
-    lang_hint: string; estimated_pairs: number;
-  }
-  const _emptySource = (): NewSourceForm => ({ label: '', collector_type: 'multilang_wiki', value: '', lang_hint: '', estimated_pairs: 100 });
-  let sourcesAdapterConfigs = $state<SourceSuggestion[]>([]);
-  let newSource = $state<NewSourceForm>(_emptySource());
-  let sourceSaving = $state(false);
-  let sourceSaveError = $state('');
 
   const models = [
     { id: 'us.anthropic.claude-sonnet-4-6',              label: 'Claude Sonnet 4.6 — via AWS Bedrock (recommandé)' },
@@ -104,17 +104,12 @@
   // ── Derived ────────────────────────────────────────────────────────────────
   const selection = $derived([...adapters, ...(orchestrator ? [orchestrator] : [])]);
   const totalPairs = $derived(selection.reduce((s, a) => s + a.estimated_pairs, 0));
-  const allSources = $derived(
-    selection
-      .flatMap(a => (a.data_sources ?? []).map(s => ({ source: s, adapter: a.name })))
-      .filter((v, i, arr) => arr.findIndex(x => x.source === v.source) === i)
-  );
 
   // ── Actions ────────────────────────────────────────────────────────────────
   async function analyse() {
     if (!need.trim()) return;
     loading = true; error = ''; result = null;
-    altTarget = null; sourcesAdapter = null; selEval = null;
+    altTarget = null; selEval = null;
     dismissedGaps = new Set(); filledGapsList = [];
     try {
       result = await advisorRecommend(need.trim(), model);
@@ -145,14 +140,12 @@
 
   function removeAdapter(name: string) {
     if (altTarget?.name === name) { altTarget = null; alternatives = []; }
-    if (sourcesAdapter?.name === name) sourcesAdapter = null;
     adapters = adapters.filter(a => a.name !== name);
     markDirty();
   }
 
   function removeOrchestrator() {
     if (altTarget?.name === orchestrator?.name) { altTarget = null; alternatives = []; }
-    if (sourcesAdapter?.name === orchestrator?.name) sourcesAdapter = null;
     orchestrator = null;
     markDirty();
   }
@@ -214,7 +207,7 @@
   // ── Gap actions ────────────────────────────────────────────────────────────
   async function openFillGap(gap: string) {
     if (gapTarget === gap) { gapTarget = null; gapResult = null; return; }
-    altTarget = null; overlapTarget = null; sourcesAdapter = null;
+    altTarget = null; overlapTarget = null;
     gapTarget = gap; gapLoading = true; gapError = ''; gapResult = null;
     try {
       gapResult = await advisorFillGap(need, gap, selection, model);
@@ -238,7 +231,7 @@
   async function fillAllGaps() {
     const visibleGaps = (selEval?.gaps ?? []).filter(g => !dismissedGaps.has(g));
     if (!visibleGaps.length) return;
-    altTarget = null; overlapTarget = null; sourcesAdapter = null;
+    altTarget = null; overlapTarget = null;
     gapTarget = null; gapResult = null;
     fillAllLoading = true; fillAllResults = [];
     filledGapsList = [...visibleGaps];
@@ -264,7 +257,7 @@
     if (overlapTarget?.[0] === pair[0] && overlapTarget?.[1] === pair[1]) {
       overlapTarget = null; overlapResolutions = []; return;
     }
-    altTarget = null; gapTarget = null; sourcesAdapter = null;
+    altTarget = null; gapTarget = null;
     overlapTarget = pair; overlapLoading = true; overlapError = ''; overlapResolutions = [];
     const a = selection.find(x => x.name === pair[0]);
     const b = selection.find(x => x.name === pair[1]);
@@ -292,7 +285,7 @@
 
   async function resolveAllOverlaps() {
     if (!selEval?.overlaps?.length) return;
-    altTarget = null; gapTarget = null; overlapTarget = null; sourcesAdapter = null;
+    altTarget = null; gapTarget = null; overlapTarget = null;
     resolveAllLoading = true; resolveAllResults = [];
     const snap = [...selection];
     try {
@@ -328,59 +321,6 @@
     markDirty();
   }
 
-  function openSources(adapter: AdvisorAdapter) {
-    sourcesAdapter = adapter;
-    altTarget = null; gapTarget = null; overlapTarget = null;
-    sourcesAdapterConfigs = [...(adapter.source_configs ?? [])];
-    newSource = _emptySource();
-    sourceSaveError = '';
-  }
-
-  function addSourceConfig() {
-    const s = newSource;
-    if (!s.label.trim() || !s.value.trim()) return;
-    const entry: SourceSuggestion = {
-      label: s.label.trim(),
-      collector_type: s.collector_type as SourceSuggestion['collector_type'],
-      value: s.value.trim(),
-      estimated_pairs: s.estimated_pairs || 100,
-      ...(s.lang_hint.trim() ? { lang_hint: s.lang_hint.trim() } : {}),
-    };
-    sourcesAdapterConfigs = [...sourcesAdapterConfigs, entry];
-    newSource = _emptySource();
-    syncSourcesToAdapter();
-  }
-
-  function removeSourceConfig(idx: number) {
-    sourcesAdapterConfigs = sourcesAdapterConfigs.filter((_, i) => i !== idx);
-    syncSourcesToAdapter();
-  }
-
-  function syncSourcesToAdapter() {
-    if (!sourcesAdapter) return;
-    const updated: AdvisorAdapter = {
-      ...sourcesAdapter,
-      source_configs: sourcesAdapterConfigs,
-      data_sources: sourcesAdapterConfigs.map(s => s.label),
-    };
-    if (sourcesAdapter.role === 'orchestrator') {
-      orchestrator = updated;
-      sourcesAdapter = updated;
-    } else {
-      adapters = adapters.map(a => a.name === sourcesAdapter!.name ? updated : a);
-      sourcesAdapter = updated;
-    }
-  }
-
-  async function saveSourcesToYaml() {
-    if (!projectId || !sourcesAdapter) return;
-    sourceSaving = true; sourceSaveError = '';
-    try {
-      await advisorPatchAdapterSources(projectId, sourcesAdapter.name, sourcesAdapterConfigs);
-    } catch (e) { sourceSaveError = (e as Error).message; }
-    finally { sourceSaving = false; }
-  }
-
   function scoreColor(s: number): string {
     if (s >= 15) return 'var(--green)';
     if (s >= 10) return 'var(--accent)';
@@ -404,11 +344,10 @@
     navigator.clipboard.writeText(lines.join('\n'));
   }
 
-  function sourceUrl(src: string): string {
-    return `https://www.google.com/search?q=${encodeURIComponent(src)}`;
-  }
+
 </script>
 
+<SectionTabs tabs={donneesTabs} />
 <Topbar crumbs={readOnly
   ? [{ label: 'Projets', href: '/projects' }, { label: projectId ?? '', href: `/projects/${projectId}` }, { label: 'Analyse du besoin' }]
   : [{ label: '1 · Scoping' }, { label: 'Analyse du besoin' }]
@@ -419,7 +358,7 @@
     {#if readOnly}
       <button class="btn btn-ghost btn-sm" onclick={() => goto('/advisor')}>+ Nouvelle analyse</button>
     {:else}
-      <button class="btn btn-primary btn-sm" onclick={() => { result = null; need = ''; adapters = []; orchestrator = null; altTarget = null; sourcesAdapter = null; selEval = null; }}>
+      <button class="btn btn-primary btn-sm" onclick={() => { result = null; need = ''; adapters = []; orchestrator = null; altTarget = null; selEval = null; dismissedGaps = new Set(); }}>
         ↺ Nouveau besoin
       </button>
     {/if}
@@ -446,7 +385,7 @@
     {#if refineError}<div class="api-error mb-8">{refineError}</div>{/if}
   {/if}
 
-  <div class="phase0-layout" class:has-panel={altTarget || sourcesAdapter || gapTarget || overlapTarget}>
+  <div class="phase0-layout" class:has-panel={altTarget || gapTarget || overlapTarget}>
 
     <!-- ── Col 1 : input + résumé ── -->
     <div class="col-input">
@@ -479,37 +418,35 @@
       {/if}
 
       {#if result}
-        <!-- Résumé sélection -->
+        {#if result.recommendation.software_components?.length}
         <div class="card mb-16">
-          <div class="card-title mb-12">Sélection actuelle</div>
-          <div class="summary-grid">
-            <div class="summary-item">
-              <span class="summary-value">{adapters.length}</span>
-              <span class="summary-label">Spécialistes</span>
-            </div>
-            <div class="summary-item">
-              <span class="summary-value">{orchestrator ? 1 : 0}</span>
-              <span class="summary-label">Orchestrateur</span>
-            </div>
-            <div class="summary-item">
-              <span class="summary-value">~{totalPairs.toLocaleString()}</span>
-              <span class="summary-label">Paires estimées</span>
-            </div>
+          <div class="sw-accordion">
+              <button class="sw-accordion__header" onclick={() => swOpen = !swOpen}>
+                <span class="sw-accordion__title">Composants logiciels (déterministes — pas d'IA)</span>
+                <span class="sw-accordion__count">{result.recommendation.software_components.length}</span>
+                <span class="sw-accordion__chevron" class:open={swOpen}>▾</span>
+              </button>
+              {#if swOpen}
+                <ul class="sw-accordion__list">
+                  {#each result.recommendation.software_components as comp}
+                    {@const sep = comp.indexOf(' — ')}
+                    {@const name = sep >= 0 ? comp.slice(0, sep) : comp}
+                    {@const desc = sep >= 0 ? comp.slice(sep + 3) : ''}
+                    <li class="sw-accordion__item">
+                      <button class="sw-accordion__item-btn" onclick={() => swExpanded = swExpanded === comp ? null : comp}>
+                        <span class="sw-accordion__item-name">{name}</span>
+                        <span class="sw-accordion__item-chevron" class:open={swExpanded === comp}>▾</span>
+                      </button>
+                      {#if swExpanded === comp && desc}
+                        <div class="sw-accordion__item-desc">{desc}</div>
+                      {/if}
+                    </li>
+                  {/each}
+                </ul>
+              {/if}
           </div>
-          {#if result.recommendation.notes}
-            <div class="notes mt-12">{result.recommendation.notes}</div>
-          {/if}
-          {#if result.recommendation.software_components?.length}
-            <div class="software-components mt-12">
-              <div class="software-components__title">Composants logiciels (déterministes — pas d'IA)</div>
-              <ul class="software-components__list">
-                {#each result.recommendation.software_components as comp}
-                  <li>{comp}</li>
-                {/each}
-              </ul>
-            </div>
-          {/if}
         </div>
+        {/if}
 
         <!-- Score équipe -->
         <div class="card mb-16">
@@ -641,23 +578,6 @@
           {/if}
         </div>
 
-        <!-- Sources globales -->
-        <div class="card">
-          <div class="card-title mb-12">Sources ({allSources.length})</div>
-          <div class="sources-grid">
-            {#each allSources.slice(0, showAllGlobalSources ? undefined : 5) as { source, adapter }}
-              <a href={sourceUrl(source)} target="_blank" rel="noopener noreferrer" class="source-chip" title="{adapter}">
-                <span class="source-chip-name">{source}</span>
-                <span class="source-chip-icon">↗</span>
-              </a>
-            {/each}
-          </div>
-          {#if allSources.length > 5}
-            <button class="sources-toggle mt-8" onclick={() => showAllGlobalSources = !showAllGlobalSources}>
-              {showAllGlobalSources ? '▾ Réduire' : `▸ Voir les ${allSources.length - 5} autres sources`}
-            </button>
-          {/if}
-        </div>
       {/if}
     </div>
 
@@ -674,8 +594,7 @@
             {#each adapters as adapter (adapter.name)}
               <AdapterCard
                 {adapter}
-                active={altTarget?.name === adapter.name || sourcesAdapter?.name === adapter.name}
-                onSources={openSources}
+                active={altTarget?.name === adapter.name}
                 onAlternatives={openAlternatives}
                 onRemove={removeAdapter}
               />
@@ -684,8 +603,7 @@
             {#if orchestrator}
               <AdapterCard
                 adapter={orchestrator}
-                active={altTarget?.name === orchestrator.name || sourcesAdapter?.name === orchestrator.name}
-                onSources={openSources}
+                active={altTarget?.name === orchestrator.name}
                 onAlternatives={openAlternatives}
                 onRemove={() => removeOrchestrator()}
               />
@@ -712,7 +630,7 @@
       </div>
 
       <!-- ── Col 3 : panel contextuel ── -->
-      {#if altTarget || sourcesAdapter || gapTarget || overlapTarget}
+      {#if altTarget || gapTarget || overlapTarget}
         <div class="col-panel">
 
           {#if gapTarget}
@@ -799,103 +717,6 @@
             </div>
           {/if}
 
-          {#if sourcesAdapter}
-            <div class="card">
-              <div class="card-header mb-12">
-                <div class="card-title">Sources — <span class="mono">{sourcesAdapter.name}</span></div>
-                <div style="display:flex;align-items:center;gap:6px">
-                  {#if readOnly}
-                    {#if sourceSaving}
-                      <span class="spinner spinner-sm"></span>
-                    {:else}
-                      <button class="btn btn-ghost btn-sm" onclick={saveSourcesToYaml} title="Sauvegarder dans le projet">
-                        ✓ Sauvegarder
-                      </button>
-                    {/if}
-                  {/if}
-                  <button class="icon-btn" onclick={() => { sourcesAdapter = null; }}>✕</button>
-                </div>
-              </div>
-
-              {#if sourcesAdapter.data_types?.length}
-                <div class="eval-section mb-12">
-                  <span class="meta-label">Types de données</span>
-                  <div class="tags mt-4">
-                    {#each sourcesAdapter.data_types as dt}<span class="tag">{dt}</span>{/each}
-                  </div>
-                </div>
-              {/if}
-
-              <!-- Source configs list -->
-              <div class="eval-section mb-12">
-                <span class="meta-label">Sources de collecte ({sourcesAdapterConfigs.length})</span>
-                {#if sourcesAdapterConfigs.length}
-                  <div class="source-config-list mt-6">
-                    {#each sourcesAdapterConfigs as sc, idx}
-                      <div class="source-config-row">
-                        <div class="source-config-info">
-                          <span class="source-config-label">{sc.label}</span>
-                          <div style="display:flex;align-items:center;gap:5px;margin-top:2px">
-                            <span class="collector-badge collector-{sc.collector_type}">{sc.collector_type}</span>
-                            <span class="mono" style="font-size:10px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px">{sc.value}</span>
-                            {#if sc.estimated_pairs}<span style="font-size:10px;color:var(--text-muted)">~{sc.estimated_pairs}p</span>{/if}
-                          </div>
-                        </div>
-                        <button class="icon-btn danger" onclick={() => removeSourceConfig(idx)} title="Supprimer">✕</button>
-                      </div>
-                    {/each}
-                  </div>
-                {:else}
-                  <p class="hint mt-4">Aucune source configurée.</p>
-                {/if}
-              </div>
-
-              <!-- Add source form -->
-              <div class="source-add-form">
-                <div class="source-add-title">+ Ajouter une source</div>
-                <div class="form-group mt-6">
-                  <label class="form-label">Label</label>
-                  <input class="form-input" bind:value={newSource.label} placeholder="Ex: Rosetta Code — tri" />
-                </div>
-                <div class="form-row mt-6">
-                  <div class="form-group">
-                    <label class="form-label">Type</label>
-                    <select class="form-select" bind:value={newSource.collector_type}>
-                      <option value="multilang_wiki">multilang_wiki</option>
-                      <option value="doc_crawl">doc_crawl</option>
-                      <option value="web_crawl">web_crawl</option>
-                      <option value="github_repo">github_repo</option>
-                      <option value="manual">manual</option>
-                    </select>
-                  </div>
-                  <div class="form-group">
-                    <label class="form-label">Paires est.</label>
-                    <input class="form-input" type="number" min="10" max="5000" bind:value={newSource.estimated_pairs} />
-                  </div>
-                </div>
-                <div class="form-group mt-6">
-                  <label class="form-label">
-                    {newSource.collector_type === 'multilang_wiki' ? 'Topic Rosetta Code' : 'URL ou identifiant'}
-                  </label>
-                  <input class="form-input" bind:value={newSource.value}
-                    placeholder={newSource.collector_type === 'multilang_wiki' ? 'sort, string, fibonacci…' : 'https://…'} />
-                </div>
-                {#if newSource.collector_type === 'doc_crawl'}
-                  <div class="form-group mt-6">
-                    <label class="form-label">Langue (lang_hint)</label>
-                    <input class="form-input" bind:value={newSource.lang_hint} placeholder="python, java, typescript…" />
-                  </div>
-                {/if}
-                {#if sourceSaveError}<div class="api-error mt-6" style="font-size:11px">{sourceSaveError}</div>{/if}
-                <button class="btn btn-ghost btn-sm w-full mt-8"
-                  disabled={!newSource.label.trim() || !newSource.value.trim()}
-                  onclick={addSourceConfig}>
-                  + Ajouter
-                </button>
-              </div>
-            </div>
-          {/if}
-
         </div>
       {/if}
     {/if}
@@ -944,9 +765,21 @@
   .summary-value { font-size:20px; font-weight:700; color:var(--accent); }
   .summary-label { font-size:11px; color:var(--text-muted); text-align:center; }
   .notes { font-size:12px; color:var(--text-muted); background:var(--surface-2); border-radius:var(--radius); padding:10px 14px; font-style:italic; line-height:1.5; }
-  .software-components { background:rgba(251,146,60,.08); border:1px solid rgba(251,146,60,.25); border-radius:var(--radius); padding:10px 14px; }
-  .software-components__title { font-size:11px; font-weight:600; color:#fb923c; text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px; }
-  .software-components__list { margin:0; padding-left:16px; font-size:12px; color:var(--text-muted); line-height:1.7; }
+  .sw-accordion { border:1px solid rgba(251,146,60,.25); border-radius:var(--radius); overflow:hidden; }
+  .sw-accordion__header { width:100%; display:flex; align-items:center; gap:8px; background:rgba(251,146,60,.08); border:none; padding:8px 12px; cursor:pointer; text-align:left; }
+  .sw-accordion__header:hover { background:rgba(251,146,60,.14); }
+  .sw-accordion__title { font-size:11px; font-weight:600; color:#fb923c; text-transform:uppercase; letter-spacing:.04em; flex:1; }
+  .sw-accordion__count { font-size:11px; color:rgba(251,146,60,.7); background:rgba(251,146,60,.15); border-radius:10px; padding:1px 7px; }
+  .sw-accordion__chevron { font-size:12px; color:#fb923c; transition:transform .15s; }
+  .sw-accordion__chevron.open { transform:rotate(180deg); }
+  .sw-accordion__list { margin:0; padding:4px 0; list-style:none; }
+  .sw-accordion__item { border-top:1px solid rgba(255,255,255,.05); }
+  .sw-accordion__item-btn { width:100%; display:flex; align-items:center; gap:8px; background:none; border:none; padding:7px 14px; cursor:pointer; text-align:left; }
+  .sw-accordion__item-btn:hover { background:rgba(255,255,255,.04); }
+  .sw-accordion__item-name { font-size:12px; color:var(--text); flex:1; }
+  .sw-accordion__item-chevron { font-size:11px; color:var(--text-muted); transition:transform .15s; }
+  .sw-accordion__item-chevron.open { transform:rotate(180deg); }
+  .sw-accordion__item-desc { padding:4px 14px 10px 14px; font-size:12px; color:var(--text-muted); line-height:1.6; }
 
   /* Team score */
   .team-score-hero { display:flex; align-items:baseline; gap:4px; }

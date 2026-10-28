@@ -72,17 +72,6 @@ export const advisorRecommend = (need: string, model?: string, docContexts?: str
     body: JSON.stringify({ need, model: model ?? 'us.anthropic.claude-sonnet-4-6', doc_contexts: docContexts ?? [] }),
   });
 
-export const advisorExtractDoc = async (file: File): Promise<{ filename: string; char_count: number; was_summarized: boolean; text: string }> => {
-  const fd = new FormData();
-  fd.append('file', file);
-  const r = await fetch(`${BASE}/advisor/extract-doc`, { method: 'POST', body: fd });
-  if (!r.ok) {
-    const err = await r.text().catch(() => r.statusText);
-    throw new Error(`${r.status} ${err}`);
-  }
-  return r.json();
-};
-
 export const advisorAlternatives = (need: string, adapter_name: string, adapter_desc: string, current_selection: AdvisorAdapter[], model?: string) =>
   req<AdvisorAdapter[]>('/advisor/alternatives', {
     method: 'POST',
@@ -193,13 +182,6 @@ export interface DatalakePair {
   pair_hash: string;
 }
 
-export interface CrossProjectMatch {
-  total_matching: number;
-  by_project: Record<string, number>;
-  samples: DatalakePair[];
-  oldest_collected_at: string | null;
-}
-
 export const searchDatalakePairs = (body: {
   query: string; project_id?: string; stage?: string; k?: number; page?: number;
 }) => req<{ total: number; page: number; page_size: number; items: DatalakePair[] }>(
@@ -209,33 +191,8 @@ export const searchDatalakePairs = (body: {
 export const indexProjectPairs = (projectId: string) =>
   req<{ ok: boolean; project_id: string }>(`/data/index-project/${projectId}`, { method: 'POST' });
 
-export const advisorCrossProjectMatches = (adapterDesc: string, k = 10) =>
-  req<CrossProjectMatch>(`/advisor/cross-project-matches?adapter_desc=${encodeURIComponent(adapterDesc)}&k=${k}`);
-
 export const advisorGetRecommendation = (projectId: string) =>
   req<AdvisorRecommendation>(`/advisor/recommendation/${projectId}`);
-
-export const advisorPatchAdapterSources = (projectId: string, adapterName: string, sourceConfigs: import('./types').SourceSuggestion[]) =>
-  req<{ ok: boolean; adapter_name: string; n_sources: number }>(`/advisor/adapter-sources/${projectId}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ adapter_name: adapterName, source_configs: sourceConfigs }),
-  });
-
-export const advisorRecommendSources = (body: {
-  adapter_name: string;
-  adapter_description: string;
-  domain?: string;
-  task_type?: string;
-  existing_source_values?: string[];
-  existing_source_labels?: string[];
-}) => req<Array<{
-  label: string;
-  collector_type: string;
-  value: string;
-  estimated_pairs: number;
-  lang_hint?: string;
-  reason?: string;
-}>>('/advisor/recommend-sources', { method: 'POST', body: JSON.stringify(body) });
 
 // Project next-actions
 export const getNextActions    = (projectId: string) => req<import('./types').NextActions>(`/projects/${projectId}/next-actions`);

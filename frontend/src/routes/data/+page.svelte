@@ -100,13 +100,13 @@
     return [
       {
         num: 1,
-        title: 'Collecte des données',
-        desc: 'AWA collecte des sources bilingues (description + code) pour chaque adapter. Utilise source_discoverer pour trouver automatiquement des sources de qualité sur developpez.com, geeksforgeeks, programiz...',
-        href: '/data/collect',
-        label: 'Ouvrir Collecte AWA →',
-        status: rawCount > 0 ? (coverage?.adapters?.every((a: any) => a.collected > 0 || a.pair_strategy !== 'fuse') ? 'done' : 'ready') : 'todo',
-        stat: rawCount > 0 ? `${rawCount.toLocaleString()} records bruts — ${coverage?.adapters?.filter((a: any) => a.pair_strategy === 'fuse' && a.collected === 0).length ?? 0} adapter(s) sans données` : 'Aucun record collecté',
-        tip: rawCount > 0 && (coverage?.adapters?.some((a: any) => a.pair_strategy === 'fuse' && a.collected === 0)) ? 'Certains adapters n\'ont pas de données — relancez AWA pour compléter la collecte.' : rawCount === 0 ? 'Lancez une collecte sur les adapters.' : null,
+        title: 'Ingestion des données client',
+        desc: 'Déposez les données client (code source, documents métier) via l\'ingestion manuelle. Les données sont immutables après ingestion (datalake/raw/).',
+        href: '/data/ingest',
+        label: 'Ouvrir Ingestion →',
+        status: rawCount > 0 ? 'done' : 'todo',
+        stat: rawCount > 0 ? `${rawCount.toLocaleString()} records bruts` : 'Aucun record ingéré',
+        tip: rawCount === 0 ? 'Déposez les données client via l\'ingestion manuelle.' : null,
       },
       {
         num: 2,
@@ -122,11 +122,11 @@
         num: 3,
         title: 'Formation des paires bilingues',
         desc: 'Pour chaque adapter de traduction (pair_strategy=fuse) : le matching sémantique embed les descriptions des records Java et Python, calcule la similarité cosinus, et assemble les paires. Zéro LLM, vérification AST.',
-        href: '/data/collect',
-        label: 'Ouvrir Collecte AWA → bouton 🧠 Matcher',
+        href: '/data/pipeline',
+        label: 'Ouvrir Pipeline nettoyage → bouton 🧠 Matcher',
         status: hasFused ? 'done' : cleanRawCount > 0 ? 'ready' : 'blocked',
         stat: hasFused ? `${pairsCount.toLocaleString()} paires formées` : cleanRawCount > 0 ? `${cleanRawCount.toLocaleString()} records qualifiés — prêt à matcher` : 'En attente de clean_raw',
-        tip: cleanRawCount > 0 && !hasFused ? 'Lancez le matching depuis Collecte AWA — bouton 🧠 Matcher par adapter.' : null,
+        tip: cleanRawCount > 0 && !hasFused ? 'Lancez le matching depuis Pipeline nettoyage — bouton 🧠 Matcher par adapter.' : null,
       },
       {
         num: 4,
@@ -371,7 +371,7 @@
   .project-select { background:var(--surface-2); color:var(--text); border:1px solid var(--border); border-radius:var(--radius); padding:4px 10px; font-size:13px; }
   .btn-refresh { background:none; border:1px solid var(--border); border-radius:var(--radius); color:var(--text-muted); padding:3px 8px; cursor:pointer; font-size:13px; }
   .btn-refresh:hover { color:var(--text); }
-  .generate-panel { padding:14px; border-left:3px solid #f0883e; }
+  .generate-panel { padding:14px; border-left:3px solid #F97316; }
   .gen-stat { background:var(--surface-2); border-radius:var(--radius); padding:10px; text-align:center; }
   .gen-stat-val { font-size:1.4rem; font-weight:700; color:var(--text); font-family:var(--font-mono); }
   .gen-stat-label { font-size:11px; color:var(--text-muted); margin-top:2px; }
@@ -382,7 +382,7 @@
   .blink { animation:blink 1s step-end infinite; }
 
   .alerts { display:flex; flex-direction:column; gap:8px; margin-bottom:16px; }
-  .alert-item { padding:10px 14px; background:rgba(255,180,0,0.1); border:1px solid rgba(255,180,0,0.4); border-radius:var(--radius); font-size:13px; color:#ffb400; }
+  .alert-item { padding:10px 14px; background:#FFFBEB; border:1px solid #FDE68A; border-radius:var(--radius); font-size:13px; color:#92400E; }
 
   /* Workflow */
   .section-title { font-size:12px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:.06em; }
@@ -390,28 +390,28 @@
   .step-row { display:flex; gap:14px; padding:4px 0; }
   .step-left { display:flex; flex-direction:column; align-items:center; width:28px; flex-shrink:0; }
   .step-circle { width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; flex-shrink:0; }
-  .step-circle-done    { background:#1a3a2a; color:#56d364; border:2px solid #238636; }
-  .step-circle-ready   { background:#1f3358; color:#79c0ff; border:2px solid #1f6feb; }
-  .step-circle-todo    { background:#1f3358; color:#79c0ff; border:2px solid #1f6feb; }
-  .step-circle-blocked { background:#21262d; color:#8b949e; border:2px solid #30363d; }
+  .step-circle-done    { background:#D1FAE5; color:#059669; border:2px solid #10B981; }
+  .step-circle-ready   { background:#DBEAFE; color:#1D4ED8; border:2px solid #0284C7; }
+  .step-circle-todo    { background:#EFF6FF; color:#64748B; border:2px solid #CBD5E1; }
+  .step-circle-blocked { background:#F1F5F9; color:#94A3B8; border:2px solid #E2E8F0; }
   .step-line { flex:1; width:2px; min-height:12px; margin:3px 0; border-radius:1px; }
-  .step-line-done    { background:#238636; }
-  .step-line-ready   { background:#1f6feb; }
-  .step-line-todo    { background:#1f6feb; }
-  .step-line-blocked { background:#30363d; }
+  .step-line-done    { background:#10B981; }
+  .step-line-ready   { background:#0284C7; }
+  .step-line-todo    { background:#CBD5E1; }
+  .step-line-blocked { background:#E2E8F0; }
   .step-body { flex:1; padding-bottom:16px; min-width:0; }
   .step-header-row { display:flex; align-items:baseline; justify-content:space-between; gap:8px; flex-wrap:wrap; margin-bottom:3px; }
   .step-title { font-size:13px; font-weight:600; color:var(--text); }
   .step-stat { font-size:11px; font-weight:600; white-space:nowrap; }
-  .step-stat-done    { color:#56d364; }
-  .step-stat-ready   { color:#58a6ff; }
-  .step-stat-todo    { color:#58a6ff; }
-  .step-stat-blocked { color:#8b949e; }
+  .step-stat-done    { color:#059669; }
+  .step-stat-ready   { color:#0284C7; }
+  .step-stat-todo    { color:#0284C7; }
+  .step-stat-blocked { color:#94A3B8; }
   .step-desc { font-size:12px; color:var(--text-muted); line-height:1.5; margin-bottom:5px; }
-  .step-tip { font-size:12px; color:#f0883e; margin-bottom:5px; }
-  .step-link { font-size:12px; color:#58a6ff; text-decoration:none; font-weight:600; }
+  .step-tip { font-size:12px; color:#F97316; margin-bottom:5px; }
+  .step-link { font-size:12px; color:#0284C7; text-decoration:none; font-weight:600; }
   .step-link:hover { text-decoration:underline; }
-  .step-cmd { font-size:12px; color:#8b949e; font-family:var(--font-mono); }
+  .step-cmd { font-size:12px; color:#64748B; font-family:var(--font-mono); }
 
   /* Funnel */
   .section { padding:16px; }

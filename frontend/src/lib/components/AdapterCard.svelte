@@ -3,17 +3,15 @@
 
   interface Props {
     adapter: AdvisorAdapter;
-    onSources?: (a: AdvisorAdapter) => void;
     onAlternatives?: (a: AdvisorAdapter) => void;
     onRemove?: (name: string) => void;
     active?: boolean;
   }
 
-  let { adapter, onSources, onAlternatives, onRemove, active = false }: Props = $props();
+  let { adapter, onAlternatives, onRemove, active = false }: Props = $props();
 
   let expanded = $state(false);
   let showDepth = $state(false);
-  let showAllSources = $state(false);
 
   function scoreColor(s: number): string {
     if (s >= 15) return 'var(--green)';
@@ -23,10 +21,6 @@
 
   function scoreBarWidth(s: number): string {
     return `width:${(s / 20) * 100}%`;
-  }
-
-  function sourceUrl(src: string): string {
-    return `https://www.google.com/search?q=${encodeURIComponent(src)}`;
   }
 
   const isOrchestrator = $derived(adapter.role === 'orchestrator');
@@ -56,9 +50,6 @@
         <span class="mini-score" style="color:{scoreColor(adapter.team_score!)}" title="Score équipe">
           ⬡ {adapter.team_score}/20
         </span>
-      {/if}
-      {#if onSources}
-        <button class="icon-btn" title="Sources" onclick={() => onSources!(adapter)}>◧</button>
       {/if}
       {#if onAlternatives}
         <button class="icon-btn" title="Alternatives" onclick={() => onAlternatives!(adapter)}>⟳</button>
@@ -115,39 +106,18 @@
       {/if}
 
       <!-- L3 toggle -->
-      {#if (adapter.data_types?.length || adapter.data_sources?.length)}
+      {#if adapter.data_types?.length}
         <button class="l3-toggle mt-10" onclick={() => showDepth = !showDepth}>
-          {showDepth ? '▾ Masquer les détails' : '▸ Voir données & sources'}
+          {showDepth ? '▾ Masquer' : '▸ Types de données'}
         </button>
 
         {#if showDepth}
           <div class="l3">
-            {#if adapter.data_types?.length}
-              <div class="depth-section">
-                <span class="meta-label">Types de données</span>
-                <div class="tags mt-4">
-                  {#each adapter.data_types as dt}<span class="tag">{dt}</span>{/each}
-                </div>
+            <div class="depth-section">
+              <div class="tags mt-4">
+                {#each adapter.data_types as dt}<span class="tag">{dt}</span>{/each}
               </div>
-            {/if}
-            {#if adapter.data_sources?.length}
-              <div class="depth-section mt-8">
-                <span class="meta-label">Sources ({adapter.data_sources.length})</span>
-                <div class="sources-grid mt-4">
-                  {#each adapter.data_sources.slice(0, showAllSources ? undefined : 4) as src}
-                    <a href={sourceUrl(src)} target="_blank" rel="noopener noreferrer" class="source-chip">
-                      <span class="source-chip-name">{src}</span>
-                      <span class="source-chip-icon">↗</span>
-                    </a>
-                  {/each}
-                </div>
-                {#if adapter.data_sources.length > 4}
-                  <button class="l3-toggle mt-6" onclick={() => showAllSources = !showAllSources}>
-                    {showAllSources ? '▾ Réduire' : `▸ +${adapter.data_sources.length - 4} sources`}
-                  </button>
-                {/if}
-              </div>
-            {/if}
+            </div>
           </div>
         {/if}
       {/if}
@@ -217,20 +187,9 @@
   .l3 { margin-top: 10px; display: flex; flex-direction: column; }
   .depth-section { display: flex; flex-direction: column; }
 
-  /* Tags & sources */
+  /* Tags */
   .tags { display: flex; flex-wrap: wrap; gap: 4px; }
   .tag  { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--text-muted); border: 1px solid var(--border); }
-  .sources-grid { display: flex; flex-wrap: wrap; gap: 5px; }
-  .source-chip {
-    display: inline-flex; align-items: center; gap: 4px;
-    padding: 3px 9px; border-radius: 999px;
-    background: var(--surface-2); border: 1px solid var(--border);
-    text-decoration: none; font-size: 11px; color: var(--accent);
-    transition: border-color 150ms, background 150ms; max-width: 160px;
-  }
-  .source-chip:hover { border-color: var(--accent); background: var(--accent-dim); }
-  .source-chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .source-chip-icon { font-size: 10px; color: var(--text-muted); flex-shrink: 0; }
 
   /* Meta labels */
   .meta-label       { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }

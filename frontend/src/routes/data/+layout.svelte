@@ -3,24 +3,28 @@
   let { children } = $props();
 
   const tabs = [
-    { href: '/data',          label: 'Santé des données' },
-    { href: '/data/collect',  label: 'Collecte AWA' },
-    { href: '/data/ingest',   label: 'Ingestion manuelle' },
-    { href: '/data/pipeline', label: 'Pipeline nettoyage' },
-    { href: '/data/review',   label: 'Contrôle qualité' },
-    { href: '/data/search',   label: 'Recherche data' },
+    { href: '/advisor',       label: 'Cadrage' },
+    { href: '/data/ingest',   label: 'Ingestion' },
+    { href: '/data/pipeline', label: 'Pipeline' },
+    { href: '/data/review',   label: 'Révision' },
+    { href: '/data/search',   label: 'Audit' },
   ];
 
+  const projectId = $derived($page.url.searchParams.get('project'));
+
+  function tabHref(base: string) {
+    return projectId ? `${base}?project=${projectId}` : base;
+  }
+
   function isActive(href: string) {
-    if (href === '/data') return $page.url.pathname === '/data';
-    return $page.url.pathname.startsWith(href);
+    return $page.url.pathname === href || $page.url.pathname.startsWith(href + '/');
   }
 </script>
 
 <div class="data-layout">
   <div class="data-tabs">
     {#each tabs as t}
-      <a href={t.href} class="data-tab" class:active={isActive(t.href)}>{t.label}</a>
+      <a href={tabHref(t.href)} class="data-tab" class:active={isActive(t.href)}>{t.label}</a>
     {/each}
   </div>
   <div class="data-content">

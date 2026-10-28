@@ -5,6 +5,8 @@
   import { getProjects, getBaseModels, createRun } from '$lib/api';
   import type { Project, BaseModel } from '$lib/types';
   import VramEstimator from '$lib/components/VramEstimator.svelte';
+  import SectionTabs from '$lib/components/SectionTabs.svelte';
+  const tabs = [{ href: '/train', label: 'Fine-tuning' }, { href: '/runs', label: 'Runs' }];
 
   let projects: Project[]   = $state([]);
   let models: BaseModel[]   = $state([]);
@@ -49,6 +51,7 @@
   }
 </script>
 
+<SectionTabs {tabs} />
 <div class="topbar">
   <span class="topbar-title">Lancer un fine-tuning</span>
 </div>

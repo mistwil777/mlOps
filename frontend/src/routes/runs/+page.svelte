@@ -4,6 +4,8 @@
   import { getRuns, deleteRun } from '$lib/api';
   import type { Run } from '$lib/types';
   import StatusBadge from '$lib/components/StatusBadge.svelte';
+  import SectionTabs from '$lib/components/SectionTabs.svelte';
+  const tabs = [{ href: '/train', label: 'Fine-tuning' }, { href: '/runs', label: 'Runs' }];
 
   let runs: Run[] = $state([]);
   let loading = $state(true);
@@ -37,6 +39,7 @@
   }
 </script>
 
+<SectionTabs {tabs} />
 <div class="topbar">
   <span class="topbar-title">Training runs</span>
   <span style="flex:1"></span>

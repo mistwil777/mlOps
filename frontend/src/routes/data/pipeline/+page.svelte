@@ -276,14 +276,14 @@
   .step-header { display: flex; align-items: flex-start; gap: 14px; }
   .step-num {
     width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
-    background: #1f3358; color: #79c0ff; border: 2px solid #1f6feb;
+    background: #DBEAFE; color: #1D4ED8; border: 2px solid #0284C7;
     display: flex; align-items: center; justify-content: center;
     font-weight: 700; font-size: 13px; margin-top: 2px;
   }
   .step-info { flex: 1; min-width: 0; }
   .step-title { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
   .step-desc { font-size: 12px; line-height: 1.5; }
-  .step-warning { font-size: 11px; color: #f0883e; margin-top: 6px; background: rgba(240,136,62,.08); padding: 5px 8px; border-radius: 4px; border-left: 2px solid #f0883e; }
+  .step-warning { font-size: 11px; color: #F97316; margin-top: 6px; background: rgba(240,136,62,.08); padding: 5px 8px; border-radius: 4px; border-left: 2px solid #F97316; }
   .step-estimate { display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-top:8px; font-size:12px; background:var(--surface-2); padding:6px 10px; border-radius:4px; }
   .estimate-records { color:var(--text-muted); }
   .estimate-time { color:var(--text); }
@@ -292,8 +292,8 @@
 
   .badge-ok     { font-size: 12px; color: var(--green); font-weight: 600; }
   .badge-err    { font-size: 12px; color: var(--red); font-weight: 600; }
-  .badge-warn   { font-size: 12px; color: #f0883e; font-weight: 600; }
-  .badge-running { font-size: 12px; color: #58a6ff; font-weight: 600; }
+  .badge-warn   { font-size: 12px; color: #F97316; font-weight: 600; }
+  .badge-running { font-size: 12px; color: #0284C7; font-weight: 600; }
   .btn-danger { background: rgba(255,80,80,.15); color: var(--red); border: 1px solid var(--red); border-radius: var(--radius); padding: 5px 12px; font-size: 12px; cursor: pointer; }
   .btn-danger:hover:not(:disabled) { background: rgba(255,80,80,.25); }
   .btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -305,7 +305,7 @@
   .log-box { background: var(--surface-2); border-radius: var(--radius); padding: 12px; height: 400px; overflow-y: auto; font-family: var(--font-mono); font-size: 12px; display: flex; flex-direction: column; gap: 2px; }
   .log-line { white-space: pre-wrap; word-break: break-all; color: var(--text-muted); }
   .log-section { color: var(--accent); font-weight: 600; }
-  .log-cancel { color: #f0883e; }
+  .log-cancel { color: #F97316; }
   .log-error { color: var(--red); }
   @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
   .blink { animation: blink 1s step-end infinite; }

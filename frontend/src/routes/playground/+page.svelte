@@ -2,11 +2,12 @@
   import { onMount, onDestroy } from 'svelte';
   import { getProjects } from '$lib/api';
   import type { Project } from '$lib/types';
+  import SectionTabs from '$lib/components/SectionTabs.svelte';
+  const tabs = [{ href: '/eval', label: 'Tests' }, { href: '/playground', label: 'Playground' }];
 
   let projects: Project[] = $state([]);
 
-  // Mode: 'single' | 'compare' | 'batch'
-  let mode = $state<'single' | 'compare' | 'batch'>('single');
+  let mode = $state<'single' | 'compare'>('single');
 
   // Single inference
   let prompt = $state('');
@@ -21,7 +22,7 @@
   let es: EventSource | null = null;
 
   // Compare mode
-  let comparePrompts = $state('');
+  let comparePromptList = $state<string[]>(['']);
   let compareResults: Array<{
     prompt_preview: string;
     local: { completion: string | null; latency_ms: number | null; rouge_l?: number };
@@ -111,8 +112,8 @@
   }
 
   async function handleCompare() {
-    const lines = comparePrompts.split('\n---\n').map(s => s.trim()).filter(Boolean);
-    if (!lines.length) { compareError = 'Entrez au moins un prompt (séparé par --- pour plusieurs).'; return; }
+    const lines = comparePromptList.map(s => s.trim()).filter(Boolean);
+    if (!lines.length) { compareError = 'Entrez au moins un prompt.'; return; }
     comparing = true;
     compareError = '';
     compareResults = [];
@@ -134,10 +135,11 @@
   }
 </script>
 
+<SectionTabs {tabs} />
 <div class="topbar">
   <span class="topbar-title">Playground</span>
   <div class="mode-tabs">
-    {#each [['single', 'Test simple'], ['compare', 'Comparaison'], ['batch', 'Batch']] as [m, label]}
+    {#each [['single', 'Test simple'], ['compare', 'Comparaison']] as [m, label]}
       <button class="mode-tab {mode === m ? 'active' : ''}" onclick={() => mode = m as typeof mode}>{label}</button>
     {/each}
   </div>
@@ -207,11 +209,29 @@
   <!-- ── COMPARE MODE ── -->
   {#if mode === 'compare'}
     <div class="card" style="margin-bottom:16px; padding:16px">
-      <div class="section-title">Prompts (un par ligne, --- pour en séparer plusieurs)</div>
-      <textarea bind:value={comparePrompts} class="prompt-area" rows="6" placeholder="def add(a, b):\n    return a + b\n---\ndef factorial(n):..."></textarea>
-      <button class="btn btn-primary" style="margin-top:10px" onclick={handleCompare} disabled={comparing || !comparePrompts.trim()}>
-        {comparing ? '⟳ Comparaison…' : '▶ Comparer local vs Nova Pro'}
-      </button>
+      <div class="section-title">Prompts à comparer</div>
+      <div class="prompt-list">
+        {#each comparePromptList as _, i}
+          <div class="prompt-list-item">
+            <span class="prompt-num">{i + 1}</span>
+            <textarea
+              bind:value={comparePromptList[i]}
+              class="prompt-area"
+              rows="4"
+              placeholder="Entrez un prompt…"
+            ></textarea>
+            {#if comparePromptList.length > 1}
+              <button class="btn-remove" onclick={() => { comparePromptList = comparePromptList.filter((_, j) => j !== i); }} title="Supprimer">✕</button>
+            {/if}
+          </div>
+        {/each}
+      </div>
+      <div style="display:flex; gap:8px; margin-top:10px; align-items:center">
+        <button class="btn btn-ghost" onclick={() => { comparePromptList = [...comparePromptList, '']; }}>+ Ajouter un prompt</button>
+        <button class="btn btn-primary" onclick={handleCompare} disabled={comparing || comparePromptList.every(s => !s.trim())}>
+          {comparing ? '⟳ Comparaison…' : '▶ Comparer local vs Nova Pro'}
+        </button>
+      </div>
       {#if compareError}
         <div class="banner-error" style="margin-top:8px">{compareError}</div>
       {/if}
@@ -249,16 +269,6 @@
     {/if}
   {/if}
 
-  <!-- ── BATCH MODE ── -->
-  {#if mode === 'batch'}
-    <div class="card" style="padding:20px">
-      <p class="text-muted" style="font-size:13px">
-        Le mode batch utilise le même formulaire de comparaison — entrez vos prompts en mode <strong>Comparaison</strong>, séparés par <code>---</code>.
-        Les résultats incluent latence et ROUGE-L si des références sont fournies.
-      </p>
-      <button class="btn btn-ghost" onclick={() => mode = 'compare'}>→ Aller en mode Comparaison</button>
-    </div>
-  {/if}
 </div>
 
 <style>
@@ -281,4 +291,10 @@
   .compare-col { display: flex; flex-direction: column; gap: 6px; }
   .compare-header { display: flex; align-items: center; gap: 8px; }
   .compare-text { font-family: var(--font-mono); font-size: 11px; background: var(--surface-2); padding: 8px; border-radius: 4px; white-space: pre-wrap; word-break: break-all; margin: 0; max-height: 240px; overflow-y: auto; }
+  .prompt-list { display: flex; flex-direction: column; gap: 10px; }
+  .prompt-list-item { display: flex; gap: 8px; align-items: flex-start; }
+  .prompt-num { font-size: 11px; font-weight: 700; color: var(--text-muted); min-width: 18px; margin-top: 10px; text-align: right; }
+  .prompt-list-item .prompt-area { flex: 1; min-height: 80px; }
+  .btn-remove { background: none; border: 1px solid var(--border); color: var(--text-muted); border-radius: var(--radius); padding: 4px 8px; cursor: pointer; font-size: 11px; margin-top: 6px; flex-shrink: 0; }
+  .btn-remove:hover { color: var(--red, #e66767); border-color: var(--red, #e66767); }
 </style>

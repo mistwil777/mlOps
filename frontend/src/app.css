@@ -1,38 +1,38 @@
 /* Design tokens */
 :root {
   /* Backgrounds */
-  --bg:         #0d0f18;
-  --surface:    #151720;
-  --surface-2:  #1e2130;
-  --surface-3:  #272b3a;
+  --bg:         #ffffff;
+  --surface:    #F8FAFC;
+  --surface-2:  #F1F5F9;
+  --surface-3:  #E2E8F0;
 
   /* Borders */
-  --border:     #2a2e3f;
-  --border-2:   #363b50;
+  --border:     #E2E8F0;
+  --border-2:   #CBD5E1;
 
-  /* Text — WCAG AA compliant (≥4.5:1 on --bg) */
-  --text:       #e4e7f2;
-  --text-muted: #9aa0ba;   /* was #8b92a8 — +0.4 contrast bump */
-  --text-dim:   #6b7191;
+  /* Text */
+  --text:       #334155;
+  --text-muted: #64748B;
+  --text-dim:   #94A3B8;
 
   /* Accent */
-  --accent:     #5b98f8;
-  --accent-dim: rgba(91,152,248,.14);
-  --accent-hover: #6fa6f9;
+  --accent:       #0284C7;
+  --accent-dim:   rgba(2,132,199,.1);
+  --accent-hover: #0369A1;
 
   /* Status */
-  --green:      #3ecf8e;
-  --green-dim:  rgba(62,207,142,.12);
-  --red:        #f75454;
-  --red-dim:    rgba(247,84,84,.12);
-  --yellow:     #f7aa50;
-  --yellow-dim: rgba(247,170,80,.12);
-  --orange:     #f78450;
-  --orange-dim: rgba(247,132,80,.12);
+  --green:      #10B981;
+  --green-dim:  rgba(16,185,129,.1);
+  --red:        #EF4444;
+  --red-dim:    rgba(239,68,68,.1);
+  --yellow:     #F59E0B;
+  --yellow-dim: rgba(245,158,11,.1);
+  --orange:     #F97316;
+  --orange-dim: rgba(249,115,22,.1);
 
   /* Typography */
   --font-mono:  'JetBrains Mono', 'Fira Mono', monospace;
-  --font-ui:    -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-ui:    'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   --text-xs:    11px;
   --text-sm:    12px;
   --text-base:  14px;
@@ -58,13 +58,13 @@
   --radius-xl:  16px;
 
   /* Elevation */
-  --shadow-sm:  0 1px 4px rgba(0,0,0,.3);
-  --shadow:     0 2px 12px rgba(0,0,0,.4);
-  --shadow-lg:  0 4px 24px rgba(0,0,0,.5);
+  --shadow-sm:  0 1px 3px rgba(0,0,0,.08);
+  --shadow:     0 2px 8px rgba(0,0,0,.1);
+  --shadow-lg:  0 4px 16px rgba(0,0,0,.12);
 
   /* Layout */
-  --sidebar-w:  232px;
-  --topbar-h:   52px;
+  --sidebar-w:  272px;
+  --topbar-h:   64px;
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -89,8 +89,8 @@ code, pre, .mono { font-family: var(--font-mono); font-size: 13px; }
 .sidebar {
   width: var(--sidebar-w);
   flex-shrink: 0;
-  background: var(--surface);
-  border-right: 1px solid var(--border);
+  background: #ffffff;
+  border-right: 1px solid #F1F5F9;
   display: flex;
   flex-direction: column;
   padding: 0;
@@ -98,31 +98,29 @@ code, pre, .mono { font-family: var(--font-mono); font-size: 13px; }
 }
 
 .sidebar-logo {
-  padding: 18px var(--sp-4) 14px;
-  border-bottom: 1px solid var(--border);
+  padding: 20px 24px 16px 32px;
+  border-bottom: 1px solid #E2E8F0;
   font-weight: 700;
-  font-size: var(--text-md);
-  letter-spacing: .5px;
-  color: var(--text);
+  font-size: 19px;
+  color: #0F172A;
   display: flex;
   align-items: center;
   gap: 10px;
   flex-shrink: 0;
 }
 
-.sidebar-logo .dot {
-  width: 8px; height: 8px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 8px var(--accent);
+.sidebar-logo .logo-icon {
+  width: 22px; height: 22px;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #2DD4BF, #38BDF8);
   flex-shrink: 0;
 }
 
 .sidebar-logo .logo-sub {
-  font-size: var(--text-xs);
-  color: var(--text-muted);
+  font-size: 12px;
+  color: #94A3B8;
   font-weight: 400;
-  margin-top: 1px;
+  margin-top: 2px;
 }
 
 /* Nav groups (numbered sections) */
@@ -131,32 +129,13 @@ code, pre, .mono { font-family: var(--font-mono); font-size: 13px; }
 .nav-group-header {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 14px 4px;
-  font-size: var(--text-xs);
+  gap: 8px;
+  padding: 16px 14px 6px;
+  font-size: 13px;
   font-weight: 700;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-  color: var(--text-dim);
+  letter-spacing: .6px;
+  color: #0F172A;
   user-select: none;
-}
-
-.nav-group-num {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px; height: 16px;
-  border-radius: 4px;
-  background: var(--surface-3);
-  font-size: 10px;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  flex-shrink: 0;
-}
-
-.nav-group.active-group .nav-group-num {
-  background: var(--accent-dim);
-  color: var(--accent);
 }
 
 .sidebar nav { padding: 8px 0; flex: 1; }
@@ -175,27 +154,26 @@ code, pre, .mono { font-family: var(--font-mono); font-size: 13px; }
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 14px 7px 34px;
-  color: var(--text-muted);
+  padding: 5px 14px 5px 16px;
+  color: #64748B;
   font-size: var(--text-sm);
   transition: background 150ms, color 150ms;
-  border-radius: 0;
   border-left: 2px solid transparent;
-  margin: 0 4px 1px;
-  border-radius: var(--radius);
+  margin-left: -1px;
 }
 
-.sidebar nav a:hover,
-.sidebar nav a.active {
-  background: var(--surface-2);
-  color: var(--text);
+.sidebar nav a:hover {
+  color: #334155;
   text-decoration: none;
+  background: #F8FAFC;
 }
 
 .sidebar nav a.active {
-  color: var(--accent);
-  border-left-color: var(--accent);
-  background: var(--accent-dim);
+  color: #0284C7;
+  border-left-color: #0EA5E9;
+  font-weight: 600;
+  text-decoration: none;
+  background: none;
 }
 
 /* Top-level nav items (no group indentation) */
@@ -210,8 +188,8 @@ code, pre, .mono { font-family: var(--font-mono); font-size: 13px; }
 .topbar {
   height: var(--topbar-h);
   flex-shrink: 0;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  background: #ffffff;
+  border-bottom: 1px solid #E2E8F0;
   display: flex;
   align-items: center;
   padding: 0 var(--sp-6);
@@ -380,7 +358,7 @@ code, pre, .mono { font-family: var(--font-mono); font-size: 13px; }
 
 /* Log viewer */
 .log-viewer {
-  background: #0a0c12;
+  background: #0F172A;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 12px;
@@ -389,7 +367,7 @@ code, pre, .mono { font-family: var(--font-mono); font-size: 13px; }
   font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.8;
-  color: #a8b0c8;
+  color: #CBD5E1;
 }
 .log-viewer .log-line { white-space: pre-wrap; word-break: break-all; }
 

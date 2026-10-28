@@ -5,6 +5,8 @@
   import type { Evaluation, Project, Run } from '$lib/types';
   import Topbar from '$lib/components/Topbar.svelte';
   import StatusBadge from '$lib/components/StatusBadge.svelte';
+  import SectionTabs from '$lib/components/SectionTabs.svelte';
+  const tabs = [{ href: '/eval', label: 'Tests' }, { href: '/playground', label: 'Playground' }];
 
   type EvalRow = Evaluation & { project_id: string; experiment_name: string; model_name: string };
 
@@ -60,6 +62,7 @@
   }
 </script>
 
+<SectionTabs {tabs} />
 <Topbar crumbs={[{ label: 'Évaluation' }]}>
   <select
     class="form-select"

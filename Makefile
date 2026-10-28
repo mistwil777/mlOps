@@ -1,5 +1,5 @@
 SHELL := /bin/zsh
-PYTHON := python
+PYTHON := python3
 VENV   := .venv
 API_PORT  := 8002
 UI_PORT   := 5173
@@ -50,6 +50,7 @@ setup-python:
 	$(PYTHON) -m venv $(VENV)
 	$(VENV)/bin/pip install -U pip
 	$(VENV)/bin/pip install -r requirements.txt
+	$(VENV)/bin/pip install -r requirements-api.txt
 	$(VENV)/bin/pip install -e agents/pair-forge/ -e agents/agent-tester/
 
 setup-ui:

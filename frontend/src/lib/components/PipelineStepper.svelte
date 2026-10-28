@@ -2,17 +2,18 @@
   interface Props {
     phase: 0 | 1 | 2 | 3 | 4;
     compact?: boolean;
+    projectId?: string;
   }
 
+  let { phase, compact = false, projectId }: Props = $props();
+
   const STEPS = [
-    { num: 0, label: 'Scoping',    icon: '◎', href: '/advisor' },
+    { num: 0, label: 'Scoping',    icon: '◎', href: projectId ? `/advisor?project=${projectId}` : '/advisor' },
     { num: 1, label: 'Données',    icon: '◧', href: '/data' },
     { num: 2, label: 'Training',   icon: '▷', href: '/train' },
     { num: 3, label: 'Évaluation', icon: '◉', href: '/models' },
     { num: 4, label: 'Livraison',  icon: '⬡', href: '/delivery' },
   ];
-
-  let { phase, compact = false }: Props = $props();
 </script>
 
 <div class="stepper" class:compact>

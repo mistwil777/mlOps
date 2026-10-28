@@ -4,6 +4,8 @@
   import { getModels } from '$lib/api';
   import type { DeployedModel } from '$lib/types';
   import StatusBadge from '$lib/components/StatusBadge.svelte';
+  import SectionTabs from '$lib/components/SectionTabs.svelte';
+  const tabs = [{ href: '/delivery', label: 'Bundle client' }, { href: '/lifecycle', label: 'Cycle de vie' }];
 
   let models: DeployedModel[] = $state([]);
 
@@ -12,6 +14,7 @@
   });
 </script>
 
+<SectionTabs {tabs} />
 <div class="topbar">
   <span class="topbar-title">Livraison</span>
 </div>

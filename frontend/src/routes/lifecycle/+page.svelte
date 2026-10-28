@@ -2,6 +2,8 @@
   import { onMount, onDestroy } from 'svelte';
   import { getProjects } from '$lib/api';
   import type { Project } from '$lib/types';
+  import SectionTabs from '$lib/components/SectionTabs.svelte';
+  const tabs = [{ href: '/delivery', label: 'Bundle client' }, { href: '/lifecycle', label: 'Cycle de vie' }];
 
   interface RagStats {
     total_patterns: number;
@@ -86,6 +88,7 @@
   }
 </script>
 
+<SectionTabs {tabs} />
 <div class="topbar">
   <span class="topbar-title">Cycle de vie sol ↔ embarqué</span>
   <select class="form-select" style="width:220px" bind:value={selectedId} onchange={load}>

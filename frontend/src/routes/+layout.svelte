@@ -15,32 +15,21 @@
 </script>
 
 <div class="layout">
-  <SidebarNav>
-    {#snippet healthPanel()}
-      <div class="health-panel">
-        <div class="health-label">Services</div>
-        <div class="health-row">
-          <span class="health-dot {health?.mlx_server ? 'ok' : health === null ? 'unk' : 'err'}"></span>
-          <span>mlx_lm.server</span>
-        </div>
-        <div class="health-row">
-          <span class="health-dot {health?.mlflow ? 'ok' : health === null ? 'unk' : 'err'}"></span>
-          <span>MLflow</span>
-        </div>
-        <div class="health-row">
-          <span class="health-dot {health?.serving ? 'ok' : health === null ? 'unk' : 'err'}"></span>
-          <span>Serving</span>
-        </div>
-      </div>
-    {/snippet}
-  </SidebarNav>
+  <SidebarNav />
 
   <main class="main">
+    <div class="rainbow-bar"></div>
     {@render children()}
   </main>
 </div>
 
 <style>
+  .rainbow-bar {
+    height: 4px;
+    flex-shrink: 0;
+    background: linear-gradient(90deg, #2DD4BF, #22D3EE, #38BDF8 40%, #A855F7 62%, #EC4899 80%, #F59E0B);
+  }
+
   .health-panel {
     display: flex;
     flex-direction: column;

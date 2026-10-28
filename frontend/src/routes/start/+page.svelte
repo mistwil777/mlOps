@@ -1928,10 +1928,10 @@
           <div class="dc-item">
             <span class="dc-icon">◩</span>
             <div class="dc-text">
-              <div class="dc-label">Collecte web (optionnel)</div>
-              <div class="dc-sub">Enrichissement automatique via recherche ciblée</div>
+              <div class="dc-label">Ingestion des données</div>
+              <div class="dc-sub">Déposez les données client via l'ingestion manuelle</div>
             </div>
-            <a href="/data/collect?project={projectId}" class="btn btn-ghost btn-sm">Ouvrir →</a>
+            <a href="/data/ingest?project={projectId}" class="btn btn-ghost btn-sm">Ouvrir →</a>
           </div>
         </div>
 
@@ -2512,7 +2512,7 @@
   .collector-badge--github_repo  { background: rgba(168,85,247,.15); color: #a855f7; }
 
   .log-box {
-    background: var(--bg, #0d1117); border: 1px solid var(--border);
+    background: var(--bg, #ffffff); border: 1px solid var(--border);
     border-radius: var(--radius); padding: 10px 12px;
     font-family: var(--font-mono); font-size: 11px; color: #a8b0c8;
     max-height: 200px; overflow-y: auto; white-space: pre-wrap;
