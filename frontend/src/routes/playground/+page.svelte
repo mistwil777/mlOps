@@ -25,9 +25,16 @@
   let comparePromptList = $state<string[]>(['']);
   let compareResults: Array<{
     prompt_preview: string;
-    local: { completion: string | null; latency_ms: number | null; rouge_l?: number };
-    nova_pro: { completion: string | null; latency_ms: number | null; rouge_l?: number };
+    local: { completion: string | null; latency_ms: number | null; rouge_l?: number; valid?: boolean };
+    nova_pro: { completion: string | null; latency_ms: number | null; rouge_l?: number; valid?: boolean };
   }> = $state([]);
+  let compareStats: {
+    n: number;
+    local: { pass_rate: number; ci_low: number; ci_high: number; ci_margin: number };
+    nova_pro: { pass_rate: number; ci_low: number; ci_high: number; ci_margin: number };
+    mcnemar: { p_value: number; significant: boolean; winner: string; interpretation: string };
+    sample_size: { sufficient: boolean; current_margin: number; recommended_n: number; message: string };
+  } | null = $state(null);
   let comparing = $state(false);
   let compareError = $state('');
 
@@ -117,6 +124,7 @@
     comparing = true;
     compareError = '';
     compareResults = [];
+    compareStats = null;
 
     try {
       const r = await fetch('/api/playground/compare', {
@@ -127,12 +135,16 @@
       if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
       const d = await r.json();
       compareResults = d.results;
+      compareStats = d.stats ?? null;
     } catch (e) {
       compareError = (e as Error).message;
     } finally {
       comparing = false;
     }
   }
+
+  function pct(v: number) { return `${(v * 100).toFixed(1)}%`; }
+  function pp(v: number)  { return `±${(v * 100).toFixed(1)} pp`; }
 </script>
 
 <SectionTabs {tabs} />
@@ -237,6 +249,39 @@
       {/if}
     </div>
 
+    {#if compareStats}
+      <!-- ── Sample size warning ── -->
+      {#if !compareStats.sample_size.sufficient}
+        <div class="stat-warning mb-12">
+          <span class="stat-warning-icon">⚠</span>
+          <span>{compareStats.sample_size.message}</span>
+        </div>
+      {/if}
+
+      <!-- ── Stats summary ── -->
+      <div class="card stat-summary mb-16">
+        <div class="stat-row">
+          <div class="stat-col">
+            <div class="stat-label">Local (mlx_lm)</div>
+            <div class="stat-rate">{pct(compareStats.local.pass_rate)}</div>
+            <div class="stat-ci">IC 95 % : [{pct(compareStats.local.ci_low)} – {pct(compareStats.local.ci_high)}] {pp(compareStats.local.ci_margin)}</div>
+          </div>
+          <div class="stat-vs">vs</div>
+          <div class="stat-col">
+            <div class="stat-label">Nova Pro</div>
+            <div class="stat-rate">{pct(compareStats.nova_pro.pass_rate)}</div>
+            <div class="stat-ci">IC 95 % : [{pct(compareStats.nova_pro.ci_low)} – {pct(compareStats.nova_pro.ci_high)}] {pp(compareStats.nova_pro.ci_margin)}</div>
+          </div>
+        </div>
+        <div class="mcnemar-row">
+          <span class="mcnemar-label">Test McNemar</span>
+          <span class="mcnemar-verdict {compareStats.mcnemar.significant ? 'significant' : 'tie'}">
+            {compareStats.mcnemar.interpretation}
+          </span>
+        </div>
+      </div>
+    {/if}
+
     {#if compareResults.length > 0}
       {#each compareResults as row, i}
         <div class="card" style="margin-bottom:12px; padding:16px">
@@ -297,4 +342,22 @@
   .prompt-list-item .prompt-area { flex: 1; min-height: 80px; }
   .btn-remove { background: none; border: 1px solid var(--border); color: var(--text-muted); border-radius: var(--radius); padding: 4px 8px; cursor: pointer; font-size: 11px; margin-top: 6px; flex-shrink: 0; }
   .btn-remove:hover { color: var(--red, #e66767); border-color: var(--red, #e66767); }
+
+  /* Stats block */
+  .stat-warning { display:flex; gap:8px; align-items:flex-start; padding:10px 14px; background:#fff8ed; border:1px solid #f59e0b; border-radius:var(--radius); font-size:12px; color:#92400e; }
+  .stat-warning-icon { font-size:14px; flex-shrink:0; }
+  .stat-summary { padding:16px; }
+  .stat-row { display:flex; align-items:center; gap:24px; margin-bottom:14px; }
+  .stat-col { flex:1; display:flex; flex-direction:column; gap:2px; }
+  .stat-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); }
+  .stat-rate { font-size:28px; font-weight:700; color:var(--text); font-variant-numeric:tabular-nums; }
+  .stat-ci { font-size:11px; color:var(--text-muted); font-family:var(--font-mono); }
+  .stat-vs { font-size:13px; color:var(--text-muted); font-weight:600; flex-shrink:0; }
+  .mcnemar-row { border-top:1px solid var(--border); padding-top:12px; display:flex; align-items:baseline; gap:10px; }
+  .mcnemar-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); flex-shrink:0; }
+  .mcnemar-verdict { font-size:12px; color:var(--text); }
+  .mcnemar-verdict.significant { color:#0284c7; font-weight:600; }
+  .mcnemar-verdict.tie { color:var(--text-muted); }
+  .mb-12 { margin-bottom:12px; }
+  .mb-16 { margin-bottom:16px; }
 </style>

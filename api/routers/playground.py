@@ -131,14 +131,28 @@ async def infer_stream(req: InferRequest):
 
 @router.post("/compare")
 async def compare(req: BatchRequest) -> dict[str, Any]:
-    """Compare local model vs Nova Pro on the same prompts."""
+    """Compare local model vs Nova Pro on the same prompts.
+
+    Returns per-prompt results + aggregate statistics:
+    - Wilson 95% CI on pass_rate for each model
+    - McNemar test between local and Nova Pro
+    - Sample size warning if n < 384 (needed for ±5 pp margin)
+    """
     if not req.prompts:
         raise HTTPException(400, "No prompts provided")
 
     from pipeline.utils.metrics import rouge_l_score  # noqa: PLC0415
+    from pipeline.utils.stats import wilson_ci, mcnemar_test, sample_size_warning  # noqa: PLC0415
 
     local_ok = _mlx_available()
     results = []
+    local_valid: list[bool] = []
+    nova_valid: list[bool] = []
+
+    def _is_valid(text: str | None) -> bool:
+        if not text or len(text.strip()) < 10:
+            return False
+        return not any(p in text.lower() for p in ["error:", "traceback", "i'm sorry", "i cannot"])
 
     for i, prompt in enumerate(req.prompts):
         row: dict[str, Any] = {"prompt_preview": prompt[:100]}
@@ -146,16 +160,22 @@ async def compare(req: BatchRequest) -> dict[str, Any]:
         # Local
         if local_ok:
             comp, lat = _call_mlx(prompt, req.max_tokens, req.temperature)
-            row["local"] = {"completion": comp, "latency_ms": round(lat, 1)}
+            valid = _is_valid(comp)
+            row["local"] = {"completion": comp, "latency_ms": round(lat, 1), "valid": valid}
         else:
-            row["local"] = {"completion": None, "latency_ms": None, "error": "server unavailable"}
+            valid = False
+            row["local"] = {"completion": None, "latency_ms": None, "error": "server unavailable", "valid": False}
+        local_valid.append(valid)
 
         # Nova Pro
         try:
             comp_n, lat_n = _call_nova(prompt, req.max_tokens, req.temperature)
-            row["nova_pro"] = {"completion": comp_n, "latency_ms": round(lat_n, 1)}
+            valid_n = _is_valid(comp_n)
+            row["nova_pro"] = {"completion": comp_n, "latency_ms": round(lat_n, 1), "valid": valid_n}
         except Exception as exc:
-            row["nova_pro"] = {"completion": None, "latency_ms": None, "error": str(exc)}
+            valid_n = False
+            row["nova_pro"] = {"completion": None, "latency_ms": None, "error": str(exc), "valid": False}
+        nova_valid.append(valid_n)
 
         # ROUGE-L if reference available
         if req.reference_completions and i < len(req.reference_completions):
@@ -167,7 +187,49 @@ async def compare(req: BatchRequest) -> dict[str, Any]:
 
         results.append(row)
 
-    return {"results": results, "n": len(results)}
+    n = len(results)
+    local_pass = sum(local_valid)
+    nova_pass = sum(nova_valid)
+
+    local_ci = wilson_ci(local_pass, n)
+    nova_ci = wilson_ci(nova_pass, n)
+
+    mcnemar = mcnemar_test(local_valid, nova_valid)
+    size_warn = sample_size_warning(n)
+
+    stats = {
+        "n": n,
+        "local": {
+            "pass_rate": local_ci.point,
+            "ci_low": local_ci.low,
+            "ci_high": local_ci.high,
+            "ci_margin": local_ci.margin,
+        },
+        "nova_pro": {
+            "pass_rate": nova_ci.point,
+            "ci_low": nova_ci.low,
+            "ci_high": nova_ci.high,
+            "ci_margin": nova_ci.margin,
+        },
+        "mcnemar": {
+            "b": mcnemar.b,
+            "c": mcnemar.c,
+            "p_value": mcnemar.p_value,
+            "significant": mcnemar.significant,
+            "winner": mcnemar.winner,
+            "interpretation": _mcnemar_message(mcnemar.winner, mcnemar.significant, mcnemar.p_value),
+        },
+        "sample_size": size_warn,
+    }
+
+    return {"results": results, "n": n, "stats": stats}
+
+
+def _mcnemar_message(winner: str, significant: bool, p_value: float) -> str:
+    if not significant:
+        return f"Aucune différence significative entre les deux modèles (p={p_value:.3f}). Augmentez le nombre d'exemples pour trancher."
+    model_name = "Local (mlx_lm)" if winner == "a" else "Nova Pro"
+    return f"{model_name} est statistiquement meilleur (p={p_value:.3f} < 0.05)."
 
 
 # ── Private helpers ────────────────────────────────────────────────────────────

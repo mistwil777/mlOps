@@ -13,6 +13,7 @@ from pipeline.utils.jsonl import read_jsonl
 from pipeline.utils.llm import call_llm as _call_llm
 from pipeline.utils.logger import get_logger, log_metric
 from pipeline.utils.metrics import rouge_l_score
+from pipeline.utils.stats import wilson_ci, sample_size_warning
 
 logger = get_logger("mlops.evaluate")
 
@@ -108,20 +109,38 @@ class ModelEvaluator:
 
         latencies_sorted = sorted(latencies)
         p95_idx = max(0, int(len(latencies_sorted) * 0.95) - 1)
+        n = len(records)
+
+        pass_rate = pass_count / n if n else 0.0
+        rouge_mean = sum(rouge_scores) / len(rouge_scores) if rouge_scores else 0.0
+        exact_match_k = sum(1 for r in results if r["reference"] == r["hypothesis"])
+
+        # Wilson CI on pass_rate and rouge_l (treated as binary at threshold 0.5)
+        pass_ci = wilson_ci(pass_count, n)
+        rouge_above = sum(1 for s in rouge_scores if s >= 0.5)
+        rouge_ci = wilson_ci(rouge_above, n)
 
         metrics = {
-            "n": len(records),
-            "pass_rate": pass_count / len(records) if records else 0,
-            "rouge_l": sum(rouge_scores) / len(rouge_scores) if rouge_scores else 0,
+            "n": n,
+            "pass_rate": round(pass_rate, 4),
+            "pass_rate_ci_low": pass_ci.low,
+            "pass_rate_ci_high": pass_ci.high,
+            "pass_rate_margin": pass_ci.margin,
+            "rouge_l": round(rouge_mean, 4),
+            "rouge_l_ci_low": rouge_ci.low,
+            "rouge_l_ci_high": rouge_ci.high,
             "latency_p50": sorted(latencies)[len(latencies)//2] if latencies else 0,
             "latency_p95": latencies_sorted[p95_idx] if latencies else 0,
-            "exact_match": sum(
-                1 for r in results if r["reference"] == r["hypothesis"]
-            ) / len(results) if results else 0,
+            "exact_match": round(exact_match_k / n, 4) if n else 0.0,
         }
 
+        sample_warn = sample_size_warning(n)
+        metrics["sample_size_sufficient"] = sample_warn["sufficient"]
+        metrics["sample_size_message"] = sample_warn["message"]
+
         for k, v in metrics.items():
-            log_metric(k, v)
+            if isinstance(v, (int, float)):
+                log_metric(k, v)
 
         return {"metrics": metrics, "samples": results[:10]}
 
