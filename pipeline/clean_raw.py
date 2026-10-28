@@ -41,6 +41,7 @@ import yaml
 from pipeline.utils.jsonl import read_jsonl, write_jsonl
 from pipeline.utils.logger import get_logger, log_metric
 from pipeline.utils.embeddings import embed as _embed, current_backend as _embedding_backend
+from pipeline.utils.ocr import ocr_records, OCR_CONFIDENCE_MIN
 
 logger = get_logger("mlops.clean_raw")
 
@@ -616,6 +617,21 @@ def clean_adapter_records(
         "domain":       domain,
         "steps":        {},
     }
+
+    # 0. OCR preprocessing — enrich records that have a file_path (PDF/image)
+    ocr_records_present = any(r.get("file_path") for r in records)
+    if ocr_records_present:
+        min_conf = (adapter_cfg or {}).get("ocr_min_confidence", OCR_CONFIDENCE_MIN)
+        records, ocr_excluded = ocr_records(records, min_confidence=min_conf)
+        report["steps"]["ocr"] = {
+            "kept": len(records),
+            "excluded": len(ocr_excluded),
+            "min_confidence": min_conf,
+        }
+        if ocr_excluded:
+            log_metric("raw_ocr_excluded", len(ocr_excluded))
+        logger.info("[%s] OCR: %d kept, %d excluded (confidence < %.2f)",
+                    adapter_name, len(records), len(ocr_excluded), min_conf)
 
     # 1. Exact dedup
     records = dedup_exact(records)
