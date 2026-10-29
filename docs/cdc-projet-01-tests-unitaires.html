@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CDC — Projet 01 · Génération de tests unitaires</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --ink: #0F172A; --ink-2: #334155; --ink-3: #64748B;
+      --surface: #FFFFFF; --surface-2: #F8FAFC; --surface-3: #F1F5F9;
+      --border: #E2E8F0; --accent: #0284C7; --accent-hi: #0EA5E9;
+      --green: #059669; --orange: #D97706; --red: #DC2626; --purple: #7C3AED;
+      --radius: 8px; --shadow: 0 1px 3px rgba(0,0,0,.08);
+    }
+    body { font-family: 'Inter', sans-serif; background: var(--surface-2); color: var(--ink); font-size: 15px; line-height: 1.65; }
+    .rainbow { height: 4px; background: linear-gradient(90deg, #2DD4BF, #22D3EE, #38BDF8 40%, #A855F7 62%, #EC4899 80%, #F59E0B); }
+    header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 32px 0 28px; }
+    .header-inner { max-width: 900px; margin: 0 auto; padding: 0 32px; }
+    .eyebrow { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .1em; color: var(--accent); margin-bottom: 10px; }
+    h1 { font-size: 26px; font-weight: 700; line-height: 1.25; margin-bottom: 10px; }
+    .meta-row { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 14px; }
+    .meta-item { font-size: 13px; color: var(--ink-3); }
+    .meta-item strong { color: var(--ink-2); }
+    main { max-width: 900px; margin: 40px auto; padding: 0 32px 80px; display: flex; flex-direction: column; gap: 32px; }
+    .section-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: var(--ink-3); margin-bottom: 12px; }
+    h2 { font-size: 17px; font-weight: 700; color: var(--ink); margin-bottom: 14px; }
+    h3 { font-size: 14px; font-weight: 600; color: var(--ink); margin-bottom: 8px; }
+    p { color: var(--ink-2); margin-bottom: 10px; font-size: 14px; }
+    p:last-child { margin-bottom: 0; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; box-shadow: var(--shadow); }
+    .card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .card-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    ul { padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+    li { font-size: 14px; color: var(--ink-2); padding-left: 18px; position: relative; }
+    li::before { content: '—'; position: absolute; left: 0; color: var(--ink-3); }
+    .callout { border-radius: var(--radius); padding: 14px 18px; display: flex; gap: 12px; font-size: 14px; }
+    .callout.info    { background: #EFF6FF; border-left: 3px solid var(--accent); }
+    .callout.warning { background: #FFFBEB; border-left: 3px solid var(--orange); }
+    .callout.success { background: #ECFDF5; border-left: 3px solid var(--green); }
+    .callout.ft      { background: #F0FDF4; border-left: 3px solid var(--green); }
+    .callout-icon { font-size: 16px; flex-shrink: 0; margin-top: 2px; }
+    .callout p { margin: 0; }
+    pre { font-family: 'Courier New', monospace; font-size: 12px; background: var(--surface-3); border: 1px solid var(--border); border-radius: 6px; padding: 14px; color: var(--ink-2); white-space: pre-wrap; line-height: 1.6; }
+    code { font-family: 'Courier New', monospace; font-size: 12px; background: var(--surface-3); padding: 1px 5px; border-radius: 3px; color: var(--ink); }
+    .badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 100px; }
+    .badge-ft     { background: #D1FAE5; color: #065F46; }
+    .badge-rag    { background: #DBEAFE; color: #1D4ED8; }
+    .badge-high   { background: #FEE2E2; color: #991B1B; }
+    .badge-medium { background: #FEF3C7; color: #92400E; }
+    .badge-info   { background: #EDE9FE; color: #5B21B6; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th { background: var(--surface-3); padding: 10px 14px; text-align: left; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-3); border-bottom: 2px solid var(--border); }
+    td { padding: 11px 14px; border-bottom: 1px solid var(--border); color: var(--ink-2); vertical-align: top; font-size: 14px; }
+    tr:last-child td { border-bottom: none; }
+    .before-after { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .before { background: #FEF2F2; border: 1px solid #FECACA; border-radius: 6px; padding: 14px; }
+    .after  { background: #F0FDF4; border: 1px solid #BBF7D0; border-radius: 6px; padding: 14px; }
+    .ba-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; margin-bottom: 8px; }
+    .before .ba-label { color: var(--red); }
+    .after  .ba-label { color: var(--green); }
+    .tag-row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .tag { font-size: 12px; font-weight: 500; background: var(--surface-3); border: 1px solid var(--border); border-radius: 4px; padding: 3px 10px; color: var(--ink-2); }
+    footer { text-align: center; padding: 24px; font-size: 12px; color: var(--ink-3); border-top: 1px solid var(--border); background: var(--surface); }
+    @media (max-width: 640px) { .card-grid, .card-grid-3, .before-after { grid-template-columns: 1fr; } h1 { font-size: 20px; } main { padding: 0 16px 60px; } }
+  </style>
+</head>
+<body>
+
+<div class="rainbow"></div>
+
+<header>
+  <div class="header-inner">
+    <div class="eyebrow">MLOps · Projet 01 / 20 — Cahier des charges</div>
+    <h1>Génération de tests unitaires<br>Stack bancaire interne</h1>
+    <div class="meta-row">
+      <div class="meta-item"><strong>Client fictif :</strong> Banque Régionale Atlantis (BRA)</div>
+      <div class="meta-item"><strong>Domaine :</strong> Code</div>
+      <div class="meta-item"><strong>Stratégie :</strong> <span class="badge badge-ft">Fine-tuning</span></div>
+      <div class="meta-item"><strong>Modèle cible :</strong> Qwen2.5-Coder-7B-Instruct</div>
+      <div class="meta-item"><strong>Paires cibles :</strong> 100</div>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <!-- CONTEXTE CLIENT -->
+  <section>
+    <div class="section-label">Contexte client</div>
+    <div class="card">
+      <p>La Banque Régionale Atlantis (BRA) est une banque de taille intermédiaire (~1 200 collaborateurs) qui maintient un système de gestion de comptes développé en interne depuis 2009. La base de code principale est en <strong>Java 17</strong>, organisée en modules Maven, avec un framework de tests maison construit au-dessus de JUnit 5.</p>
+      <p>L'équipe de développement compte 18 développeurs. Chaque semaine, 30 à 40 nouvelles méthodes sont écrites ou modifiées. La politique qualité impose une couverture de tests minimale de 80 % par module. En pratique, l'écriture des tests représente <strong>environ 2h par développeur par jour</strong> — du temps consacré à du code répétitif et prévisible.</p>
+      <p style="margin-bottom:0">BRA a une contrainte forte de souveraineté : aucun code source ne peut transiter par un service cloud externe (concurrence, secret bancaire, RGPD). Un modèle local est obligatoire.</p>
+    </div>
+  </section>
+
+  <!-- STACK TECHNIQUE -->
+  <section>
+    <div class="section-label">Stack technique</div>
+    <div class="card-grid">
+      <div class="card" style="padding:18px">
+        <h3>Langage et build</h3>
+        <ul>
+          <li>Java 17 (LTS)</li>
+          <li>Maven 3.9 (modules multi-projets)</li>
+          <li>Spring Boot 3.2 (couche service)</li>
+          <li>Hibernate 6 (ORM)</li>
+        </ul>
+      </div>
+      <div class="card" style="padding:18px">
+        <h3>Framework de tests</h3>
+        <ul>
+          <li>JUnit 5 avec runner interne <code>BraTestRunner</code></li>
+          <li>Mockito 5 pour les dépendances</li>
+          <li>Fixture maison <code>@BraTest</code> (annotation custom)</li>
+          <li>AssertJ pour les assertions</li>
+        </ul>
+      </div>
+      <div class="card" style="padding:18px">
+        <h3>Conventions de nommage</h3>
+        <ul>
+          <li>Méthode : <code>should_[résultat]_when_[condition]</code></li>
+          <li>Classe : <code>[ClasseCible]Test</code></li>
+          <li>Package : <code>com.bra.[module].test</code></li>
+        </ul>
+      </div>
+      <div class="card" style="padding:18px">
+        <h3>Patterns récurrents</h3>
+        <ul>
+          <li>Setup via <code>@BeforeEach</code> avec <code>BraTestContext</code></li>
+          <li>Mocks déclarés via <code>@BraMock</code></li>
+          <li>Audit log systématique : <code>BraAudit.verify()</code></li>
+          <li>Transactions wrap : <code>withTransaction(db, () -> ...)</code></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- PROBLÈME ACTUEL -->
+  <section>
+    <div class="section-label">Problème actuel</div>
+    <div class="before-after">
+      <div class="before">
+        <div class="ba-label">Sans modèle spécialisé</div>
+        <p>Un développeur demande à un LLM générique d'écrire un test pour <code>TransferService.execute()</code>.</p>
+        <pre>@Test
+void testTransfer() {
+    TransferService svc = new TransferService();
+    boolean result = svc.execute(100, "A1", "A2");
+    assertTrue(result);
+}</pre>
+        <p style="color: var(--red); font-size: 12px; margin-top: 8px">
+          ✗ Pas d'annotation <code>@BraTest</code><br>
+          ✗ Pas de <code>BraTestContext</code><br>
+          ✗ Pas de mock <code>@BraMock</code><br>
+          ✗ Convention de nommage incorrecte<br>
+          ✗ Pas d'audit verify<br>
+          ✗ Ne compile pas — dépendances manquantes
+        </p>
+      </div>
+      <div class="after">
+        <div class="ba-label">Avec modèle fine-tuné BRA</div>
+        <pre>package com.bra.transfer.test;
+
+import com.bra.test.BraTest;
+import com.bra.test.BraTestContext;
+import com.bra.test.BraMock;
+import com.bra.audit.BraAudit;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import static org.assertj.core.api.Assertions.*;
+
+@BraTest
+class TransferServiceTest {
+
+    @BraMock AccountRepository accountRepo;
+    @BraMock AuditLogger auditLogger;
+    private TransferService svc;
+
+    @BeforeEach
+    void setUp() {
+        BraTestContext.init(accountRepo, auditLogger);
+        svc = new TransferService(accountRepo, auditLogger);
+    }
+
+    @Test
+    void should_transfer_funds_when_accounts_are_valid() {
+        withTransaction(BraTestContext.db(), () -> {
+            Account src = BraTestContext.account("A1", 500.0);
+            Account dst = BraTestContext.account("A2", 0.0);
+            svc.execute(100.0, src, dst);
+            assertThat(dst.getBalance()).isEqualTo(100.0);
+            BraAudit.verify(auditLogger, "TRANSFER", src.getId());
+        });
+    }
+}</pre>
+        <p style="color: var(--green); font-size: 12px; margin-top: 8px">
+          ✓ Toutes les conventions respectées<br>
+          ✓ Compile et passe la CI directement
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- OBJECTIF DU FINE-TUNING -->
+  <section>
+    <div class="section-label">Objectif</div>
+    <div class="callout ft">
+      <div class="callout-icon">🎯</div>
+      <p>Entraîner <strong>Qwen2.5-Coder-7B-Instruct</strong> à générer des tests JUnit 5 conformes aux conventions BRA à partir d'une signature de méthode Java. Le modèle doit produire un test compilable et valide sans aucune correction manuelle dans 80 % des cas (pass rate cible).</p>
+    </div>
+  </section>
+
+  <!-- STRUCTURE DES PAIRES -->
+  <section>
+    <div class="section-label">Structure des paires d'entraînement</div>
+    <div class="card">
+      <h3 style="margin-bottom: 14px">Format JSONL</h3>
+      <pre>{
+  "prompt": "Écris un test JUnit 5 pour la méthode Java suivante :\n\n```java\n// Package: com.bra.payment\n// Classe: PaymentService\npublic PaymentResult process(Payment payment, Account account) {\n    // Valide le solde, débite le compte, enregistre l'audit\n}\n```\nUtilise les conventions BRA : @BraTest, BraTestContext, @BraMock, AssertJ, BraAudit.verify().",
+  "completion": "package com.bra.payment.test;\n\nimport com.bra.test.BraTest;\n// ... [test complet conforme aux conventions]"
+}</pre>
+      <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 8px;">
+        <div class="callout info" style="padding: 10px 14px;">
+          <div class="callout-icon">📐</div>
+          <p><strong>Prompt :</strong> signature de méthode + classe + package + instructions conventions BRA. ~150–250 tokens.</p>
+        </div>
+        <div class="callout info" style="padding: 10px 14px;">
+          <div class="callout-icon">✍️</div>
+          <p><strong>Completion :</strong> test Java complet, compilable, avec toutes les annotations et patterns BRA. ~300–600 tokens.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CATÉGORIES DE PAIRES -->
+  <section>
+    <div class="section-label">Catégories de paires (100 au total)</div>
+    <div class="card" style="padding: 0; overflow: hidden;">
+      <table>
+        <thead>
+          <tr>
+            <th>Catégorie</th>
+            <th>Description</th>
+            <th>Volume</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Opérations simples</strong></td>
+            <td>Méthode CRUD sur une entité, pas de transaction complexe</td>
+            <td>25</td>
+          </tr>
+          <tr>
+            <td><strong>Transactions financières</strong></td>
+            <td>Virement, débit, crédit — avec <code>withTransaction</code> et audit obligatoire</td>
+            <td>30</td>
+          </tr>
+          <tr>
+            <td><strong>Validation et erreurs</strong></td>
+            <td>Tests de cas limites : solde insuffisant, compte inexistant, montant nul</td>
+            <td>25</td>
+          </tr>
+          <tr>
+            <td><strong>Services avec mocks multiples</strong></td>
+            <td>Méthodes dépendant de 2+ services mockés via <code>@BraMock</code></td>
+            <td>20</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- RUBRIQUE JUGE -->
+  <section>
+    <div class="section-label">Rubrique de jugement (LLM-as-judge — Claude Haiku)</div>
+    <div class="card" style="padding: 0; overflow: hidden;">
+      <table>
+        <thead>
+          <tr>
+            <th>Critère</th>
+            <th>Vérification</th>
+            <th>Poids</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Annotation <code>@BraTest</code></strong></td>
+            <td>Présente sur la classe de test</td>
+            <td>Bloquant</td>
+          </tr>
+          <tr>
+            <td><strong>Convention de nommage</strong></td>
+            <td>Méthode au format <code>should_X_when_Y</code></td>
+            <td>Bloquant</td>
+          </tr>
+          <tr>
+            <td><strong>BraTestContext</strong></td>
+            <td>Initialisé dans <code>@BeforeEach</code></td>
+            <td>Bloquant</td>
+          </tr>
+          <tr>
+            <td><strong>Audit verify</strong></td>
+            <td><code>BraAudit.verify()</code> présent pour les opérations financières</td>
+            <td>Bloquant</td>
+          </tr>
+          <tr>
+            <td><strong>Cohérence fonctionnelle</strong></td>
+            <td>Le test teste réellement la méthode décrite dans le prompt</td>
+            <td>Important</td>
+          </tr>
+          <tr>
+            <td><strong>Qualité des assertions</strong></td>
+            <td>AssertJ utilisé, assertions précises (pas seulement <code>assertNotNull</code>)</td>
+            <td>Important</td>
+          </tr>
+          <tr>
+            <td><strong>Absence de placeholder</strong></td>
+            <td>Pas de <code>// TODO</code>, <code>pass</code>, corps vide</td>
+            <td>Bloquant</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout warning" style="margin-top: 12px;">
+      <div class="callout-icon">⚠</div>
+      <p>Une paire est rejetée si <strong>un seul critère bloquant</strong> n'est pas satisfait. Les critères "Important" contribuent au score de qualité (1–5) mais ne bloquent pas.</p>
+    </div>
+  </section>
+
+  <!-- MÉTRIQUES CIBLES -->
+  <section>
+    <div class="section-label">Métriques cibles</div>
+    <div class="card-grid-3">
+      <div class="card" style="padding:18px; border-top: 3px solid var(--green);">
+        <h3>Pass rate</h3>
+        <p style="font-size: 24px; font-weight: 700; color: var(--green); margin: 8px 0">≥ 80 %</p>
+        <p>Tests générés compilables et conformes aux conventions BRA sans correction.</p>
+      </div>
+      <div class="card" style="padding:18px; border-top: 3px solid var(--accent);">
+        <h3>Gain de temps estimé</h3>
+        <p style="font-size: 24px; font-weight: 700; color: var(--accent); margin: 8px 0">~2h/jr</p>
+        <p>Par développeur. Sur 18 devs : ~36h/jour récupérées sur du code répétitif.</p>
+      </div>
+      <div class="card" style="padding:18px; border-top: 3px solid var(--purple);">
+        <h3>Baseline</h3>
+        <p style="font-size: 24px; font-weight: 700; color: var(--purple); margin: 8px 0">Nova Pro</p>
+        <p>Pass rate attendu baseline : ~20 % (sans connaissance des conventions BRA).</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- TAGS -->
+  <section>
+    <div class="section-label">Tags</div>
+    <div class="tag-row">
+      <span class="tag">java</span>
+      <span class="tag">junit5</span>
+      <span class="tag">banking</span>
+      <span class="tag">fine-tuning</span>
+      <span class="tag">conventions-internes</span>
+      <span class="tag">souveraineté</span>
+      <span class="tag">qwen2.5-coder</span>
+      <span class="tag">mac-compatible</span>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  Document interne Capgemini — MLOps · Projet fictif à des fins de démonstration
+</footer>
+
+</body>
+</html>

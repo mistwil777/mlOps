@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Comprendre le dashboard KPIs — Guide MLOps</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #0F172A; --ink-2: #334155; --muted: #64748B;
+    --accent: #0284C7;
+    --green: #059669; --orange: #D97706; --red: #DC2626;
+    --surface: #F8FAFC; --surface-2: #F1F5F9; --border: #E2E8F0;
+    --radius: 8px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Inter', sans-serif; background: #fff; color: var(--ink); line-height: 1.8; font-size: 15px; }
+  .rainbow { height: 4px; background: linear-gradient(90deg, #2DD4BF, #22D3EE, #38BDF8 40%, #A855F7 62%, #EC4899 80%, #F59E0B); }
+
+  header { padding: 48px 56px 32px; border-bottom: 1px solid var(--border); }
+  header h1 { font-size: 28px; font-weight: 700; color: var(--ink); }
+  header .sub { margin-top: 10px; color: var(--muted); font-size: 14px; }
+
+  main { max-width: 760px; margin: 0 auto; padding: 56px 56px 120px; }
+
+  /* ── Chapitres ── */
+  .chapter { margin-bottom: 80px; }
+  .chapter-number { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: var(--accent); margin-bottom: 8px; }
+  .chapter h2 { font-size: 22px; font-weight: 700; color: var(--ink); margin-bottom: 6px; }
+  .chapter .intro { font-size: 14px; color: var(--muted); border-bottom: 1px solid var(--border); padding-bottom: 18px; margin-bottom: 28px; }
+
+  /* ── Texte ── */
+  p { color: var(--ink-2); font-size: 15px; margin: 16px 0; line-height: 1.85; }
+  p strong { color: var(--ink); }
+
+  /* ── Blocs callout ── */
+  .callout { border-radius: var(--radius); padding: 20px 24px; margin: 28px 0; }
+  .callout .callout-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 10px; }
+  .callout p { margin: 8px 0; font-size: 14px; }
+  .callout p:first-of-type { margin-top: 0; }
+  .callout p:last-of-type { margin-bottom: 0; }
+
+  .callout-def   { background: #EFF6FF; border-left: 4px solid #3B82F6; }
+  .callout-def   .callout-title { color: #1D4ED8; }
+
+  .callout-story { background: #F0F9FF; border-left: 4px solid var(--accent); }
+  .callout-story .callout-title { color: var(--accent); }
+
+  .callout-rule  { background: #F0FDF4; border-left: 4px solid var(--green); }
+  .callout-rule  .callout-title { color: var(--green); }
+
+  .callout-warn  { background: #FFFBEB; border-left: 4px solid var(--orange); }
+  .callout-warn  .callout-title { color: var(--orange); }
+
+  .callout-key   { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); }
+  .callout-key   .callout-title { color: var(--muted); }
+
+  /* ── Visuels ── */
+  .visual { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 28px; margin: 28px 0; }
+  .visual svg { display: block; width: 100%; }
+  .visual .caption { margin-top: 14px; font-size: 13px; color: var(--muted); line-height: 1.6; }
+
+  /* ── Comparaison côte à côte ── */
+  .side-by-side { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 24px 0; }
+  .side-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; font-size: 14px; line-height: 1.7; color: var(--ink-2); }
+  .side-card .side-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 10px; }
+  .side-card.bad  { background: #FFF5F5; border-color: #FCA5A5; }
+  .side-card.bad  .side-title { color: var(--red); }
+  .side-card.good { background: #F0FDF4; border-color: #86EFAC; }
+  .side-card.good .side-title { color: var(--green); }
+
+  /* ── Table ── */
+  table { width: 100%; border-collapse: collapse; font-size: 14px; margin: 24px 0; }
+  th { background: var(--surface-2); padding: 10px 14px; text-align: left; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); border-bottom: 2px solid var(--border); }
+  td { padding: 10px 14px; border-bottom: 1px solid var(--border); color: var(--ink-2); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  td:first-child { font-weight: 600; color: var(--ink); }
+
+  /* ── Checklist finale ── */
+  .checklist { list-style: none; padding: 0; margin: 0; }
+  .checklist li { display: flex; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--border); align-items: flex-start; }
+  .checklist li:last-child { border-bottom: none; }
+  .checklist .n { min-width: 30px; height: 30px; background: var(--accent); color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; flex-shrink: 0; }
+  .checklist .body { color: var(--ink-2); font-size: 14px; line-height: 1.7; }
+  .checklist .body strong { display: block; color: var(--ink); font-size: 15px; margin-bottom: 4px; }
+
+  code { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; background: var(--surface-2); padding: 2px 6px; border-radius: 4px; color: var(--ink); }
+
+  hr { border: none; border-top: 1px solid var(--border); margin: 48px 0; }
+</style>
+</head>
+<body>
+<div class="rainbow"></div>
+<header>
+  <h1>Comprendre le dashboard KPIs</h1>
+  <div class="sub">MLOps Factory · Capgemini — Un guide narratif pour lire les résultats d'évaluation et décider quoi faire</div>
+</header>
+<main>
+
+<!-- ════════════════════════════════════════════ -->
+<div class="chapter">
+  <div class="chapter-number">Avant de commencer</div>
+  <h2>La situation de départ</h2>
+  <div class="intro">Ce qui s'est passé avant que tu ouvres ce dashboard</div>
+
+  <p>Tu as entraîné un modèle sur un projet. Mettons le projet BRA : générer des tests unitaires Java selon les conventions internes de la Banque Régionale Atlantis. Pour faire ça, tu lui as montré des centaines d'exemples — une classe Java en entrée, le test BRA attendu en sortie — et il a appris à reproduire ce schéma.</p>
+
+  <p>Mais comment savoir s'il a vraiment appris ? Est-ce qu'il génère des tests corrects, ou est-ce qu'il récite par cœur les exemples qu'il a vus ? Et surtout : est-ce qu'il est suffisamment bon pour être utilisé en production chez un client ?</p>
+
+  <p>C'est exactement à ça que sert l'évaluation. On prépare un ensemble d'exemples que le modèle <strong>n'a jamais vus pendant l'entraînement</strong> — c'est ce qu'on appelle le <strong>test set</strong>. On lui soumet chacun. On regarde sa réponse. On vérifie si c'est correct. Et on comptabilise les résultats.</p>
+
+  <p>Le dashboard que tu regardes, c'est la présentation visuelle de ce comptage. Mais les chiffres qu'il affiche ne se lisent pas comme on lit un bulletin de notes scolaire. Ils ont chacun une signification précise, et savoir quoi en faire demande de comprendre ce qu'ils mesurent réellement.</p>
+
+  <div class="visual">
+    <svg viewBox="0 0 700 120" xmlns="http://www.w3.org/2000/svg">
+      <defs><marker id="a" markerWidth="8" markerHeight="7" refX="7" refY="3.5" orient="auto"><path d="M0,0 L8,3.5 L0,7 Z" fill="#94A3B8"/></marker></defs>
+      <!-- Données entraînement -->
+      <rect x="10" y="15" width="155" height="90" rx="8" fill="#EFF6FF" stroke="#BFDBFE" stroke-width="1.5"/>
+      <text x="87" y="38" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" font-weight="700" fill="#1D4ED8">DONNÉES D'ENTRAÎNEMENT</text>
+      <rect x="24" y="48" width="127" height="11" rx="3" fill="#BFDBFE"/>
+      <rect x="24" y="64" width="100" height="11" rx="3" fill="#BFDBFE"/>
+      <rect x="24" y="80" width="115" height="11" rx="3" fill="#BFDBFE"/>
+      <text x="87" y="115" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#64748B">vus pendant l'entraînement</text>
+      <!-- flèche -->
+      <line x1="165" y1="60" x2="205" y2="60" stroke="#94A3B8" stroke-width="1.5" marker-end="url(#a)"/>
+      <!-- Modèle -->
+      <rect x="205" y="22" width="120" height="76" rx="8" fill="#F0FDF4" stroke="#86EFAC" stroke-width="1.5"/>
+      <text x="265" y="56" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" font-weight="700" fill="#166534">MODÈLE</text>
+      <text x="265" y="72" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#4ADE80">fine-tuné BRA</text>
+      <!-- flèche -->
+      <line x1="325" y1="60" x2="365" y2="60" stroke="#94A3B8" stroke-width="1.5" marker-end="url(#a)"/>
+      <!-- Test set -->
+      <rect x="365" y="15" width="155" height="90" rx="8" fill="#FFF7ED" stroke="#FED7AA" stroke-width="1.5"/>
+      <text x="442" y="38" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" font-weight="700" fill="#C2410C">TEST SET</text>
+      <rect x="379" y="48" width="127" height="11" rx="3" fill="#FED7AA"/>
+      <rect x="379" y="64" width="100" height="11" rx="3" fill="#FED7AA"/>
+      <rect x="379" y="80" width="115" height="11" rx="3" fill="#FED7AA"/>
+      <text x="442" y="115" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#C2410C">jamais vus — c'est l'examen</text>
+      <!-- flèche -->
+      <line x1="520" y1="60" x2="558" y2="60" stroke="#94A3B8" stroke-width="1.5" marker-end="url(#a)"/>
+      <!-- Score -->
+      <rect x="558" y="25" width="130" height="70" rx="8" fill="#0F172A"/>
+      <text x="623" y="58" text-anchor="middle" font-family="Inter,sans-serif" font-size="24" font-weight="700" fill="#38BDF8">68%</text>
+      <text x="623" y="76" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#94A3B8">pass rate</text>
+    </svg>
+    <div class="caption">Le modèle est évalué sur des exemples qu'il n'a jamais vus. C'est le même principe qu'un examen scolaire : si les questions sont celles du cours, tu ne mesures pas la compréhension — tu mesures la mémorisation.</div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════ -->
+<div class="chapter">
+  <div class="chapter-number">Chapitre 1</div>
+  <h2>Le pass rate : ce chiffre ne suffit pas seul</h2>
+  <div class="intro">Pourquoi 59.3% ne veut pas dire grand-chose sans la fourchette à côté</div>
+
+  <p>Le premier chiffre que tu vois sur le dashboard, c'est le pass rate. Dans notre exemple, il affiche <strong>59.3%</strong>. Ça veut dire que sur tous les exemples du test set, le modèle a produit une réponse correcte dans 59.3% des cas.</p>
+
+  <p>La réaction naturelle est de comparer ce chiffre au seuil du projet. Pour BRA, le seuil est fixé à 80%. 59.3% est clairement en dessous — le modèle n'est pas déployable. Jusque là, c'est simple.</p>
+
+  <p>Mais maintenant imagine une situation plus subtile : le modèle obtient 79.2%. Le seuil est 80%. Est-ce qu'il passe ou pas ? La différence est de moins d'un point. Est-ce que cette différence est réelle, ou est-ce que c'est une fluctuation due aux exemples qu'on a choisis dans le test set ?</p>
+
+  <p>C'est là que le chiffre seul ne suffit plus. Et c'est pour ça que le dashboard affiche toujours deux choses à côté du pass rate : la valeur mesurée, et une fourchette entre crochets.</p>
+
+  <div class="visual">
+    <svg viewBox="0 0 640 70" xmlns="http://www.w3.org/2000/svg">
+      <defs><marker id="b" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#DC2626"/></marker></defs>
+      <!-- barre fond -->
+      <rect x="20" y="28" width="400" height="18" rx="9" fill="#E2E8F0"/>
+      <!-- barre orange 59.3% -->
+      <rect x="20" y="28" width="237" height="18" rx="9" fill="#D97706"/>
+      <!-- IC bas 48% -->
+      <line x1="212" y1="20" x2="212" y2="52" stroke="#475569" stroke-width="1.5" stroke-dasharray="3,3"/>
+      <!-- IC haut 69% -->
+      <line x1="296" y1="20" x2="296" y2="52" stroke="#475569" stroke-width="1.5" stroke-dasharray="3,3"/>
+      <!-- accolade IC -->
+      <path d="M212,56 Q254,62 296,56" stroke="#475569" stroke-width="1.5" fill="none"/>
+      <!-- seuil 80% -->
+      <line x1="340" y1="22" x2="340" y2="52" stroke="#DC2626" stroke-width="2" marker-end="url(#b)"/>
+      <!-- labels -->
+      <text x="212" y="16" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#475569">48%</text>
+      <text x="296" y="16" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#475569">69%</text>
+      <text x="350" y="16" text-anchor="start"  font-family="Inter,sans-serif" font-size="10" fill="#DC2626">seuil 80%</text>
+      <text x="254" y="70" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#475569">fourchette d'incertitude</text>
+      <!-- valeur -->
+      <text x="450" y="36" font-family="Inter,sans-serif" font-size="20" font-weight="700" fill="#D97706">59.3%</text>
+      <text x="553" y="36" font-family="Inter,sans-serif" font-size="13" fill="#64748B">[48–69%]</text>
+    </svg>
+    <div class="caption">La barre orange montre le pass rate mesuré. Les tirets encadrent la fourchette d'incertitude. La ligne rouge est le seuil de déploiement. Ici le modèle est clairement en dessous, mais l'incertitude est aussi très large — on ne sait même pas précisément où se trouve la vraie valeur.</div>
+  </div>
+
+  <p>La fourchette [48–69%] s'appelle l'<strong>intervalle de confiance à 95%</strong>. Pour comprendre ce que signifie ce "95%", voici l'expérience de pensée qui l'explique le mieux.</p>
+
+  <p>Imagine que le modèle a une vraie performance — le pourcentage qu'on obtiendrait si on le testait sur <em>tous</em> ses cas d'usage possibles, sans exception. Cette vraie valeur existe quelque part, mais on ne peut pas la mesurer directement. Alors on tire un échantillon de 100 exemples et on mesure dessus. C'est une estimation.</p>
+
+  <p>Maintenant, imagine qu'on répète cette expérience 20 fois : à chaque fois, on tire 100 exemples différents, on mesure, et on calcule un intervalle de confiance. On obtient 20 fourchettes légèrement différentes. La propriété de Wilson : parmi ces 20 fourchettes, environ <strong>19 contiennent la vraie performance</strong>. La 20ème passe à côté — elle a eu la malchance de tomber sur un échantillon atypique.</p>
+
+  <div class="visual">
+    <svg viewBox="0 0 700 380" xmlns="http://www.w3.org/2000/svg">
+      <text x="350" y="22" text-anchor="middle" font-family="Inter,sans-serif" font-size="13" font-weight="700" fill="#0F172A">20 évaluations hypothétiques du même modèle — vraie performance = 62%</text>
+      <!-- axes -->
+      <line x1="50" y1="340" x2="650" y2="340" stroke="#CBD5E1" stroke-width="1"/>
+      <text x="50"  y="355" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#94A3B8">0%</text>
+      <text x="170" y="355" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#94A3B8">20%</text>
+      <text x="290" y="355" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#94A3B8">40%</text>
+      <text x="410" y="355" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#94A3B8">60%</text>
+      <text x="530" y="355" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#94A3B8">80%</text>
+      <text x="650" y="355" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#94A3B8">100%</text>
+      <!-- vraie valeur = 62% → x = 50 + 0.62×600 = 422 -->
+      <line x1="422" y1="30" x2="422" y2="340" stroke="#0F172A" stroke-width="2" stroke-dasharray="5,4"/>
+      <text x="422" y="28" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" font-weight="700" fill="#0F172A">vraie valeur (inconnue)</text>
+      <!-- 20 intervals: y = 40 + i*14, blue = contains 422, red = misses -->
+      <!-- row 0: [338,452] → contient -->
+      <line x1="338" y1="44" x2="452" y2="44" stroke="#38BDF8" stroke-width="5" stroke-linecap="round"/>
+      <!-- row 1: [380,494] → contient -->
+      <line x1="380" y1="58" x2="494" y2="58" stroke="#38BDF8" stroke-width="5" stroke-linecap="round"/>
+      <!-- row 2: [356,470] → contient -->
+      <line x1="356" y1="72" x2="470" y2="72" stroke="#38BDF8" stroke-width="5" stroke-linecap="round"/>
+      <!-- row 3: [398,512] → contient -->
+      <line x1="398" y1="86" x2="512" y2="86" stroke="#38BDF8" stroke-width="5" stroke-linecap="round"/>
+      <!-- row 4: [320,440] → contient -->
+      <line x1="320" y1="100" x2="440" y2="100" stroke="#38BDF8" stroke-width="5" stroke-linecap="round"/>
+      <!-- row 5: [422,536] → contient (422 = vraie valeur, borne gauche exacte) -->
+      <line x1="422" y1="114" x2="536" y2="114" stroke="#38BDF8" stroke-width="5" stroke-linecap="round"/>
+      <!-- row 6: [350,464] → contient -->
+      <line x1="350" y1="128" x2="464" y2="128" stroke="#38BDF8" stroke-width="5" stroke-linecap="round"/>
+      <!-- row 7: [374,488] → contient -->
+      <line x1="374" y1="142" x2="488" y2="142" stroke="#38BDF8" stroke-width="5" stroke-linecap="round"/>
+      <!-- row 8: [332,452] → contient -->
+      <line x1="332" y1="156" x2="452" y2="156" stroke="#38BDF8" stroke-width="5" stroke-linecap="round"/>
+      <!-- row 9: [386,500] → contient -->
+      <line x1="386" y1="170" x2="500" y2="170" stroke="#38BDF8" stroke-width="5" stroke-linecap="round"/>
+      <!-- row 10: [362,476] → contient -->
+      <line x1="362" y1="184" x2="476" y2="184" stroke="#38BDF8" stroke-width="5" stroke-linecap="round"/>
+      <!-- row 11: [410,524] → contient -->
+      <line x1="410" y1="198" x2="524" y2="198" stroke="#38BDF8" stroke-width="5" stroke-linecap="round"/>
+      <!-- row 12: [344,458] → contient -->
+      <line x1="344" y1="212" x2="458" y2="212" stroke="#38BDF8" stroke-width="5" stroke-linecap="round"/>
+      <!-- row 13: [368,482] → contient -->
+      <line x1="368" y1="226" x2="482" y2="226" stroke="#38BDF8" stroke-width="5" stroke-linecap="round"/>
+      <!-- row 14: [392,506] → contient -->
+      <line x1="392" y1="240" x2="506" y2="240" stroke="#38BDF8" stroke-width="5" stroke-linecap="round"/>
+      <!-- row 15: [326,440] → contient -->
+      <line x1="326" y1="254" x2="440" y2="254" stroke="#38BDF8" stroke-width="5" stroke-linecap="round"/>
+      <!-- row 16: [434,542] → MANQUE (borne basse 434 > vraie valeur 422) -->
+      <line x1="434" y1="268" x2="542" y2="268" stroke="#DC2626" stroke-width="5" stroke-linecap="round"/>
+      <text x="552" y="272" font-family="Inter,sans-serif" font-size="11" font-weight="700" fill="#DC2626">← passe à côté</text>
+      <!-- row 17: [356,470] → contient -->
+      <line x1="356" y1="282" x2="470" y2="282" stroke="#38BDF8" stroke-width="5" stroke-linecap="round"/>
+      <!-- row 18: [338,452] → contient -->
+      <line x1="338" y1="296" x2="452" y2="296" stroke="#38BDF8" stroke-width="5" stroke-linecap="round"/>
+      <!-- row 19: [374,488] → contient -->
+      <line x1="374" y1="310" x2="488" y2="310" stroke="#38BDF8" stroke-width="5" stroke-linecap="round"/>
+      <!-- légende -->
+      <rect x="50" y="325" width="12" height="5" rx="2" fill="#38BDF8"/>
+      <text x="67" y="331" font-family="Inter,sans-serif" font-size="11" fill="#334155">19 intervalles capturent la vraie valeur</text>
+      <rect x="250" y="325" width="12" height="5" rx="2" fill="#DC2626"/>
+      <text x="267" y="331" font-family="Inter,sans-serif" font-size="11" fill="#334155">1 intervalle passe à côté</text>
+      <text x="500" y="331" font-family="Inter,sans-serif" font-size="12" font-weight="700" fill="#0F172A">= 95%</text>
+    </svg>
+    <div class="caption">Chaque ligne représente un intervalle de confiance calculé sur un échantillon différent de 100 exemples. 19 sur 20 capturent la vraie valeur du modèle (en bleu). 1 seul passe à côté, parce que cet échantillon-là était atypique (en rouge). C'est exactement ça, "confiance à 95%".</div>
+  </div>
+
+  <p>En pratique, on ne tire qu'un seul échantillon — celui qu'on a. On ne sait jamais si on est dans les 19 ou dans le 1. Mais on sait que la méthode est correcte 19 fois sur 20. C'est une garantie sur la <em>procédure</em>, pas sur cet intervalle particulier.</p>
+
+  <p>Pourquoi la fourchette est-elle parfois très large ? Parce que la précision de la mesure dépend directement du nombre d'exemples dans le test set. C'est le même principe que pour les mesures physiques.</p>
+
+  <div class="callout callout-key">
+    <div class="callout-title">L'analogie du thermomètre</div>
+    <p>Tu veux savoir la température exacte d'une pièce. Tu la prends avec un thermomètre imprécis qui fluctue légèrement à chaque mesure. Si tu la prends une seule fois, tu obtiens peut-être 20°C — mais tu n'es pas sûr. Si tu la prends 10 fois et que tu fais la moyenne, tu as plus confiance. Si tu la prends 500 fois, la moyenne converge vers la vraie température et ta fourchette d'incertitude devient très étroite.</p>
+    <p>C'est exactement ça : chaque exemple du test set est une "mesure". Avec 30 exemples, la fourchette peut s'étendre sur 30 points de pourcentage. Avec 500 exemples, elle tombe à moins de 10 points. Plus tu as d'exemples, plus tu mesures précisément.</p>
+  </div>
+
+  <div class="visual">
+    <svg viewBox="0 0 660 170" xmlns="http://www.w3.org/2000/svg">
+      <text x="330" y="22" text-anchor="middle" font-family="Inter,sans-serif" font-size="13" font-weight="700" fill="#0F172A">Même pass rate mesuré (68%) — précision très différente selon la taille du test set</text>
+      <!-- n=30 -->
+      <text x="110" y="54" text-anchor="end" font-family="Inter,sans-serif" font-size="12" fill="#334155">30 exemples</text>
+      <rect x="120" y="43" width="380" height="16" rx="8" fill="#E2E8F0"/>
+      <rect x="120" y="43" width="258" height="16" rx="8" fill="#38BDF8" opacity=".35"/>
+      <rect x="190" y="39" width="130" height="24" rx="4" fill="none" stroke="#DC2626" stroke-width="2"/>
+      <text x="510" y="55" font-family="Inter,sans-serif" font-size="12" font-weight="600" fill="#DC2626">[50%–82%] — 32 pts d'incertitude</text>
+      <!-- n=100 -->
+      <text x="110" y="102" text-anchor="end" font-family="Inter,sans-serif" font-size="12" fill="#334155">100 exemples</text>
+      <rect x="120" y="91" width="380" height="16" rx="8" fill="#E2E8F0"/>
+      <rect x="120" y="91" width="258" height="16" rx="8" fill="#38BDF8" opacity=".35"/>
+      <rect x="234" y="87" width="62" height="24" rx="4" fill="none" stroke="#D97706" stroke-width="2"/>
+      <text x="510" y="103" font-family="Inter,sans-serif" font-size="12" font-weight="600" fill="#D97706">[61%–75%] — 14 pts d'incertitude</text>
+      <!-- n=500 -->
+      <text x="110" y="150" text-anchor="end" font-family="Inter,sans-serif" font-size="12" fill="#334155">500 exemples</text>
+      <rect x="120" y="139" width="380" height="16" rx="8" fill="#E2E8F0"/>
+      <rect x="120" y="139" width="258" height="16" rx="8" fill="#38BDF8" opacity=".35"/>
+      <rect x="247" y="135" width="36" height="24" rx="4" fill="none" stroke="#059669" stroke-width="2"/>
+      <text x="510" y="151" font-family="Inter,sans-serif" font-size="12" font-weight="600" fill="#059669">[64%–72%] — 8 pts d'incertitude ✓</text>
+    </svg>
+    <div class="caption">Avec 30 exemples, le vrai pass rate pourrait être n'importe où entre 50% et 82% — impossible de décider. Avec 500 exemples, l'incertitude est divisée par quatre. Le chiffre mesuré est le même (68%), mais la confiance qu'on peut lui accorder est radicalement différente.</div>
+  </div>
+
+  <p>C'est pour ça que, avant de regarder le pass rate lui-même, il faut d'abord regarder le nombre d'exemples dans le test set. Un test set de moins de 200 exemples produit une fourchette si large qu'elle rend la décision de déployer ou non pratiquement impossible à justifier.</p>
+
+  <div class="callout callout-rule">
+    <div class="callout-title">La règle de décision</div>
+    <p>Ce n'est pas le pass rate central qui compte pour décider de déployer — c'est la <strong>borne basse de l'intervalle de confiance</strong>.</p>
+    <p>Exemple : seuil du projet = 80%. Le modèle obtient 82% [78%–86%]. La borne basse est 78%, en dessous du seuil. On ne peut pas garantir avec confiance que le modèle dépasse 80% — il faut plus d'exemples dans le test set avant de conclure.</p>
+    <p>Autre exemple : 82% [81%–83%] avec un grand test set. La borne basse est 81%, au-dessus du seuil. Là, on peut déployer avec confiance.</p>
+  </div>
+
+  <div class="callout callout-warn">
+    <div class="callout-title">Wilson — pourquoi ça existe et ce que ça change concrètement</div>
+    <p>Il existe une formule naïve pour calculer cet intervalle — celle qu'on apprend en premier cours de stats. Elle fait : <em>pass rate ± 1.96 × √(p × (1−p) / n)</em>. Appliquons-la à un cas extrême : 1 succès sur 10 tests (10% de pass rate, n=10).</p>
+    <p>Formule naïve : 0.10 ± 1.96 × √(0.10 × 0.90 / 10) = 0.10 ± 0.186 → intervalle = <strong>[−8.6%,  28.6%]</strong>. La borne basse est négative. Un pourcentage négatif n'a aucun sens — on ne peut pas avoir −8.6% de réussite.</p>
+    <p>La formule de Wilson corrige ce problème. Appliquée au même cas (1 succès / 10), elle donne <strong>[1.8%, 40.4%]</strong> — toujours très large, mais au moins dans des valeurs possibles. Wilson reste honnête sur l'incertitude sans produire d'absurdités mathématiques.</p>
+    <p>La formule exacte de Wilson pour la borne basse est : <em>(p + z²/2n − z√(p(1−p)/n + z²/4n²)) / (1 + z²/n)</em>, avec z = 1.96 pour 95% de confiance, p = pass rate mesuré, n = nombre d'exemples. La borne haute est symétrique. Tu n'as pas besoin de la calculer à la main — le code le fait — mais voir sa structure montre qu'elle prend en compte le rapport z²/n, ce qui corrige le comportement aux extrêmes.</p>
+  </div>
+
+  <p>Deux paramètres jouent sur la largeur de la fourchette, et ils jouent de façon opposée. Le premier est le nombre d'exemples : plus on en a, plus la fourchette se rétrécit. C'est le paramètre qu'on contrôle en construisant le test set.</p>
+
+  <p>Le second est le niveau de confiance — le "95%" lui-même. Si on voulait être sûr à 99% de capturer la vraie valeur (au lieu de 95%), il faudrait lancer un filet plus large. C'est logique : plus on veut de garantie, plus on doit couvrir de terrain. En pratique, dans ce dashboard on utilise toujours 95% — c'est la convention standard en machine learning. Mais voir l'effet de ce paramètre aide à comprendre ce que "95%" signifie vraiment.</p>
+
+  <div class="visual">
+    <svg viewBox="0 0 660 220" xmlns="http://www.w3.org/2000/svg">
+      <text x="330" y="20" text-anchor="middle" font-family="Inter,sans-serif" font-size="13" font-weight="700" fill="#0F172A">Effet 1 — plus d'exemples = intervalle plus étroit (niveau fixé à 95%)</text>
+      <text x="106" y="48" text-anchor="end" font-family="Inter,sans-serif" font-size="12" fill="#334155">n = 30</text>
+      <rect x="116" y="37" width="400" height="15" rx="7" fill="#E2E8F0"/>
+      <rect x="116" y="37" width="240" height="15" rx="7" fill="#38BDF8" opacity=".3"/>
+      <rect x="148" y="33" width="180" height="23" rx="4" fill="none" stroke="#DC2626" stroke-width="2"/>
+      <text x="525" y="49" font-family="Inter,sans-serif" font-size="12" fill="#DC2626" font-weight="600">[42% – 76%]  34 pts</text>
+      <text x="106" y="88" text-anchor="end" font-family="Inter,sans-serif" font-size="12" fill="#334155">n = 100</text>
+      <rect x="116" y="77" width="400" height="15" rx="7" fill="#E2E8F0"/>
+      <rect x="116" y="77" width="240" height="15" rx="7" fill="#38BDF8" opacity=".3"/>
+      <rect x="196" y="73" width="80" height="23" rx="4" fill="none" stroke="#D97706" stroke-width="2"/>
+      <text x="525" y="89" font-family="Inter,sans-serif" font-size="12" fill="#D97706" font-weight="600">[50% – 70%]  20 pts</text>
+      <text x="106" y="128" text-anchor="end" font-family="Inter,sans-serif" font-size="12" fill="#334155">n = 320</text>
+      <rect x="116" y="117" width="400" height="15" rx="7" fill="#E2E8F0"/>
+      <rect x="116" y="117" width="240" height="15" rx="7" fill="#38BDF8" opacity=".3"/>
+      <rect x="216" y="113" width="40" height="23" rx="4" fill="none" stroke="#059669" stroke-width="2"/>
+      <text x="525" y="129" font-family="Inter,sans-serif" font-size="12" fill="#059669" font-weight="600">[55% – 65%]  10 pts ✓</text>
+
+      <text x="330" y="160" text-anchor="middle" font-family="Inter,sans-serif" font-size="13" font-weight="700" fill="#0F172A">Effet 2 — vouloir plus de garantie = filet plus large (n fixé à 100)</text>
+      <text x="106" y="188" text-anchor="end" font-family="Inter,sans-serif" font-size="12" fill="#334155">95% confiance</text>
+      <rect x="116" y="177" width="400" height="15" rx="7" fill="#E2E8F0"/>
+      <rect x="116" y="177" width="240" height="15" rx="7" fill="#38BDF8" opacity=".3"/>
+      <rect x="196" y="173" width="80" height="23" rx="4" fill="none" stroke="#0284C7" stroke-width="2"/>
+      <text x="525" y="189" font-family="Inter,sans-serif" font-size="12" fill="#0284C7" font-weight="600">[50% – 70%]  20 pts</text>
+      <text x="106" y="213" text-anchor="end" font-family="Inter,sans-serif" font-size="12" fill="#334155">99% confiance</text>
+      <rect x="116" y="202" width="400" height="15" rx="7" fill="#E2E8F0"/>
+      <rect x="116" y="202" width="240" height="15" rx="7" fill="#38BDF8" opacity=".3"/>
+      <rect x="180" y="198" width="112" height="23" rx="4" fill="none" stroke="#D97706" stroke-width="1.5"/>
+      <text x="525" y="214" font-family="Inter,sans-serif" font-size="12" fill="#D97706" font-weight="600">[47% – 73%]  26 pts</text>
+    </svg>
+    <div class="caption">Effet 1 : à 95% de confiance fixe, plus d'exemples = fourchette plus étroite. Effet 2 : à 100 exemples fixes, passer de 95% à 99% de garantie oblige à élargir la fourchette de 6 points — on est plus sûr de ne pas rater la vraie valeur, mais au prix d'une estimation moins précise. Dans ce dashboard, on utilise toujours 95%.</div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════ -->
+<div class="chapter">
+  <div class="chapter-number">Chapitre 2</div>
+  <h2>ROUGE-L et Exact match : est-ce que la réponse ressemble à ce qu'on attendait ?</h2>
+  <div class="intro">Deux façons différentes de mesurer la proximité entre ce que le modèle produit et la référence attendue</div>
+
+  <p>Le pass rate répond à la question "est-ce que c'est acceptable ?". Mais deux autres métriques répondent à une question différente et complémentaire : "est-ce que c'est proche de la réponse exacte qu'on attendait ?"</p>
+
+  <p>Prenons un exemple concret. Le modèle doit générer un test BRA pour une méthode Java. La réponse de référence (celle qu'un expert humain aurait écrite) est précisément cette classe de test, avec exactement ces mots dans cet ordre. Le modèle produit sa version. Les deux sont "correctes" au sens du pass rate — elles respectent toutes les deux les conventions BRA. Mais l'une est beaucoup plus proche de la référence que l'autre.</p>
+
+  <p>C'est là qu'interviennent ROUGE-L et Exact match.</p>
+
+  <div class="callout callout-def">
+    <div class="callout-title">ROUGE-L — mesure de similarité de texte</div>
+    <p>ROUGE-L cherche la plus longue séquence de mots communs entre la sortie du modèle et la référence, <strong>dans le même ordre</strong>. Plus cette séquence est longue par rapport à la longueur totale des deux textes, plus le score est élevé.</p>
+    <p>Score de 0 : rien en commun. Score de 1 : identique mot pour mot. En pratique, un bon modèle de génération de code obtient entre 0.60 et 0.85 — il reproduit la structure générale mais avec parfois des variantes mineures.</p>
+    <p>Limitation importante : ROUGE-L compare des mots, pas du sens. Un texte qui utilise les bons mots dans le mauvais contexte peut avoir un score élevé. À l'inverse, une réponse correcte formulée différemment de la référence peut avoir un score faible. C'est une mesure de similarité lexicale, pas de qualité.</p>
+  </div>
+
+  <div class="visual">
+    <svg viewBox="0 0 700 180" xmlns="http://www.w3.org/2000/svg">
+      <text x="350" y="22" text-anchor="middle" font-family="Inter,sans-serif" font-size="13" font-weight="700" fill="#0F172A">Comment ROUGE-L compare deux textes — exemple BRA</text>
+      <!-- Référence -->
+      <text x="20" y="50" font-family="Inter,sans-serif" font-size="11" font-weight="700" fill="#64748B">RÉFÉRENCE ATTENDUE</text>
+      <rect x="20"  y="58" width="58"  height="24" rx="4" fill="#BFDBFE"/><text x="49"  y="75" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#1D4ED8">@BraTest</text>
+      <rect x="86"  y="58" width="42"  height="24" rx="4" fill="#BFDBFE"/><text x="107" y="75" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#1D4ED8">class</text>
+      <rect x="136" y="58" width="110" height="24" rx="4" fill="#BFDBFE"/><text x="191" y="75" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#1D4ED8">AccountTest</text>
+      <rect x="254" y="58" width="22"  height="24" rx="4" fill="#BFDBFE"/><text x="265" y="75" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#1D4ED8">{</text>
+      <!-- Sortie modèle -->
+      <text x="20" y="118" font-family="Inter,sans-serif" font-size="11" font-weight="700" fill="#64748B">SORTIE DU MODÈLE</text>
+      <rect x="20"  y="126" width="58"  height="24" rx="4" fill="#BBF7D0"/><text x="49"  y="143" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#166534">@BraTest</text>
+      <rect x="86"  y="126" width="56"  height="24" rx="4" fill="#FEE2E2"/><text x="114" y="143" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#991B1B">public</text>
+      <rect x="150" y="126" width="42"  height="24" rx="4" fill="#BBF7D0"/><text x="171" y="143" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#166534">class</text>
+      <rect x="200" y="126" width="110" height="24" rx="4" fill="#BBF7D0"/><text x="255" y="143" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#166534">AccountTest</text>
+      <rect x="318" y="126" width="22"  height="24" rx="4" fill="#BBF7D0"/><text x="329" y="143" text-anchor="middle" font-family="Inter,sans-serif" font-size="11" fill="#166534">{</text>
+      <!-- lignes de correspondance -->
+      <line x1="49"  y1="82" x2="49"  y2="126" stroke="#059669" stroke-width="1.2" stroke-dasharray="3,2" opacity=".7"/>
+      <line x1="107" y1="82" x2="171" y2="126" stroke="#059669" stroke-width="1.2" stroke-dasharray="3,2" opacity=".7"/>
+      <line x1="191" y1="82" x2="255" y2="126" stroke="#059669" stroke-width="1.2" stroke-dasharray="3,2" opacity=".7"/>
+      <line x1="265" y1="82" x2="329" y2="126" stroke="#059669" stroke-width="1.2" stroke-dasharray="3,2" opacity=".7"/>
+      <!-- score -->
+      <text x="440" y="90"  font-family="Inter,sans-serif" font-size="12" fill="#334155">4 mots en commun sur 5</text>
+      <text x="440" y="112" font-family="Inter,sans-serif" font-size="26" font-weight="700" fill="#059669">0.80</text>
+      <text x="440" y="132" font-family="Inter,sans-serif" font-size="12" fill="#64748B">"public" en trop — léger écart</text>
+      <!-- légende couleurs -->
+      <rect x="440" y="148" width="12" height="12" rx="2" fill="#BBF7D0" stroke="#86EFAC" stroke-width="1"/>
+      <text x="456" y="159" font-family="Inter,sans-serif" font-size="11" fill="#334155">mot commun</text>
+      <rect x="540" y="148" width="12" height="12" rx="2" fill="#FEE2E2" stroke="#FCA5A5" stroke-width="1"/>
+      <text x="556" y="159" font-family="Inter,sans-serif" font-size="11" fill="#334155">mot en trop</text>
+    </svg>
+    <div class="caption">Le modèle a ajouté "public" que la référence n'a pas. Les 4 autres mots correspondent dans le bon ordre. Score ROUGE-L = 0.80 — bonne similarité, mais pas parfaite.</div>
+  </div>
+
+  <div class="callout callout-def">
+    <div class="callout-title">Exact match — correspondance stricte caractère par caractère</div>
+    <p>L'Exact match est beaucoup plus exigeant que ROUGE-L. Il ne compte une réponse comme correcte que si elle est <strong>identique à la référence, caractère par caractère</strong>. Pas de variante acceptée, pas d'espace en trop, pas de casse différente.</p>
+    <p>Pour du texte libre, ce score sera presque toujours proche de 0% — même si la réponse du modèle est excellente, elle sera formulée différemment de la référence. Mais pour les tâches où la sortie doit respecter un format précis — code Java, JSON, annotations spécifiques — l'Exact match devient le signal le plus fiable : soit c'est exactement ça, soit non.</p>
+  </div>
+
+  <p>En pratique, voici comment choisir quelle métrique regarder selon le type de tâche :</p>
+
+  <div class="side-by-side">
+    <div class="side-card bad">
+      <div class="side-title">Piège — ROUGE-L sur du code structuré</div>
+      Tâche : générer un objet JSON.<br><br>
+      Référence : <code>{"status":"ok","code":200}</code><br>
+      Sortie du modèle : <code>{"status":"ok","code":201}</code><br><br>
+      ROUGE-L = 0.87 — presque identique lexicalement.<br>
+      Pourtant, le code HTTP 201 est faux. L'erreur est fonctionnellement critique mais ROUGE-L ne la voit pas.<br><br>
+      <strong>→ Pour du code ou du JSON : regarder Exact match.</strong>
+    </div>
+    <div class="side-card good">
+      <div class="side-title">Bon usage — ROUGE-L sur du texte libre</div>
+      Tâche : résumer un rapport de pentest.<br><br>
+      Référence : "Le système présente 3 vulnérabilités critiques…"<br>
+      Sortie du modèle : "Trois failles critiques ont été identifiées…"<br><br>
+      Exact match = 0% — différent mot pour mot.<br>
+      Mais ROUGE-L = 0.62 — partiellement similaire.<br><br>
+      <strong>→ Pour du texte libre : ROUGE-L donne une indication utile. Exact match ne sert à rien.</strong>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════ -->
+<div class="chapter">
+  <div class="chapter-number">Chapitre 3</div>
+  <h2>Comparer deux versions : est-ce vraiment une amélioration ?</h2>
+  <div class="intro">Comment distinguer une vraie progression d'un résultat dû au hasard</div>
+
+  <p>Chaque fois qu'on réentraîne le modèle — en ajoutant des données, en ajustant les paramètres, en corrigeant des exemples — on crée une nouvelle version. Le dashboard compare toujours la version actuelle à la précédente.</p>
+
+  <p>Disons que la v2 avait un pass rate de 60%, et que la v3 que tu viens d'entraîner affiche 68%. Le chiffre a monté de 8 points. Mais est-ce une vraie amélioration, ou est-ce simplement dû aux exemples particuliers qu'on a tirés dans le test set cette fois ?</p>
+
+  <p>Cette question est sérieuse. Si le test set contient 100 exemples, et qu'on change le tirage, le pass rate peut varier de 5 à 10 points rien qu'à cause du hasard — même si le modèle n'a pas changé. Un gain de 8 points pourrait donc être réel... ou du bruit.</p>
+
+  <div class="callout callout-def">
+    <div class="callout-title">Le test de McNemar — est-ce du bruit ou une vraie différence ?</div>
+    <p>Le test de McNemar est un outil statistique qui analyse les différences entre deux versions en regardant non pas les scores globaux, mais <strong>cas par cas</strong> : quels exemples la v3 réussit que la v2 ratait, et quels exemples la v3 rate que la v2 réussissait.</p>
+    <p>Il produit un chiffre appelé <strong>p-value</strong> (probabilité). Ce chiffre répond à la question : "si les deux versions étaient en réalité identiques en performance, quelle serait la probabilité d'observer un écart aussi grand rien qu'à cause du hasard ?"</p>
+    <p>Convention universelle en statistiques : si cette probabilité est inférieure à 5% (p &lt; 0.05), on dit que la différence est "statistiquement significative" — elle n'est probablement pas due au hasard. Si elle est supérieure à 5%, on ne peut pas conclure.</p>
+  </div>
+
+  <div class="callout callout-key">
+    <div class="callout-title">L'analogie de la pièce — pour que ça soit clair</div>
+    <p>Tu as une pièce. Tu veux savoir si elle est truquée (plus de chances de tomber sur "pile" que sur "face"). Tu la lances 20 fois et obtiens 14 piles. Est-elle truquée ?</p>
+    <p>Peut-être — mais peut-être aussi que c'est juste de la chance. Avec une pièce équilibrée, obtenir 14 piles ou plus sur 20 lancers arrive dans environ 6% des cas. Ce 6%, c'est la p-value. Comme c'est supérieur à 5%, on ne peut pas conclure que la pièce est truquée avec confiance.</p>
+    <p>Si tu relances 100 fois et obtiens 65 piles, la p-value devient infime — pratiquement impossible avec une pièce équilibrée. Là, tu peux conclure. C'est exactement le même raisonnement pour comparer deux versions de modèle : plus tu as d'exemples dans le test set, plus tu peux détecter de vraies différences.</p>
+  </div>
+
+  <div class="callout callout-def">
+    <div class="callout-title">Le regression rate — la progression qui cache une régression</div>
+    <p>Un Δ pass rate positif (la nouvelle version marque plus de points) peut masquer un phénomène dangereux : la v3 peut avoir gagné 15 nouveaux cas... mais en avoir perdu 7 qu'elle gérait correctement avant. Le pass rate global monte, mais le modèle a "désappris" certaines choses.</p>
+    <p>Le <strong>regression rate</strong> mesure exactement ça : le pourcentage d'exemples que la nouvelle version rate et que l'ancienne réussissait. S'il dépasse 5%, c'est un signal d'alarme — avant de déployer la v3, il faut inspecter ces cas régressés et comprendre pourquoi.</p>
+  </div>
+
+  <div class="visual">
+    <svg viewBox="0 0 700 170" xmlns="http://www.w3.org/2000/svg">
+      <text x="350" y="20" text-anchor="middle" font-family="Inter,sans-serif" font-size="13" font-weight="700" fill="#0F172A">V3 gagne 10 points — mais en régresse 2. Le pass rate global monte quand même.</text>
+      <!-- V2 label -->
+      <text x="170" y="44" text-anchor="middle" font-family="Inter,sans-serif" font-size="12" font-weight="700" fill="#64748B">V2 — 60 / 100</text>
+      <!-- grille V2 : 6 rangées × ~5 points = 60 verts, 40 rouges -->
+      <g>
+        <!-- row 1: 5 verts -->
+        <circle cx="50"  cy="60" r="6" fill="#4ADE80"/>
+        <circle cx="68"  cy="60" r="6" fill="#4ADE80"/>
+        <circle cx="86"  cy="60" r="6" fill="#4ADE80"/>
+        <circle cx="104" cy="60" r="6" fill="#4ADE80"/>
+        <circle cx="122" cy="60" r="6" fill="#4ADE80"/>
+        <!-- row 2 -->
+        <circle cx="50"  cy="78" r="6" fill="#4ADE80"/>
+        <circle cx="68"  cy="78" r="6" fill="#4ADE80"/>
+        <circle cx="86"  cy="78" r="6" fill="#4ADE80"/>
+        <circle cx="104" cy="78" r="6" fill="#4ADE80"/>
+        <circle cx="122" cy="78" r="6" fill="#4ADE80"/>
+        <!-- row 3 -->
+        <circle cx="50"  cy="96" r="6" fill="#4ADE80"/>
+        <circle cx="68"  cy="96" r="6" fill="#4ADE80"/>
+        <circle cx="86"  cy="96" r="6" fill="#4ADE80"/>
+        <circle cx="104" cy="96" r="6" fill="#4ADE80"/>
+        <circle cx="122" cy="96" r="6" fill="#4ADE80"/>
+        <!-- row 4: 5 verts -->
+        <circle cx="50"  cy="114" r="6" fill="#4ADE80"/>
+        <circle cx="68"  cy="114" r="6" fill="#4ADE80"/>
+        <circle cx="86"  cy="114" r="6" fill="#4ADE80"/>
+        <circle cx="104" cy="114" r="6" fill="#4ADE80"/>
+        <circle cx="122" cy="114" r="6" fill="#4ADE80"/>
+        <!-- row 5: 5 verts -->
+        <circle cx="50"  cy="132" r="6" fill="#4ADE80"/>
+        <circle cx="68"  cy="132" r="6" fill="#4ADE80"/>
+        <circle cx="86"  cy="132" r="6" fill="#4ADE80"/>
+        <circle cx="104" cy="132" r="6" fill="#4ADE80"/>
+        <circle cx="122" cy="132" r="6" fill="#4ADE80"/>
+        <!-- row 6: 5 verts -->
+        <circle cx="50"  cy="150" r="6" fill="#4ADE80"/>
+        <circle cx="68"  cy="150" r="6" fill="#4ADE80"/>
+        <circle cx="86"  cy="150" r="6" fill="#4ADE80"/>
+        <circle cx="104" cy="150" r="6" fill="#4ADE80"/>
+        <circle cx="122" cy="150" r="6" fill="#F87171"/>
+        <!-- rouges : colonnes droite -->
+        <circle cx="140" cy="60"  r="6" fill="#F87171"/>
+        <circle cx="158" cy="60"  r="6" fill="#F87171"/>
+        <circle cx="176" cy="60"  r="6" fill="#F87171"/>
+        <circle cx="194" cy="60"  r="6" fill="#F87171"/>
+        <circle cx="140" cy="78"  r="6" fill="#F87171"/>
+        <circle cx="158" cy="78"  r="6" fill="#F87171"/>
+        <circle cx="176" cy="78"  r="6" fill="#F87171"/>
+        <circle cx="194" cy="78"  r="6" fill="#F87171"/>
+        <circle cx="140" cy="96"  r="6" fill="#F87171"/>
+        <circle cx="158" cy="96"  r="6" fill="#F87171"/>
+        <circle cx="176" cy="96"  r="6" fill="#F87171"/>
+        <circle cx="194" cy="96"  r="6" fill="#F87171"/>
+        <circle cx="140" cy="114" r="6" fill="#F87171"/>
+        <circle cx="158" cy="114" r="6" fill="#F87171"/>
+        <circle cx="176" cy="114" r="6" fill="#F87171"/>
+        <circle cx="194" cy="114" r="6" fill="#F87171"/>
+        <circle cx="140" cy="132" r="6" fill="#F87171"/>
+        <circle cx="158" cy="132" r="6" fill="#F87171"/>
+        <circle cx="176" cy="132" r="6" fill="#F87171"/>
+        <circle cx="194" cy="132" r="6" fill="#F87171"/>
+        <circle cx="140" cy="150" r="6" fill="#F87171"/>
+        <circle cx="158" cy="150" r="6" fill="#F87171"/>
+        <circle cx="176" cy="150" r="6" fill="#F87171"/>
+        <circle cx="194" cy="150" r="6" fill="#F87171"/>
+      </g>
+      <!-- flèche -->
+      <text x="224" y="108" font-family="Inter,sans-serif" font-size="24" fill="#94A3B8">→</text>
+      <!-- V3 label -->
+      <text x="470" y="44" text-anchor="middle" font-family="Inter,sans-serif" font-size="12" font-weight="700" fill="#059669">V3 — 68 / 100  (+8 pts)</text>
+      <!-- grille V3 : 68 verts, 32 rouges — 2 avec bord rouge = régressions -->
+      <g>
+        <circle cx="260" cy="60"  r="6" fill="#4ADE80"/>
+        <circle cx="278" cy="60"  r="6" fill="#4ADE80"/>
+        <circle cx="296" cy="60"  r="6" fill="#4ADE80"/>
+        <circle cx="314" cy="60"  r="6" fill="#4ADE80"/>
+        <circle cx="332" cy="60"  r="6" fill="#4ADE80"/>
+        <circle cx="350" cy="60"  r="6" fill="#4ADE80"/>
+        <circle cx="368" cy="60"  r="6" fill="#4ADE80"/>
+        <circle cx="386" cy="60"  r="6" fill="#4ADE80"/>
+        <circle cx="260" cy="78"  r="6" fill="#4ADE80"/>
+        <circle cx="278" cy="78"  r="6" fill="#4ADE80"/>
+        <circle cx="296" cy="78"  r="6" fill="#4ADE80"/>
+        <circle cx="314" cy="78"  r="6" fill="#4ADE80"/>
+        <circle cx="332" cy="78"  r="6" fill="#4ADE80"/>
+        <circle cx="350" cy="78"  r="6" fill="#4ADE80"/>
+        <circle cx="368" cy="78"  r="6" fill="#4ADE80"/>
+        <circle cx="386" cy="78"  r="6" fill="#4ADE80"/>
+        <circle cx="260" cy="96"  r="6" fill="#4ADE80"/>
+        <circle cx="278" cy="96"  r="6" fill="#4ADE80"/>
+        <circle cx="296" cy="96"  r="6" fill="#4ADE80"/>
+        <circle cx="314" cy="96"  r="6" fill="#4ADE80"/>
+        <circle cx="332" cy="96"  r="6" fill="#4ADE80"/>
+        <circle cx="350" cy="96"  r="6" fill="#4ADE80"/>
+        <circle cx="368" cy="96"  r="6" fill="#4ADE80"/>
+        <circle cx="386" cy="96"  r="6" fill="#4ADE80"/>
+        <circle cx="260" cy="114" r="6" fill="#4ADE80"/>
+        <circle cx="278" cy="114" r="6" fill="#4ADE80"/>
+        <circle cx="296" cy="114" r="6" fill="#4ADE80"/>
+        <circle cx="314" cy="114" r="6" fill="#4ADE80"/>
+        <circle cx="332" cy="114" r="6" fill="#4ADE80"/>
+        <circle cx="350" cy="114" r="6" fill="#4ADE80"/>
+        <circle cx="368" cy="114" r="6" fill="#4ADE80"/>
+        <circle cx="386" cy="114" r="6" fill="#4ADE80"/>
+        <circle cx="260" cy="132" r="6" fill="#4ADE80"/>
+        <circle cx="278" cy="132" r="6" fill="#4ADE80"/>
+        <circle cx="296" cy="132" r="6" fill="#4ADE80"/>
+        <circle cx="314" cy="132" r="6" fill="#4ADE80"/>
+        <circle cx="332" cy="132" r="6" fill="#4ADE80"/>
+        <circle cx="350" cy="132" r="6" fill="#4ADE80"/>
+        <circle cx="368" cy="132" r="6" fill="#4ADE80"/>
+        <circle cx="386" cy="132" r="6" fill="#4ADE80"/>
+        <circle cx="260" cy="150" r="6" fill="#4ADE80"/>
+        <circle cx="278" cy="150" r="6" fill="#4ADE80"/>
+        <circle cx="296" cy="150" r="6" fill="#4ADE80"/>
+        <circle cx="314" cy="150" r="6" fill="#4ADE80"/>
+        <!-- 2 régressions avec contour -->
+        <circle cx="332" cy="150" r="7" fill="#FEE2E2" stroke="#DC2626" stroke-width="2"/>
+        <circle cx="350" cy="150" r="7" fill="#FEE2E2" stroke="#DC2626" stroke-width="2"/>
+        <!-- rouges normaux -->
+        <circle cx="368" cy="150" r="6" fill="#F87171"/>
+        <circle cx="386" cy="150" r="6" fill="#F87171"/>
+        <circle cx="404" cy="60"  r="6" fill="#F87171"/>
+        <circle cx="422" cy="60"  r="6" fill="#F87171"/>
+        <circle cx="440" cy="60"  r="6" fill="#F87171"/>
+        <circle cx="404" cy="78"  r="6" fill="#F87171"/>
+        <circle cx="422" cy="78"  r="6" fill="#F87171"/>
+        <circle cx="440" cy="78"  r="6" fill="#F87171"/>
+        <circle cx="404" cy="96"  r="6" fill="#F87171"/>
+        <circle cx="422" cy="96"  r="6" fill="#F87171"/>
+        <circle cx="440" cy="96"  r="6" fill="#F87171"/>
+        <circle cx="404" cy="114" r="6" fill="#F87171"/>
+        <circle cx="422" cy="114" r="6" fill="#F87171"/>
+        <circle cx="440" cy="114" r="6" fill="#F87171"/>
+        <circle cx="404" cy="132" r="6" fill="#F87171"/>
+        <circle cx="422" cy="132" r="6" fill="#F87171"/>
+        <circle cx="440" cy="132" r="6" fill="#F87171"/>
+        <circle cx="404" cy="150" r="6" fill="#F87171"/>
+        <circle cx="422" cy="150" r="6" fill="#F87171"/>
+        <circle cx="440" cy="150" r="6" fill="#F87171"/>
+      </g>
+      <!-- annotation régressions -->
+      <line x1="332" y1="157" x2="332" y2="168" stroke="#DC2626" stroke-width="1"/>
+      <line x1="350" y1="157" x2="350" y2="168" stroke="#DC2626" stroke-width="1"/>
+      <text x="341" y="168" text-anchor="middle" font-family="Inter,sans-serif" font-size="10" fill="#DC2626">2 régressions</text>
+    </svg>
+    <div class="caption">V3 gagne 10 nouveaux cas (les rouges qui deviennent verts entre V2 et V3) mais en perd 2 qui marchaient avant (les points avec contour rouge). Pass rate net : +8 points. Regression rate : 2%. Dans ce cas c'est acceptable — mais à 5% et plus, ça nécessite une inspection.</div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════ -->
+<div class="chapter">
+  <div class="chapter-number">Chapitre 4</div>
+  <h2>Le pass rate par catégorie : savoir exactement où agir</h2>
+  <div class="intro">Un pass rate global ne dit pas où est le problème — les catégories le disent</div>
+
+  <p>Un pass rate global de 62% peut cacher des situations très différentes selon les types de tâches. C'est la section la plus directement actionnable du dashboard : elle te dit exactement où générer de nouvelles données.</p>
+
+  <p>Reprenons le projet BRA. Les tests unitaires sont divisés en 4 catégories : opérations simples (A), transactions financières (B), validation et cas d'erreur (C), services avec plusieurs dépendances mockées (D). Si le modèle a du mal avec les cas d'erreur mais maîtrise les opérations simples, le pass rate global de 62% masque ce fait.</p>
+
+  <div class="visual">
+    <svg viewBox="0 0 660 200" xmlns="http://www.w3.org/2000/svg">
+      <text x="330" y="22" text-anchor="middle" font-family="Inter,sans-serif" font-size="13" font-weight="700" fill="#0F172A">Pass rate par catégorie — projet BRA (pass rate global : 62%)</text>
+      <!-- ligne seuil -->
+      <line x1="180" y1="54" x2="600" y2="54" stroke="#DC2626" stroke-width="1" stroke-dasharray="4,3"/>
+      <text x="605" y="58" font-family="Inter,sans-serif" font-size="10" fill="#DC2626">seuil 80%</text>
+      <!-- Cat A 88% -->
+      <text x="168" y="80" text-anchor="end" font-family="Inter,sans-serif" font-size="12" fill="#334155">A — Opérations simples</text>
+      <rect x="180" y="68" width="330" height="18" rx="4" fill="#4ADE80"/>
+      <text x="518" y="81" font-family="Inter,sans-serif" font-size="12" font-weight="700" fill="#059669">88% ✓ acquis</text>
+      <!-- Cat B 81% -->
+      <text x="168" y="114" text-anchor="end" font-family="Inter,sans-serif" font-size="12" fill="#334155">B — Transactions</text>
+      <rect x="180" y="102" width="304" height="18" rx="4" fill="#4ADE80"/>
+      <text x="492" y="115" font-family="Inter,sans-serif" font-size="12" font-weight="700" fill="#059669">81% ✓ acquis</text>
+      <!-- Cat D 52% -->
+      <text x="168" y="148" text-anchor="end" font-family="Inter,sans-serif" font-size="12" fill="#334155">D — Multi-mocks</text>
+      <rect x="180" y="136" width="195" height="18" rx="4" fill="#FCD34D"/>
+      <text x="383" y="149" font-family="Inter,sans-serif" font-size="12" font-weight="700" fill="#D97706">52% ⚠ insuffisant</text>
+      <!-- Cat C 28% -->
+      <text x="168" y="182" text-anchor="end" font-family="Inter,sans-serif" font-size="12" fill="#334155">C — Validation / erreurs</text>
+      <rect x="180" y="170" width="105" height="18" rx="4" fill="#F87171"/>
+      <text x="293" y="183" font-family="Inter,sans-serif" font-size="12" font-weight="700" fill="#DC2626">28% ✗ problème majeur</text>
+    </svg>
+    <div class="caption">Les catégories A et B sont au-dessus du seuil. La catégorie D est insuffisante. La catégorie C est en échec. Le pass rate global de 62% masque cette réalité : le problème est presque entièrement concentré dans C.</div>
+  </div>
+
+  <p>Ce graphique te donne ta feuille de route. Les catégories A et B ne nécessitent aucune action — y ajouter des données n'améliorerait pas le pass rate global de façon significative, et pourrait même diluer la qualité. Le travail à faire est entièrement dans C, et partiellement dans D.</p>
+
+  <div class="callout callout-rule">
+    <div class="callout-title">Règle d'action</div>
+    <p>Génère des nouvelles paires d'entraînement <strong>uniquement pour les catégories faibles</strong>. Pour la catégorie C à 28%, l'objectif est d'ajouter 40 à 50 nouvelles paires spécifiquement sur des cas de validation et d'erreurs, puis de relancer l'entraînement et de réévaluer.</p>
+    <p>Ne jamais ajouter des données "en général" pour faire monter un pass rate global. C'est contre-productif : tu dilues le signal, tu gaspilles les ressources Bedrock, et tu risques de légèrement régresser sur les catégories qui étaient déjà acquises.</p>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════ -->
+<div class="chapter">
+  <div class="chapter-number">Récapitulatif</div>
+  <h2>Dans quel ordre lire le dashboard</h2>
+  <div class="intro">Six questions à se poser, dans cet ordre, à chaque fois qu'on ouvre un run</div>
+
+  <ul class="checklist">
+    <li>
+      <div class="n">1</div>
+      <div class="body">
+        <strong>Combien d'exemples dans le test set ?</strong>
+        Regarder le champ "N échantillons". Si c'est moins de 200, l'intervalle de confiance est trop large pour décider quoi que ce soit avec certitude. Dans ce cas, la priorité absolue est d'augmenter le test set avant toute autre analyse.
+      </div>
+    </li>
+    <li>
+      <div class="n">2</div>
+      <div class="body">
+        <strong>La borne basse de l'IC dépasse-t-elle le seuil du projet ?</strong>
+        Le seuil est dans le fichier de configuration du projet. Pour BRA c'est 80%. Si la borne basse de l'IC 95% est au-dessus de ce seuil, le déploiement est autorisé. Sinon, continuer la lecture.
+      </div>
+    </li>
+    <li>
+      <div class="n">3</div>
+      <div class="body">
+        <strong>Hallucination rate &lt; 5% et data leakage = 0 ?</strong>
+        Ces deux points sont bloquants indépendamment du pass rate. Un hallucination rate élevé signifie que le modèle invente des faits avec confiance — inacceptable en secteur défense ou banking. Un data leakage non nul signifie que le modèle reproduit des extraits de ses données d'entraînement — problème RGPD et souveraineté. Si l'un des deux échoue, ne pas déployer.
+      </div>
+    </li>
+    <li>
+      <div class="n">4</div>
+      <div class="body">
+        <strong>Quelle catégorie est la plus faible ?</strong>
+        Regarder la section "Pass rate par catégorie". Identifier la ou les catégories sous le seuil. C'est là que les prochaines données d'entraînement doivent être générées — pas ailleurs.
+      </div>
+    </li>
+    <li>
+      <div class="n">5</div>
+      <div class="body">
+        <strong>Si ce n'est pas la première version : l'amélioration est-elle réelle ?</strong>
+        Vérifier McNemar p-value. Si p &lt; 0.05, la progression est statistiquement significative — continue dans cette direction. Si p ≥ 0.05, l'écart pourrait être du bruit — il faut un test set plus grand pour en être sûr.
+      </div>
+    </li>
+    <li>
+      <div class="n">6</div>
+      <div class="body">
+        <strong>Y a-t-il des régressions sur des cas précédemment acquis ?</strong>
+        Regarder le "Regression rate". S'il dépasse 5%, inspecter manuellement les exemples qui ont régressé avant de déployer. Un modèle qui progresse en oubliant ce qu'il savait est dangereux en production.
+      </div>
+    </li>
+  </ul>
+</div>
+
+</main>
+</body>
+</html>

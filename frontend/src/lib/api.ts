@@ -2,7 +2,7 @@ import type { AdapterCoverageResult, AdvisorAdapter, AdvisorRecommendation, Base
 
 const BASE = '/api';
 
-async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
+export async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const r = await fetch(`${BASE}${path}`, {
     headers: { 'Content-Type': 'application/json', ...opts.headers },
     ...opts,
@@ -162,6 +162,29 @@ export const cancelCleanRaw      = (jobId: string) =>
   req<{ status: string; job_id: string }>(`/data/clean-raw/${jobId}`, { method: 'DELETE' });
 export const getCleanRawEstimate = (projectId: string) =>
   req<{ raw_records: number; est_min_low: number; est_min_high: number; est_label: string }>(`/data/clean-raw/estimate/${projectId}`);
+export const getAnalysisReport = (projectId: string) => req<AnalysisReport>(`/analyze/${projectId}/report`);
+export const runAnalysis       = (projectId: string, sampleSize = 20) =>
+  req<{ status: string }>(`/analyze/${projectId}/run`, { method: 'POST', body: JSON.stringify({ sample_size: sampleSize }) });
+export const validateAnalysis  = (projectId: string, body: { accepted_categories: AnalysisCategory[]; rejected_names: string[]; validator?: string }) =>
+  req<{ status: string; categories_written: number }>(`/analyze/${projectId}/validate`, { method: 'POST', body: JSON.stringify(body) });
+export const getAnalysisGate   = (projectId: string) => req<{ can_transform: boolean; reason: string }>(`/analyze/${projectId}/gate`);
+
+export interface AnalysisCategory {
+  name: string;
+  description: string;
+  estimated_count_in_sample?: number;
+  example_filename?: string;
+}
+export interface AnalysisReport {
+  project_id: string;
+  analyzed_at?: string;
+  sample_size?: number;
+  proposed_categories: AnalysisCategory[];
+  missing_from_config: { name: string; reason: string }[];
+  analyst_notes?: string;
+  validation_status: 'not_run' | 'pending' | 'validated';
+}
+
 export const startPipeline     = (body: { project_id: string; threshold?: number }) =>
   req<CollectJob>('/data/pipeline', { method: 'POST', body: JSON.stringify(body) });
 export const getPipelineStatus = (jobId: string) => req<JobStatus>(`/data/pipeline/${jobId}/status`);

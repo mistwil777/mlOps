@@ -11,8 +11,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from api.routers import (
-    adapters, advisor, base_models, data, datasets, delivery,
-    feedback, health, lifecycle, models, orchestrator, playground, projects, rag, runs, stream,
+    adapters, advisor, analyze, base_models, data, datasets, delivery,
+    feedback, health, kpis, lifecycle, models, orchestrator, playground, projects, rag, runs, stream,
 )
 
 app = FastAPI(title="MLOps Factory API", version="1.0.0", docs_url="/api/docs", redoc_url=None)
@@ -29,6 +29,7 @@ for r in (
     runs.router, stream.router, models.router, delivery.router,
     data.router, rag.router, playground.router, adapters.router,
     advisor.router, orchestrator.router, feedback.router, lifecycle.router,
+    kpis.router, analyze.router,
 ):
     app.include_router(r)
 

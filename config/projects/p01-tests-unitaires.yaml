@@ -1,0 +1,87 @@
+id: p01-tests-unitaires
+name: Tests unitaires Java (BRA)
+description: >
+  Génération automatique de tests unitaires JUnit 5 pour la Banque Régionale Atlantis (BRA).
+  Le modèle doit maîtriser les conventions internes BRA : annotation @BraTest, naming
+  should_X_when_Y, BraTestContext, @BraMock, AssertJ et BraAudit.verify().
+  Remplace les appels LLM Bedrock dans le pipeline de génération de tests BRA.
+classification: client-fictif
+sector: banking
+domain: code
+task_type: generation
+model: qwen2.5-coder-7b-instruct-4bit
+model_format: mlx
+rag_collection: patterns_bra_tests
+
+baseline:
+  provider: nova-pro
+  model_id: us.amazon.nova-pro-v1:0
+  measured: false
+  metrics: {}
+
+quality_thresholds:
+  min_pass_rate: 0.80
+  min_rouge_l: 0.60
+  max_latency_ratio: 3.0
+
+min_tokens: 80
+max_tokens: 1024
+
+blacklist_patterns:
+  - TODO
+  - FIXME
+  - placeholder
+  - "// ..."
+  - NotImplementedException
+
+data:
+  raw: datalake/projects/p01-tests-unitaires/raw/
+  processed: datalake/projects/p01-tests-unitaires/processed/
+  fine_tuning_ready: datalake/projects/p01-tests-unitaires/fine-tuning-ready/
+
+adapters:
+  - name: bra-unit-test-generator
+    role: specialist
+    description: >
+      Génère des tests unitaires JUnit 5 conformes aux conventions BRA à partir
+      d'une classe Java et de sa description fonctionnelle. Couvre les 4 catégories
+      de tests BRA : opérations simples, transactions financières, validation/erreurs,
+      services multi-mocks.
+    estimated_pairs: 100
+    pair_strategy: doc_to_code
+    lang_pair: null
+    rag_recommended: false
+    data_types:
+      - classe Java source (méthodes publiques, champs, dépendances)
+      - description fonctionnelle du comportement attendu
+      - fichier de tests JUnit 5 complet conforme aux conventions BRA
+
+ingestion:
+  pair_generator:
+    provider: bedrock
+    model_id: us.amazon.nova-pro-v1:0
+    temperature: 0.3
+    prompt_template: datalake/projects/p01-tests-unitaires/meta-prompt.md
+  pair_judge:
+    provider: bedrock
+    model_id: us.amazon.nova-pro-v1:0
+    temperature: 0.1
+    rubric: datalake/projects/p01-tests-unitaires/judge-rubric.yaml
+    min_score: 0.75
+    blocking_criteria:
+      - missing_bra_test_annotation
+      - wrong_naming_convention
+      - missing_bra_test_context
+      - placeholder_body
+    auto_correct: false
+    max_retries: 1
+
+transform:
+  template: code_generation
+  params:
+    lang: java
+    framework: junit5
+
+retrain_threshold:
+  new_patterns: 50
+  min_quality: 0.80

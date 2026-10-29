@@ -1,6 +1,8 @@
 <script lang="ts">
+  import { page } from '$app/stores';
   import { onMount, onDestroy } from 'svelte';
-  import { getProjects, startCleanRaw, cancelCleanRaw, getCleanRawEstimate, startPipeline } from '$lib/api';
+  import { getProjects, startCleanRaw, cancelCleanRaw, getCleanRawEstimate, startPipeline,
+           getAnalysisReport, runAnalysis, validateAnalysis, type AnalysisCategory, type AnalysisReport } from '$lib/api';
   import type { Project } from '$lib/types';
 
   let projects: Project[] = $state([]);
@@ -18,6 +20,12 @@
   let cleanRawCancelling = $state(false);
   let cleanRawEstimate: { raw_records: number; est_label: string } | null = $state(null);
 
+  // Step 0 — analyze source
+  let analysisReport   = $state<AnalysisReport | null>(null);
+  let analysisRunning  = $state(false);
+  let acceptedCats     = $state<AnalysisCategory[]>([]);
+  let rejectedNames    = $state<string[]>([]);
+
   // Step 2 — clean (pairs pipeline)
   let pipelineRunning = $state(false);
   let pipelineStatus  = $state<'idle' | 'running' | 'completed' | 'failed'>('idle');
@@ -26,14 +34,68 @@
   onMount(async () => {
     projects = await getProjects().catch(() => []);
     if (projects.length > 0) {
-      selectedProject = projects[0].id;
-      cleanRawEstimate = await getCleanRawEstimate(projects[0].id).catch(() => null);
+      const _qp = $page.url.searchParams.get('project');
+      selectedProject = _qp && projects.find(p => p.id === _qp) ? _qp : projects[0].id;
+      cleanRawEstimate = await getCleanRawEstimate(selectedProject).catch(() => null);
+      analysisReport = await getAnalysisReport(selectedProject).catch(() => null);
+      if (analysisReport?.proposed_categories) acceptedCats = [...analysisReport.proposed_categories];
     }
   });
 
+  async function loadAnalysis() {
+    if (!selectedProject) return;
+    analysisReport = await getAnalysisReport(selectedProject).catch(() => null);
+    if (analysisReport?.proposed_categories) acceptedCats = [...analysisReport.proposed_categories];
+  }
+
+  async function handleRunAnalysis() {
+    if (!selectedProject || analysisRunning) return;
+    analysisRunning = true;
+    try {
+      await runAnalysis(selectedProject, 20);
+      // poll until done
+      let attempts = 0;
+      const poll = setInterval(async () => {
+        attempts++;
+        const r = await getAnalysisReport(selectedProject).catch(() => null);
+        if (r && r.validation_status !== 'not_run') {
+          clearInterval(poll);
+          analysisRunning = false;
+          analysisReport = r;
+          acceptedCats = [...(r.proposed_categories ?? [])];
+        }
+        if (attempts > 60) { clearInterval(poll); analysisRunning = false; }
+      }, 3000);
+    } catch (e) {
+      error = (e as Error).message;
+      analysisRunning = false;
+    }
+  }
+
+  function toggleCat(cat: AnalysisCategory) {
+    if (rejectedNames.includes(cat.name)) {
+      rejectedNames = rejectedNames.filter(n => n !== cat.name);
+      acceptedCats = [...acceptedCats, cat];
+    } else {
+      rejectedNames = [...rejectedNames, cat.name];
+      acceptedCats = acceptedCats.filter(c => c.name !== cat.name);
+    }
+  }
+
+  async function handleValidate() {
+    if (!selectedProject || acceptedCats.length === 0) return;
+    try {
+      await validateAnalysis(selectedProject, { accepted_categories: acceptedCats, rejected_names: rejectedNames });
+      analysisReport = await getAnalysisReport(selectedProject);
+    } catch (e) {
+      error = (e as Error).message;
+    }
+  }
+
   async function loadEstimate() {
-    if (selectedProject)
-      cleanRawEstimate = await getCleanRawEstimate(selectedProject).catch(() => null);
+    if (!selectedProject) return;
+    cleanRawEstimate = await getCleanRawEstimate(selectedProject).catch(() => null);
+    await loadAnalysis();
   }
 
   onDestroy(() => es?.close());
@@ -134,6 +196,7 @@
     }
   }
 
+  const analysisValidated = $derived(analysisReport?.validation_status === 'validated');
   const running = $derived(cleanRawRunning || pipelineRunning);
 </script>
 
@@ -154,6 +217,72 @@
         {/each}
       </select>
     </label>
+  </div>
+
+  <!-- Step 0 — Analyse source -->
+  <div class="card step-card" style="margin-bottom:12px">
+    <div class="step-header">
+      <div class="step-num" class:step-done={analysisValidated}>0</div>
+      <div class="step-info">
+        <div class="step-title">Analyse sémantique des sources</div>
+        <div class="step-desc text-muted">
+          Échantillonne les documents bruts et propose une taxonomie de catégories via LLM.
+          À valider avant de lancer le pipeline — garantit qu'aucune catégorie n'est oubliée.
+        </div>
+        {#if analysisReport && analysisReport.validation_status === 'pending'}
+          <div class="analysis-panel">
+            <div class="analysis-subtitle">
+              Catégories proposées ({analysisReport.proposed_categories.length}) — cochez pour accepter
+            </div>
+            <div class="cat-list">
+              {#each analysisReport.proposed_categories as cat}
+                {@const rejected = rejectedNames.includes(cat.name)}
+                <div class="cat-row {rejected ? 'cat-rejected' : ''}">
+                  <input type="checkbox" checked={!rejected} onchange={() => toggleCat(cat)} id="cat-{cat.name}" />
+                  <label for="cat-{cat.name}">
+                    <span class="cat-name">{cat.name}</span>
+                    <span class="cat-desc">{cat.description}</span>
+                    {#if cat.estimated_count_in_sample}
+                      <span class="cat-count">{cat.estimated_count_in_sample} occ.</span>
+                    {/if}
+                  </label>
+                </div>
+              {/each}
+            </div>
+            {#if analysisReport.missing_from_config.length > 0}
+              <div class="missing-banner">
+                <strong>⚠ Patterns détectés non déclarés dans la config :</strong>
+                {#each analysisReport.missing_from_config as m}
+                  <div class="missing-row">• <strong>{m.name}</strong> — {m.reason}</div>
+                {/each}
+              </div>
+            {/if}
+            {#if analysisReport.analyst_notes}
+              <div class="analyst-notes">{analysisReport.analyst_notes}</div>
+            {/if}
+            <button class="btn btn-primary" style="margin-top:12px" onclick={handleValidate}
+                    disabled={acceptedCats.length === 0}>
+              ✓ Valider les catégories ({acceptedCats.length} acceptées)
+            </button>
+          </div>
+        {/if}
+      </div>
+      <div class="step-actions">
+        {#if analysisRunning}
+          <span class="badge-running">⟳ Analyse en cours…</span>
+        {:else if analysisValidated}
+          <span class="badge-ok">✓ Validé</span>
+        {:else}
+          <button class="btn btn-secondary" onclick={handleRunAnalysis}
+                  disabled={running || !selectedProject}>
+            ▶ Analyser les sources
+          </button>
+        {/if}
+        {#if analysisReport?.validation_status === 'pending'}
+          <span class="badge-warn">En attente de validation</span>
+        {/if}
+      </div>
+    </div>
   </div>
 
   <!-- Step 1 — clean_raw -->
@@ -193,7 +322,7 @@
           <span class="badge-running">⟳ En cours…</span>
         {:else}
           <button class="btn btn-primary" onclick={handleCleanRaw}
-                  disabled={running || !selectedProject}>
+                  disabled={running || !selectedProject || !analysisValidated}>
             ▶ Lancer clean_raw
           </button>
         {/if}
@@ -227,7 +356,7 @@
           <span class="mono" style="font-size:13px; width:36px">{threshold.toFixed(2)}</span>
         </div>
         <button class="btn btn-primary" onclick={handlePipeline}
-                disabled={running || !selectedProject}>
+                disabled={running || !selectedProject || !analysisValidated}>
           {pipelineRunning ? '⟳ En cours…' : '▶ Lancer clean'}
         </button>
         {#if pipelineStatus === 'completed'}
@@ -280,6 +409,20 @@
     display: flex; align-items: center; justify-content: center;
     font-weight: 700; font-size: 13px; margin-top: 2px;
   }
+  .step-done { background: #D1FAE5; color: #065F46; border-color: #059669; }
+
+  .analysis-panel { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
+  .analysis-subtitle { font-size: 12px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: .04em; }
+  .cat-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+  .cat-row { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; background: var(--surface-2); border-radius: var(--radius); border: 1px solid var(--border); }
+  .cat-row label { display: flex; align-items: baseline; gap: 8px; cursor: pointer; flex: 1; }
+  .cat-rejected { opacity: 0.45; }
+  .cat-name { font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--accent); }
+  .cat-desc { font-size: 12px; color: var(--text-muted); flex: 1; }
+  .cat-count { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
+  .missing-banner { background: #FEF3C7; border: 1px solid #F59E0B; border-radius: var(--radius); padding: 10px 14px; font-size: 12px; color: #92400E; margin-bottom: 8px; }
+  .missing-row { margin-top: 4px; }
+  .analyst-notes { font-size: 12px; color: var(--text-muted); font-style: italic; margin-bottom: 6px; }
   .step-info { flex: 1; min-width: 0; }
   .step-title { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
   .step-desc { font-size: 12px; line-height: 1.5; }

@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LLM Local — Choisir la bonne stratégie</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --ink:        #0F172A;
+      --ink-2:      #334155;
+      --ink-3:      #64748B;
+      --surface:    #FFFFFF;
+      --surface-2:  #F8FAFC;
+      --surface-3:  #F1F5F9;
+      --border:     #E2E8F0;
+      --accent:     #0284C7;
+      --accent-hi:  #0EA5E9;
+      --green:      #059669;
+      --orange:     #D97706;
+      --red:        #DC2626;
+      --purple:     #7C3AED;
+      --radius:     8px;
+      --shadow:     0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.04);
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--surface-2);
+      color: var(--ink);
+      font-size: 15px;
+      line-height: 1.65;
+    }
+
+    /* Rainbow bar */
+    .rainbow {
+      height: 4px;
+      background: linear-gradient(90deg, #2DD4BF, #22D3EE, #38BDF8 40%, #A855F7 62%, #EC4899 80%, #F59E0B);
+    }
+
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 32px 0 28px;
+    }
+    .header-inner {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 0 32px;
+    }
+    .eyebrow {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      color: var(--accent);
+      margin-bottom: 10px;
+    }
+    h1 {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--ink);
+      line-height: 1.25;
+      margin-bottom: 12px;
+    }
+    .subtitle {
+      font-size: 15px;
+      color: var(--ink-3);
+      max-width: 600px;
+    }
+
+    main {
+      max-width: 860px;
+      margin: 40px auto;
+      padding: 0 32px 80px;
+      display: flex;
+      flex-direction: column;
+      gap: 40px;
+    }
+
+    /* Sections */
+    .section-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      color: var(--ink-3);
+      margin-bottom: 12px;
+    }
+    h2 {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--ink);
+      margin-bottom: 14px;
+    }
+    h3 {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--ink);
+      margin-bottom: 8px;
+    }
+    p { color: var(--ink-2); margin-bottom: 12px; }
+    p:last-child { margin-bottom: 0; }
+
+    /* Cards */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      box-shadow: var(--shadow);
+    }
+    .card-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .card-grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+
+    /* Strategy cards */
+    .strategy-card {
+      background: var(--surface);
+      border: 2px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+    }
+    .strategy-card.rag   { border-top-color: var(--accent); }
+    .strategy-card.ft    { border-top-color: var(--green); }
+    .strategy-card.both  { border-top-color: var(--purple); }
+
+    .strategy-icon {
+      font-size: 28px;
+      margin-bottom: 10px;
+    }
+    .strategy-name {
+      font-size: 14px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      margin-bottom: 6px;
+    }
+    .strategy-card.rag  .strategy-name { color: var(--accent); }
+    .strategy-card.ft   .strategy-name { color: var(--green); }
+    .strategy-card.both .strategy-name { color: var(--purple); }
+
+    /* Callout */
+    .callout {
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+    }
+    .callout.info    { background: #EFF6FF; border-left: 3px solid var(--accent); }
+    .callout.success { background: #ECFDF5; border-left: 3px solid var(--green); }
+    .callout.warning { background: #FFFBEB; border-left: 3px solid var(--orange); }
+    .callout-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+    .callout p { margin: 0; font-size: 14px; }
+    .callout strong { color: var(--ink); }
+
+    /* Decision table */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    th {
+      background: var(--surface-3);
+      padding: 10px 14px;
+      text-align: left;
+      font-weight: 600;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      color: var(--ink-3);
+      border-bottom: 2px solid var(--border);
+    }
+    td {
+      padding: 11px 14px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+      color: var(--ink-2);
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--surface-2); }
+
+    .badge {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 100px;
+    }
+    .badge-rag    { background: #DBEAFE; color: #1D4ED8; }
+    .badge-ft     { background: #D1FAE5; color: #065F46; }
+    .badge-both   { background: #EDE9FE; color: #5B21B6; }
+    .badge-none   { background: var(--surface-3); color: var(--ink-3); }
+
+    /* Example blocks */
+    .example {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .example-header {
+      padding: 14px 20px;
+      background: var(--surface-3);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .example-tag {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--ink-3);
+    }
+    .example-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--ink);
+    }
+    .example-body {
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .before-after {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .before, .after {
+      border-radius: 6px;
+      padding: 14px;
+      font-size: 13px;
+    }
+    .before {
+      background: #FEF2F2;
+      border: 1px solid #FECACA;
+    }
+    .after {
+      background: #F0FDF4;
+      border: 1px solid #BBF7D0;
+    }
+    .ba-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      margin-bottom: 6px;
+    }
+    .before .ba-label { color: var(--red); }
+    .after  .ba-label { color: var(--green); }
+    .before p, .after p { font-size: 13px; margin-bottom: 6px; }
+
+    code {
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      background: var(--surface-3);
+      padding: 1px 5px;
+      border-radius: 3px;
+      color: var(--ink);
+    }
+    pre {
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      background: var(--surface-3);
+      padding: 12px;
+      border-radius: 6px;
+      color: var(--ink-2);
+      white-space: pre-wrap;
+      line-height: 1.5;
+      border: 1px solid var(--border);
+    }
+
+    /* Cost block */
+    .cost-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .cost-row:last-child { border-bottom: none; }
+    .cost-label { flex: 1; font-size: 14px; color: var(--ink-2); }
+    .cost-before { font-size: 14px; font-weight: 600; color: var(--red); min-width: 90px; text-align: right; }
+    .cost-after  { font-size: 14px; font-weight: 600; color: var(--green); min-width: 90px; text-align: right; }
+    .cost-strategy { min-width: 80px; text-align: right; }
+
+    /* Flow diagram */
+    .flow {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .flow-step {
+      background: var(--surface-3);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 14px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--ink);
+    }
+    .flow-arrow {
+      color: var(--ink-3);
+      font-size: 16px;
+    }
+    .flow-step.active {
+      background: #EFF6FF;
+      border-color: var(--accent);
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .divider {
+      height: 1px;
+      background: var(--border);
+    }
+
+    footer {
+      text-align: center;
+      padding: 24px;
+      font-size: 12px;
+      color: var(--ink-3);
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    @media (max-width: 640px) {
+      .card-grid, .card-grid-3, .before-after { grid-template-columns: 1fr; }
+      h1 { font-size: 22px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="rainbow"></div>
+
+<header>
+  <div class="header-inner">
+    <div class="eyebrow">Capgemini — IA Locale</div>
+    <h1>Réduire la dépendance aux providers LLM<br>sans sacrifier la qualité</h1>
+    <p class="subtitle">
+      RAG, fine-tuning, ou les deux ? Un guide pratique pour choisir
+      la bonne stratégie selon le contexte — avec des exemples tirés de missions réelles.
+    </p>
+  </div>
+</header>
+
+<main>
+
+  <!-- ── POURQUOI CE SUJET ─────────────────────────────── -->
+  <section>
+    <div class="section-label">Le problème</div>
+    <h2>Nous payons des providers pour du contexte que nous possédons déjà</h2>
+
+    <div class="card" style="margin-bottom: 16px;">
+      <p>
+        Aujourd'hui, quand une équipe envoie un prompt à ChatGPT ou GitHub Copilot,
+        elle paie pour deux choses : la <strong>capacité de raisonnement</strong> du modèle
+        (comprendre la demande, générer du texte cohérent) et la <strong>mémoire</strong>
+        (connaître Python, les patterns de test, la syntaxe SQL...).
+      </p>
+      <p>
+        La capacité de raisonnement justifie le coût. La mémoire générale aussi, au début.
+        Mais quand l'équipe envoie le même type de prompt 50 fois par jour — toujours sur
+        la même stack, dans le même format, avec les mêmes conventions — elle paie
+        <strong>en continu pour un contexte qu'elle pourrait embarquer une fois pour toutes</strong>
+        dans un modèle local.
+      </p>
+      <p style="margin-bottom:0">
+        C'est le problème que les stratégies RAG et fine-tuning résolvent — différemment,
+        selon la nature du contexte.
+      </p>
+    </div>
+
+    <div class="callout warning">
+      <div class="callout-icon">⚠</div>
+      <p>
+        <strong>Contrainte supplémentaire en Defense et secteur régulé :</strong>
+        envoyer du code source, des documents internes ou des données métier
+        vers un provider cloud (OpenAI, Anthropic, AWS Bedrock) pose un problème
+        de souveraineté. Un modèle local résout ce problème structurellement —
+        les données ne quittent jamais l'infrastructure.
+      </p>
+    </div>
+  </section>
+
+  <!-- ── LES DEUX STRATÉGIES ──────────────────────────── -->
+  <section>
+    <div class="section-label">Les stratégies</div>
+    <h2>Deux approches, deux problèmes différents</h2>
+
+    <div class="card-grid" style="margin-bottom: 16px;">
+
+      <div class="strategy-card rag">
+        <div class="strategy-icon">🔍</div>
+        <div class="strategy-name">RAG</div>
+        <h3>Retrieval-Augmented Generation</h3>
+        <p>
+          Avant de répondre, le modèle <strong>cherche les informations pertinentes</strong>
+          dans une base de documents (code, docs, rapports) et les injecte dans son contexte.
+        </p>
+        <p>
+          <strong>Analogie :</strong> un consultant qui a accès à tous les documents
+          du projet pendant l'entretien. Il ne les connaît pas par cœur,
+          mais il peut les consulter en temps réel.
+        </p>
+        <p style="margin-bottom:0; font-size:13px; color: var(--ink-3)">
+          Idéal quand le contexte change souvent ou est trop volumineux
+          pour être appris une fois pour toutes.
+        </p>
+      </div>
+
+      <div class="strategy-card ft">
+        <div class="strategy-icon">🎯</div>
+        <div class="strategy-name">Fine-tuning</div>
+        <h3>Spécialisation du modèle</h3>
+        <p>
+          On montre au modèle des centaines d'exemples de la tâche précise
+          qu'on veut qu'il fasse. Il <strong>apprend le moule</strong> — le format,
+          le style, les conventions — et les reproduit naturellement.
+        </p>
+        <p>
+          <strong>Analogie :</strong> un consultant qui a passé 6 mois dans l'équipe.
+          Il connaît les habitudes, le jargon, les templates sans qu'on les lui rappelle.
+        </p>
+        <p style="margin-bottom:0; font-size:13px; color: var(--ink-3)">
+          Idéal quand le pattern est répétitif, stable, et suffisamment privé
+          pour que le modèle de base ne le connaisse pas.
+        </p>
+      </div>
+
+    </div>
+
+    <div class="strategy-card both">
+      <div class="strategy-icon">⚡</div>
+      <div class="strategy-name">RAG + Fine-tuning combinés</div>
+      <p>
+        Le modèle a appris le <strong>format et le style</strong> (fine-tuning),
+        et reçoit le <strong>contexte du projet</strong> au moment de la question (RAG).
+        C'est la combinaison la plus puissante — et la plus fréquente en pratique
+        dès que le projet est mature.
+      </p>
+      <p style="margin-bottom:0; font-size:13px; color: var(--ink-3)">
+        Exemple : le modèle sait écrire une revue de code dans le format Capgemini (fine-tuning),
+        et reçoit le diff du PR à analyser (RAG). Il produit une revue dans le bon moule,
+        sur le bon code.
+      </p>
+    </div>
+  </section>
+
+  <!-- ── TABLEAU DE DÉCISION ──────────────────────────── -->
+  <section>
+    <div class="section-label">Guide de décision</div>
+    <h2>Quelle stratégie selon le contexte ?</h2>
+
+    <div class="card" style="padding: 0; overflow: hidden;">
+      <table>
+        <thead>
+          <tr>
+            <th>Situation</th>
+            <th>Caractéristique clé</th>
+            <th>Stratégie</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Nouveau projet</strong>, pas encore de conventions établies</td>
+            <td>Aucun exemple à collecter</td>
+            <td><span class="badge badge-rag">RAG</span></td>
+          </tr>
+          <tr>
+            <td><strong>Documentation</strong> d'un projet existant (README, ADR, specs)</td>
+            <td>Contexte volumineux, change souvent</td>
+            <td><span class="badge badge-rag">RAG</span></td>
+          </tr>
+          <tr>
+            <td><strong>Recherche dans la codebase</strong> (où est cette fonction, comment fonctionne ce module)</td>
+            <td>Contexte à récupérer à la demande</td>
+            <td><span class="badge badge-rag">RAG</span></td>
+          </tr>
+          <tr>
+            <td><strong>Génération de tests</strong> sur une stack interne avec fixtures maison</td>
+            <td>Pattern répétitif, conventions privées</td>
+            <td><span class="badge badge-ft">Fine-tuning</span></td>
+          </tr>
+          <tr>
+            <td><strong>Rapports standardisés</strong> (audit sécurité, CR de livraison, post-mortem)</td>
+            <td>Format fixe imposé, sorties très similaires</td>
+            <td><span class="badge badge-ft">Fine-tuning</span></td>
+          </tr>
+          <tr>
+            <td><strong>Docstrings et commentaires</strong> dans le style de l'équipe</td>
+            <td>Tâche répétitive, style interne</td>
+            <td><span class="badge badge-ft">Fine-tuning</span></td>
+          </tr>
+          <tr>
+            <td><strong>Code legacy non-documenté</strong> (COBOL, C industriel propriétaire)</td>
+            <td>Code absent d'internet, jamais vu par le modèle</td>
+            <td><span class="badge badge-ft">Fine-tuning</span></td>
+          </tr>
+          <tr>
+            <td><strong>Revue de code</strong> selon les standards client</td>
+            <td>Format fixe (fine-tuning) + code du PR à analyser (RAG)</td>
+            <td><span class="badge badge-both">Les deux</span></td>
+          </tr>
+          <tr>
+            <td><strong>Génération de code</strong> sur framework propriétaire mature</td>
+            <td>Style connu (fine-tuning) + contexte du fichier actuel (RAG)</td>
+            <td><span class="badge badge-both">Les deux</span></td>
+          </tr>
+          <tr>
+            <td><strong>Migration de code</strong> entre langages courants (Java→Python)</td>
+            <td>Base models déjà compétents, peu de valeur ajoutée</td>
+            <td><span class="badge badge-none">Base model suffit</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── EXEMPLES CONCRETS ─────────────────────────────── -->
+  <section>
+    <div class="section-label">Exemples concrets</div>
+    <h2>Ce que ça change dans la pratique</h2>
+
+    <!-- Exemple 1 -->
+    <div class="example" style="margin-bottom: 16px;">
+      <div class="example-header">
+        <span class="badge badge-ft">Fine-tuning</span>
+        <span class="example-tag">Exemple 1</span>
+        <span class="example-title">Génération de tests — équipe bancaire, stack interne</span>
+      </div>
+      <div class="example-body">
+        <p style="color: var(--ink-2); font-size: 14px;">
+          Une équipe maintient une application bancaire depuis 8 ans. Elle a ses propres fixtures,
+          ses propres conventions de nommage, son propre wrapper SQLAlchemy.
+          Elle demande à un LLM d'écrire un test pour une nouvelle fonction.
+        </p>
+        <div class="before-after">
+          <div class="before">
+            <div class="ba-label">Avant — GPT-4 sans contexte</div>
+            <pre>import pytest
+
+def test_transfer_funds():
+    result = transfer_funds(100, "ACC1", "ACC2")
+    assert result["status"] == "ok"</pre>
+            <p style="color: var(--red); font-size: 12px; margin-top:8px">
+              ✗ Imports manquants · ✗ Fixture <code>app_client</code> absente ·
+              ✗ Convention de nommage incorrecte · ✗ Ne passe pas la CI
+            </p>
+          </div>
+          <div class="after">
+            <div class="ba-label">Après — modèle local fine-tuné</div>
+            <pre>import pytest
+from tests.fixtures import app_client, db_session
+from internal.db import with_transaction
+
+@pytest.mark.integration
+def test_should_transfer_funds_when_accounts_valid(
+    app_client, db_session
+):
+    with with_transaction(db_session):
+        result = app_client.post("/transfer", json={...})
+    assert result.status_code == 200
+    logger.audit("transfer_tested")</pre>
+            <p style="color: var(--green); font-size: 12px; margin-top:8px">
+              ✓ Bons imports · ✓ Bonne fixture · ✓ Convention respectée · ✓ Passe la CI directement
+            </p>
+          </div>
+        </div>
+        <div class="callout info">
+          <div class="callout-icon">💡</div>
+          <p><strong>Ce qu'on a fait :</strong> collecté 50 vrais tests de l'équipe,
+          créé des paires prompt→test, fine-tuné un Qwen 2.5 Coder 7B.
+          Le dev copie-colle sans correction. Gain estimé : 15 min/test × 10 tests/jour = <strong>2h30/jour pour l'équipe</strong>.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Exemple 2 -->
+    <div class="example" style="margin-bottom: 16px;">
+      <div class="example-header">
+        <span class="badge badge-ft">Fine-tuning</span>
+        <span class="example-tag">Exemple 2</span>
+        <span class="example-title">Rapport d'audit NIS2 — format imposé client Defense</span>
+      </div>
+      <div class="example-body">
+        <p style="color: var(--ink-2); font-size: 14px;">
+          Un client OIV (Opérateur d'Importance Vitale) exige des rapports d'audit
+          dans un format précis : en-tête normé, tableau de conformité avec niveaux de criticité,
+          recommandations classées, visa RSSI. Ce format n'existe pas sur internet.
+        </p>
+        <div class="before-after">
+          <div class="before">
+            <div class="ba-label">Avant — prompt générique envoyé à Bedrock</div>
+            <p>Le modèle génère un rapport NIS2 "standard". Il faut :</p>
+            <p>— Réécrire l'en-tête (format client)<br>
+            — Reformater le tableau (colonnes incorrectes)<br>
+            — Reclasser les recommandations<br>
+            — Ajouter les références réglementaires manquantes<br>
+            — <strong>Et les données ont transité chez AWS.</strong></p>
+          </div>
+          <div class="after">
+            <div class="ba-label">Après — modèle local fine-tuné</div>
+            <p>30 rapports existants utilisés comme données d'entraînement.</p>
+            <p>Le modèle génère directement dans le bon format, avec les bons intitulés,
+            les bonnes références réglementaires, le bon niveau de langue.</p>
+            <p><strong>Aucune donnée ne quitte l'infrastructure client.</strong></p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Exemple 3 -->
+    <div class="example" style="margin-bottom: 16px;">
+      <div class="example-header">
+        <span class="badge badge-rag">RAG</span>
+        <span class="example-tag">Exemple 3</span>
+        <span class="example-title">Questions sur une codebase legacy de 15 ans</span>
+      </div>
+      <div class="example-body">
+        <p style="color: var(--ink-2); font-size: 14px;">
+          Un dev arrive sur un projet de 15 ans. 400 000 lignes de code.
+          Il veut comprendre comment fonctionne le module de calcul de retraite.
+          Le fine-tuning ne sert à rien ici — le contenu est trop large et change.
+          Le RAG indexe la codebase et répond aux questions en citant les sources.
+        </p>
+        <div class="flow">
+          <div class="flow-step">Dev pose une question</div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-step active">RAG cherche dans la codebase</div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-step">Modèle local reçoit les extraits pertinents</div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-step">Réponse avec références aux fichiers</div>
+        </div>
+        <div class="callout success">
+          <div class="callout-icon">✓</div>
+          <p>Tout tourne en local. Le code propriétaire, les algorithmes métier,
+          les données de calcul — rien ne quitte l'infrastructure.
+          <strong>Cas d'usage idéal pour les clients Defense avec contrainte de classification.</strong></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Exemple 4 -->
+    <div class="example">
+      <div class="example-header">
+        <span class="badge badge-both">Les deux</span>
+        <span class="example-tag">Exemple 4</span>
+        <span class="example-title">Revue de code sécurité — standards OIV</span>
+      </div>
+      <div class="example-body">
+        <p style="color: var(--ink-2); font-size: 14px;">
+          Un développeur soumet une PR. On veut une revue de code automatique
+          qui vérifie le respect des standards de sécurité OIV du client
+          et génère les commentaires dans le format imposé.
+        </p>
+        <div class="card-grid-3" style="margin-bottom:12px">
+          <div class="card" style="padding:16px">
+            <div class="section-label" style="color: var(--green)">Fine-tuning apporte</div>
+            <p style="font-size:13px; margin-bottom:0">
+              Le format exact des commentaires de revue (bloquant/non-bloquant,
+              référence réglementaire, niveau de criticité)
+            </p>
+          </div>
+          <div class="card" style="padding:16px">
+            <div class="section-label" style="color: var(--accent)">RAG apporte</div>
+            <p style="font-size:13px; margin-bottom:0">
+              Le diff de la PR, les fichiers modifiés,
+              le contexte de l'architecture existante
+            </p>
+          </div>
+          <div class="card" style="padding:16px">
+            <div class="section-label" style="color: var(--purple)">Résultat</div>
+            <p style="font-size:13px; margin-bottom:0">
+              Une revue dans le bon moule, sur le bon code,
+              sans aucun appel vers un provider externe
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── ÉCONOMIE ─────────────────────────────────────── -->
+  <section>
+    <div class="section-label">Modèle économique</div>
+    <h2>Quels coûts sont réellement réductibles ?</h2>
+
+    <div class="card" style="padding: 0; overflow: hidden; margin-bottom: 16px;">
+      <div style="padding: 16px 20px; background: var(--surface-3); border-bottom: 1px solid var(--border); display:grid; grid-template-columns:1fr 90px 90px 80px; gap:8px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-3)">
+        <span>Tâche</span>
+        <span style="text-align:right">Coût actuel</span>
+        <span style="text-align:right">Avec local</span>
+        <span style="text-align:right">Stratégie</span>
+      </div>
+      <div style="padding: 0 20px;">
+        <div class="cost-row">
+          <div class="cost-label">Génération de tests boilerplate (×50/jour, équipe 10 devs)</div>
+          <div class="cost-before">~180€/mois</div>
+          <div class="cost-after">~0€</div>
+          <div class="cost-strategy"><span class="badge badge-ft">FT</span></div>
+        </div>
+        <div class="cost-row">
+          <div class="cost-label">Docstrings et commentaires (×100/jour)</div>
+          <div class="cost-before">~90€/mois</div>
+          <div class="cost-after">~0€</div>
+          <div class="cost-strategy"><span class="badge badge-ft">FT</span></div>
+        </div>
+        <div class="cost-row">
+          <div class="cost-label">Rapports standardisés (×20/semaine)</div>
+          <div class="cost-before">~60€/mois</div>
+          <div class="cost-after">~0€</div>
+          <div class="cost-strategy"><span class="badge badge-ft">FT</span></div>
+        </div>
+        <div class="cost-row">
+          <div class="cost-label">Questions sur la codebase / documentation</div>
+          <div class="cost-before">~120€/mois</div>
+          <div class="cost-after">~0€</div>
+          <div class="cost-strategy"><span class="badge badge-rag">RAG</span></div>
+        </div>
+        <div class="cost-row">
+          <div class="cost-label">Completion en temps réel (Copilot)</div>
+          <div class="cost-before">190€/mois</div>
+          <div class="cost-after">190€/mois</div>
+          <div class="cost-strategy"><span class="badge badge-none">Non</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout success">
+      <div class="callout-icon">✓</div>
+      <p>
+        <strong>L'objectif n'est pas de remplacer tous les usages LLM.</strong>
+        C'est de remplacer les usages répétitifs à contexte privé — ceux qui coûtent
+        cher en volume et posent un problème de souveraineté — avec un modèle local
+        qui connaît le contexte une fois pour toutes.
+        La completion en temps réel (Copilot) reste pertinente pour ce qu'elle fait.
+      </p>
+    </div>
+  </section>
+
+  <!-- ── SOUVERAINETÉ ──────────────────────────────────── -->
+  <section>
+    <div class="section-label">Souveraineté des données</div>
+    <h2>Pourquoi c'est non-négociable en Defense</h2>
+
+    <div class="card-grid">
+      <div class="card">
+        <h3>Ce qui part chez un provider cloud</h3>
+        <p>Chaque prompt envoyé à ChatGPT, Copilot ou Bedrock contient potentiellement :</p>
+        <p>— Du code source propriétaire<br>
+        — Des noms de variables métier révélateurs<br>
+        — Des extraits de documentation interne<br>
+        — Des données de configuration système</p>
+        <p style="font-size:13px; color: var(--red); font-weight:600; margin-bottom:0">
+          Pour un client OIV ou classifié, c'est une fuite de données,
+          même si le provider affirme ne pas stocker.
+        </p>
+      </div>
+      <div class="card">
+        <h3>Ce que le modèle local change</h3>
+        <p>L'inférence se fait sur l'infrastructure du client (on-premise ou cloud souverain).
+        Le modèle est un fichier de poids qui tourne localement.</p>
+        <p>— Aucune donnée ne quitte le périmètre<br>
+        — Fonctionne en air-gap complet<br>
+        — Conforme aux exigences NIS2 et OIV<br>
+        — Auditables : les poids, les données d'entraînement, les logs</p>
+        <p style="font-size:13px; color: var(--green); font-weight:600; margin-bottom:0">
+          C'est une condition d'accès au marché Defense,
+          pas seulement un avantage concurrentiel.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── EN RÉSUMÉ ─────────────────────────────────────── -->
+  <section>
+    <div class="section-label">En résumé</div>
+    <h2>Trois questions pour choisir</h2>
+
+    <div class="card-grid-3">
+      <div class="card" style="border-top: 3px solid var(--accent)">
+        <div style="font-size: 24px; margin-bottom:8px">❓</div>
+        <h3>Le modèle a-t-il déjà vu ce pattern ?</h3>
+        <p style="font-size:13px">
+          Si oui (Python, SQL, revue générique) → le modèle de base suffit,
+          pas besoin de fine-tuning. Si non (format interne, code propriétaire) →
+          fine-tuning pertinent.
+        </p>
+      </div>
+      <div class="card" style="border-top: 3px solid var(--orange)">
+        <div style="font-size: 24px; margin-bottom:8px">🔄</div>
+        <h3>Le contexte change-t-il souvent ?</h3>
+        <p style="font-size:13px">
+          Si oui (nouvelle PR à chaque fois, documentation qui évolue) → RAG.
+          Si non (même format de rapport, mêmes conventions de test) → fine-tuning.
+        </p>
+      </div>
+      <div class="card" style="border-top: 3px solid var(--red)">
+        <div style="font-size: 24px; margin-bottom:8px">🔒</div>
+        <h3>Les données peuvent-elles quitter le périmètre ?</h3>
+        <p style="font-size:13px">
+          Si non → modèle local obligatoire, quelle que soit la stratégie.
+          RAG local + fine-tuning local = solution souveraine complète.
+        </p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  Document interne Capgemini — Usage confidentiel
+</footer>
+
+</body>
+</html>

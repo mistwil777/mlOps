@@ -1,9 +1,10 @@
 <script lang="ts">
+  import { page } from '$app/stores';
   import { onMount, onDestroy } from 'svelte';
   import { getProjects } from '$lib/api';
   import type { Project } from '$lib/types';
   import SectionTabs from '$lib/components/SectionTabs.svelte';
-  const tabs = [{ href: '/eval', label: 'Tests' }, { href: '/playground', label: 'Playground' }];
+  const tabs = [{ href: '/eval', label: 'Tests' }, { href: '/evals', label: 'Dashboard KPIs' }, { href: '/playground', label: 'Playground' }];
 
   let projects: Project[] = $state([]);
 
@@ -66,7 +67,7 @@
 
   onMount(async () => {
     projects = await getProjects().catch(() => []);
-    if (projects.length > 0) { ragProject = projects[0].id; selectedProject = projects[0].id; }
+    const _qp = $page.url.searchParams.get('project'); if (projects.length > 0) { ragProject = _qp && projects.find(p => p.id === _qp) ? _qp : projects[0].id; selectedProject = ragProject; }
   });
 
   async function loadTestSets() {
