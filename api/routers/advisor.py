@@ -294,6 +294,125 @@ class AdvisorRequest(BaseModel):
     doc_contexts: list[str] = []
 
 
+# ── Phase 0 — Pre-scoping (architecture mémoire + faisabilité matériel) ──────
+
+_PRESCOPING_SYSTEM_PROMPT = """\
+You are a sovereign AI infrastructure architect. Given a client need description and \
+optional hardware/deployment constraints, you determine which combination of components \
+the solution requires and whether the client's hardware can run it.
+
+Components to evaluate:
+- SLM (Small Language Model, fine-tuned LoRA adapter): needed when the task requires \
+  language generation, transformation, classification with natural language, or \
+  context-sensitive text production.
+- RAG (Retrieval-Augmented Generation, vector store with Qdrant): needed when the \
+  solution must access a large dynamic knowledge base, internal documentation, or \
+  retrieve relevant context before generating.
+- KG (Knowledge Graph, embedded with Kuzu): needed when the task requires multi-hop \
+  reasoning, complex entity relationships, or graph traversal (e.g. org charts, \
+  dependency graphs, regulatory cross-references). Kuzu is recommended over Neo4j \
+  for sovereign/classified deployments because it is embedded (no server, file-based).
+
+Server profiles for comparison (fill in estimated tokens/s and latency based on your \
+knowledge of MLX / Ollama inference benchmarks):
+- MacBook Pro M4 Pro 48GB (Apple Silicon unified memory)
+- Mac Studio M3 Ultra 192GB
+- Server: 1× NVIDIA A100 80GB
+- Server: 1× NVIDIA H100 80GB SXM
+- Server: 1× NVIDIA RTX 4090 24GB
+- Server: CPU-only (no GPU)
+
+Hardware feasibility: given the client's hardware description, identify which server \
+profile best matches it, and determine which model sizes are feasible.
+
+Return ONLY a raw JSON object (no markdown, no prose):
+{
+  "architecture": "slm_only" | "rag_only" | "rag_kg" | "slm_rag" | "slm_rag_kg" | "none",
+  "slm_needed": bool,
+  "rag_needed": bool,
+  "kg_needed": bool,
+  "kg_type": "kuzu" | "none",
+  "slm_rationale": "one sentence in French",
+  "rag_rationale": "one sentence in French",
+  "kg_rationale": "one sentence in French",
+  "server_options": [
+    {
+      "name": "profile name",
+      "type": "apple_silicon" | "nvidia_a100" | "nvidia_h100" | "nvidia_rtx" | "cpu_only",
+      "ram_gb": int,
+      "suitable": bool,
+      "models_feasible": ["model name 1", "model name 2"],
+      "tokens_per_second": {"7B_4bit": int, "14B_4bit": int},
+      "ttft_ms": {"7B_4bit": int, "14B_4bit": int},
+      "notes": "one sentence"
+    }
+  ],
+  "hardware_feasibility": {
+    "status": "feasible" | "partial" | "not_feasible" | "unknown",
+    "matched_profile": "profile name or null",
+    "feasible_models": ["model name"],
+    "estimated_tps": int or null,
+    "notes": "one sentence in French"
+  },
+  "rationale": "2-3 sentences in French explaining the overall architecture choice",
+  "next_phase": "slm" | "rag_only" | "none"
+}
+"""
+
+_PRESCOPING_USER_TEMPLATE = """\
+Client need: {need}
+
+Sovereignty required: {sovereignty}
+Expected requests per day: {requests_per_day}
+Maximum acceptable latency (ms): {max_latency_ms}
+Client hardware description: {hardware_description}
+"""
+
+
+class PreScopingRequest(BaseModel):
+    need: str
+    sovereignty_required: bool = True
+    requests_per_day: int = 1000
+    max_latency_ms: int = 2000
+    hardware_description: str = "unknown"
+    model: str = _DEFAULT_MODEL
+
+
+def _call_prescoping(req: PreScopingRequest) -> str:
+    user_content = _PRESCOPING_USER_TEMPLATE.format(
+        need=req.need,
+        sovereignty="Oui — déploiement on-premise obligatoire" if req.sovereignty_required else "Non — cloud autorisé",
+        requests_per_day=req.requests_per_day,
+        max_latency_ms=req.max_latency_ms,
+        hardware_description=req.hardware_description if req.hardware_description.strip() else "non précisé",
+    )
+    response = _client.messages.create(
+        model=req.model,
+        max_tokens=2048,
+        system=_PRESCOPING_SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": user_content}],
+    )
+    return response.content[0].text
+
+
+@router.post("/pre-scoping")
+def pre_scoping(body: PreScopingRequest) -> dict[str, Any]:
+    """Phase 0 — Architecture analysis: SLM / RAG / KG + hardware feasibility."""
+    try:
+        raw = _call_prescoping(body)
+    except anthropic.AuthenticationError:
+        raise HTTPException(401, "Invalid Anthropic API key")
+    except anthropic.APIError as exc:
+        raise HTTPException(502, f"Anthropic API error: {exc}")
+
+    try:
+        result = _parse_recommendation(raw)
+    except (json.JSONDecodeError, KeyError) as exc:
+        raise HTTPException(422, f"Model returned invalid JSON: {exc}\nRaw: {raw[:500]}")
+
+    return result
+
+
 def _call_claude(model: str, need: str, doc_contexts: list[str] | None = None) -> str:
     catalogue = _build_source_catalogue()
     user_content = _USER_TEMPLATE.format(need=need, source_catalogue=catalogue)

@@ -2,8 +2,9 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { onMount, tick } from 'svelte';
-  import { advisorRecommend, advisorAlternatives, advisorEvaluateSelection, advisorGetRecommendation, advisorFillGap, advisorResolveOverlap } from '$lib/api';
+  import { advisorRecommend, advisorAlternatives, advisorEvaluateSelection, advisorGetRecommendation, advisorFillGap, advisorResolveOverlap, advisorPreScoping } from '$lib/api';
   import type { AdvisorRecommendation, AdvisorAdapter, SelectionEval, OverlapResolution } from '$lib/types';
+  import type { PreScopingResult } from '$lib/api';
   import AdapterCard from '$lib/components/AdapterCard.svelte';
   import Topbar from '$lib/components/Topbar.svelte';
   import SovereigntyBadge from '$lib/components/SovereigntyBadge.svelte';
@@ -21,6 +22,17 @@
   // ── State ──────────────────────────────────────────────────────────────────
   const projectId = $derived($page.url.searchParams.get('project'));
   const readOnly  = $derived(false);
+
+  // Phase 0 — pre-scoping
+  let p0Need        = $state('');
+  let p0Sovereignty = $state(true);
+  let p0ReqPerDay   = $state(1000);
+  let p0Latency     = $state(2000);
+  let p0Hardware    = $state('');
+  let p0Loading     = $state(false);
+  let p0Error       = $state('');
+  let p0Result: PreScopingResult | null = $state(null);
+  let p0ServerExpanded = $state<string | null>(null);
 
   let need  = $state('');
   let model = $state('us.anthropic.claude-sonnet-4-6');
@@ -104,6 +116,28 @@
   // ── Derived ────────────────────────────────────────────────────────────────
   const selection = $derived([...adapters, ...(orchestrator ? [orchestrator] : [])]);
   const totalPairs = $derived(selection.reduce((s, a) => s + a.estimated_pairs, 0));
+
+  // ── Phase 0 actions ────────────────────────────────────────────────────────
+  async function analysePhase0() {
+    if (!p0Need.trim()) return;
+    p0Loading = true; p0Error = ''; p0Result = null;
+    try {
+      p0Result = await advisorPreScoping(
+        p0Need.trim(), p0Sovereignty, p0ReqPerDay, p0Latency,
+        p0Hardware.trim() || 'non précisé', model,
+      );
+      if (p0Result.next_phase !== 'none' && !need.trim()) {
+        need = p0Need.trim();
+      }
+    } catch (e) { p0Error = (e as Error).message; }
+    finally { p0Loading = false; }
+  }
+
+  function p0ContinuePhase1() {
+    if (!need.trim() && p0Need.trim()) need = p0Need.trim();
+    const el = document.getElementById('phase1-input');
+    if (el) el.scrollIntoView({ behavior: 'smooth' });
+  }
 
   // ── Actions ────────────────────────────────────────────────────────────────
   async function analyse() {
@@ -367,6 +401,141 @@
 
 <div class="content">
 
+  <!-- ── Phase 0 — Architecture mémoire ── -->
+  <div class="card mb-16 p0-card">
+    <div class="p0-header">
+      <span class="p0-phase-badge">Phase 0</span>
+      <span class="p0-title">Architecture mémoire</span>
+      <span class="p0-subtitle">SLM · RAG · Knowledge Graph · Faisabilité matériel</span>
+    </div>
+
+    <div class="p0-form">
+      <div class="p0-form-left">
+        <label class="form-label">Besoin client (résumé)</label>
+        <textarea class="form-textarea p0-need-input" bind:value={p0Need}
+          placeholder="Ex: Outil d'aide à la rédaction de contrats pour un cabinet d'avocats, accès à 10 000 documents internes…"
+          rows={3} disabled={p0Loading}></textarea>
+
+        <div class="p0-form-row mt-8">
+          <div class="p0-form-field">
+            <label class="form-label">Requêtes / jour</label>
+            <input class="form-input" type="number" bind:value={p0ReqPerDay} min="1" disabled={p0Loading} />
+          </div>
+          <div class="p0-form-field">
+            <label class="form-label">Latence max (ms)</label>
+            <input class="form-input" type="number" bind:value={p0Latency} min="100" step="100" disabled={p0Loading} />
+          </div>
+        </div>
+
+        <div class="mt-8">
+          <label class="form-label">Matériel client (optionnel)</label>
+          <input class="form-input" bind:value={p0Hardware}
+            placeholder="Ex: MacBook Pro M3 32GB, serveur Dell avec 2× A100 80GB…"
+            disabled={p0Loading} />
+        </div>
+
+        <div class="p0-sovereignty mt-8">
+          <label class="toggle-label">
+            <input type="checkbox" bind:checked={p0Sovereignty} disabled={p0Loading} />
+            <span>Souveraineté requise (déploiement on-premise)</span>
+          </label>
+        </div>
+
+        <button class="btn btn-primary w-full mt-12" onclick={analysePhase0}
+          disabled={p0Loading || !p0Need.trim()}>
+          {#if p0Loading}<span class="spinner"></span> Analyse en cours…{:else}◈ Analyser l'architecture{/if}
+        </button>
+        {#if p0Error}<div class="api-error mt-8">{p0Error}</div>{/if}
+      </div>
+
+      {#if p0Result}
+      <div class="p0-results">
+        <!-- Architecture badges -->
+        <div class="p0-arch-row mb-12">
+          <span class="p0-arch-badge" class:active={p0Result.slm_needed} class:inactive={!p0Result.slm_needed}>
+            SLM {p0Result.slm_needed ? '✓' : '✗'}
+          </span>
+          <span class="p0-arch-badge" class:active={p0Result.rag_needed} class:inactive={!p0Result.rag_needed}>
+            RAG {p0Result.rag_needed ? '✓' : '✗'}
+          </span>
+          <span class="p0-arch-badge" class:active={p0Result.kg_needed} class:inactive={!p0Result.kg_needed}>
+            KG {p0Result.kg_needed ? '✓' : '✗'}
+            {#if p0Result.kg_needed}<span class="p0-kg-tag">Kuzu</span>{/if}
+          </span>
+        </div>
+
+        <p class="p0-rationale mb-12">{p0Result.rationale}</p>
+
+        {#if p0Result.slm_needed}
+        <div class="p0-reason-row"><span class="p0-comp-label p0-slm">SLM</span><span>{p0Result.slm_rationale}</span></div>
+        {/if}
+        {#if p0Result.rag_needed}
+        <div class="p0-reason-row"><span class="p0-comp-label p0-rag">RAG</span><span>{p0Result.rag_rationale}</span></div>
+        {/if}
+        {#if p0Result.kg_needed}
+        <div class="p0-reason-row"><span class="p0-comp-label p0-kg">KG</span><span>{p0Result.kg_rationale}</span></div>
+        {/if}
+
+        <!-- Faisabilité matériel -->
+        {#if p0Result.hardware_feasibility.matched_profile}
+        <div class="p0-hw-box mt-12" class:hw-feasible={p0Result.hardware_feasibility.status === 'feasible'}
+          class:hw-partial={p0Result.hardware_feasibility.status === 'partial'}
+          class:hw-nope={p0Result.hardware_feasibility.status === 'not_feasible'}>
+          <div class="p0-hw-title">Matériel client — {p0Result.hardware_feasibility.matched_profile}</div>
+          <div class="p0-hw-status">
+            {#if p0Result.hardware_feasibility.status === 'feasible'}✅ Faisable{/if}
+            {#if p0Result.hardware_feasibility.status === 'partial'}⚠️ Partiel{/if}
+            {#if p0Result.hardware_feasibility.status === 'not_feasible'}❌ Non faisable{/if}
+          </div>
+          {#if p0Result.hardware_feasibility.feasible_models.length}
+          <div class="p0-hw-models">{p0Result.hardware_feasibility.feasible_models.join(' · ')}</div>
+          {/if}
+          {#if p0Result.hardware_feasibility.estimated_tps}
+          <div class="p0-hw-tps">~{p0Result.hardware_feasibility.estimated_tps} tokens/s</div>
+          {/if}
+          <p class="p0-hw-notes">{p0Result.hardware_feasibility.notes}</p>
+        </div>
+        {/if}
+
+        <!-- Tableau serveurs -->
+        <div class="p0-server-table mt-12">
+          <div class="p0-server-header">Comparatif serveurs</div>
+          {#each p0Result.server_options as srv}
+          <div class="p0-server-row" class:suitable={srv.suitable} class:not-suitable={!srv.suitable}>
+            <button class="p0-server-toggle" onclick={() => p0ServerExpanded = p0ServerExpanded === srv.name ? null : srv.name}>
+              <span class="p0-server-name">{srv.name}</span>
+              <span class="p0-server-ram">{srv.ram_gb} GB</span>
+              {#if srv.tokens_per_second['7B_4bit']}
+              <span class="p0-server-tps">{srv.tokens_per_second['7B_4bit']} t/s</span>
+              {/if}
+              <span class="p0-server-suit">{srv.suitable ? '✓' : '–'}</span>
+              <span class="p0-server-chevron" class:open={p0ServerExpanded === srv.name}>▾</span>
+            </button>
+            {#if p0ServerExpanded === srv.name}
+            <div class="p0-server-detail">
+              <div class="p0-server-models">{srv.models_feasible.join(' · ')}</div>
+              {#if srv.ttft_ms['7B_4bit']}
+              <div class="p0-server-latency">TTFT 7B: {srv.ttft_ms['7B_4bit']}ms
+                {#if srv.ttft_ms['14B_4bit']} · 14B: {srv.ttft_ms['14B_4bit']}ms{/if}
+              </div>
+              {/if}
+              <div class="p0-server-notes">{srv.notes}</div>
+            </div>
+            {/if}
+          </div>
+          {/each}
+        </div>
+
+        {#if p0Result.next_phase !== 'none'}
+        <button class="btn btn-primary w-full mt-16" onclick={p0ContinuePhase1}>
+          → Continuer vers Phase 1 — Adapters SLM
+        </button>
+        {/if}
+      </div>
+      {/if}
+    </div>
+  </div>
+
   <!-- ── Refine bar — disponible dès qu'une sélection existe ── -->
   {#if result && selection.length > 0}
     <div class="refine-bar mb-16">
@@ -390,8 +559,8 @@
     <!-- ── Col 1 : input + résumé ── -->
     <div class="col-input">
       {#if !readOnly}
-      <div class="card mb-16">
-        <div class="card-title mb-8">Décrivez le besoin client</div>
+      <div class="card mb-16" id="phase1-input">
+        <div class="card-title mb-8">Phase 1 — Adapters SLM</div>
         <p class="hint mb-12">Langage naturel — domaine, contraintes, déploiement.</p>
         <textarea
           class="form-textarea need-input"
@@ -987,4 +1156,62 @@
     font-family:var(--font-sans); outline:none; transition:border-color 150ms; box-sizing:border-box;
   }
   .form-input:focus { border-color:var(--accent); }
+
+  /* ── Phase 0 ── */
+  .p0-card { padding: 16px 20px; }
+  .p0-header { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .p0-phase-badge { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; background: var(--accent); color: #fff; border-radius: 4px; padding: 2px 7px; flex-shrink: 0; }
+  .p0-title { font-size: 14px; font-weight: 700; color: var(--text); }
+  .p0-subtitle { font-size: 12px; color: var(--text-muted); }
+
+  .p0-form { display: grid; grid-template-columns: 340px 1fr; gap: 20px; align-items: start; }
+  @media (max-width: 900px) { .p0-form { grid-template-columns: 1fr; } }
+  .p0-need-input { resize: vertical; min-height: 72px; }
+  .p0-form-row { display: flex; gap: 10px; }
+  .p0-form-field { flex: 1; }
+  .p0-sovereignty { display: flex; align-items: center; gap: 8px; }
+  .toggle-label { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; color: var(--text-muted); user-select: none; }
+  .toggle-label input { accent-color: var(--accent); width: 14px; height: 14px; }
+
+  .p0-results { display: flex; flex-direction: column; }
+  .p0-arch-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .p0-arch-badge { display: flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 600; padding: 5px 12px; border-radius: 20px; border: 2px solid; }
+  .p0-arch-badge.active { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .p0-arch-badge.inactive { border-color: var(--border); color: var(--text-muted); opacity: .5; }
+  .p0-kg-tag { font-size: 10px; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; color: var(--text-muted); font-weight: 400; }
+
+  .p0-rationale { font-size: 12px; color: var(--text-muted); font-style: italic; line-height: 1.6; }
+  .p0-reason-row { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 6px; font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+  .p0-comp-label { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; flex-shrink: 0; margin-top: 1px; }
+  .p0-slm { background: rgba(2,132,199,.15); color: #0284c7; }
+  .p0-rag { background: rgba(16,185,129,.15); color: #10b981; }
+  .p0-kg  { background: rgba(168,85,247,.15); color: #a855f7; }
+
+  .p0-hw-box { border-radius: var(--radius); padding: 10px 14px; border: 1px solid; }
+  .hw-feasible { border-color: rgba(16,185,129,.4); background: rgba(16,185,129,.06); }
+  .hw-partial  { border-color: rgba(245,158,11,.4); background: rgba(245,158,11,.06); }
+  .hw-nope     { border-color: rgba(239,68,68,.4);  background: rgba(239,68,68,.06); }
+  .p0-hw-title  { font-size: 12px; font-weight: 600; color: var(--text); }
+  .p0-hw-status { font-size: 12px; margin-top: 2px; }
+  .p0-hw-models { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+  .p0-hw-tps    { font-size: 12px; font-weight: 600; color: var(--accent); margin-top: 2px; }
+  .p0-hw-notes  { font-size: 11px; color: var(--text-muted); margin: 4px 0 0; font-style: italic; line-height: 1.5; }
+
+  .p0-server-table { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .p0-server-header { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); padding: 7px 12px; background: var(--surface-2); }
+  .p0-server-row { border-top: 1px solid var(--border); }
+  .p0-server-row.suitable { background: color-mix(in srgb, var(--accent) 4%, transparent); }
+  .p0-server-row.not-suitable { opacity: .6; }
+  .p0-server-toggle { width: 100%; display: flex; align-items: center; gap: 8px; background: none; border: none; padding: 7px 12px; cursor: pointer; text-align: left; }
+  .p0-server-toggle:hover { background: rgba(255,255,255,.04); }
+  .p0-server-name  { flex: 1; font-size: 12px; color: var(--text); }
+  .p0-server-ram   { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+  .p0-server-tps   { font-size: 11px; font-weight: 600; color: var(--accent); white-space: nowrap; }
+  .p0-server-suit  { font-size: 12px; width: 16px; text-align: center; }
+  .p0-server-chevron { font-size: 11px; color: var(--text-muted); transition: transform .15s; }
+  .p0-server-chevron.open { transform: rotate(180deg); }
+  .p0-server-detail { padding: 4px 12px 10px 12px; border-top: 1px solid var(--border); }
+  .p0-server-models  { font-size: 11px; color: var(--text-muted); }
+  .p0-server-latency { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+  .p0-server-notes   { font-size: 11px; color: var(--text-muted); margin-top: 3px; font-style: italic; }
 </style>

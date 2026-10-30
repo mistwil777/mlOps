@@ -96,6 +96,58 @@ export const advisorResolveOverlap = (need: string, adapter_a: AdvisorAdapter, a
     body: JSON.stringify({ need, adapter_a, adapter_b, current_selection, model: model ?? 'us.anthropic.claude-sonnet-4-6' }),
   });
 
+export interface PreScopingServerOption {
+  name: string;
+  type: 'apple_silicon' | 'nvidia_a100' | 'nvidia_h100' | 'nvidia_rtx' | 'cpu_only';
+  ram_gb: number;
+  suitable: boolean;
+  models_feasible: string[];
+  tokens_per_second: { '7B_4bit'?: number; '14B_4bit'?: number };
+  ttft_ms: { '7B_4bit'?: number; '14B_4bit'?: number };
+  notes: string;
+}
+
+export interface PreScopingResult {
+  architecture: 'slm_only' | 'rag_only' | 'rag_kg' | 'slm_rag' | 'slm_rag_kg' | 'none';
+  slm_needed: boolean;
+  rag_needed: boolean;
+  kg_needed: boolean;
+  kg_type: 'kuzu' | 'none';
+  slm_rationale: string;
+  rag_rationale: string;
+  kg_rationale: string;
+  server_options: PreScopingServerOption[];
+  hardware_feasibility: {
+    status: 'feasible' | 'partial' | 'not_feasible' | 'unknown';
+    matched_profile: string | null;
+    feasible_models: string[];
+    estimated_tps: number | null;
+    notes: string;
+  };
+  rationale: string;
+  next_phase: 'slm' | 'rag_only' | 'none';
+}
+
+export const advisorPreScoping = (
+  need: string,
+  sovereignty_required: boolean,
+  requests_per_day: number,
+  max_latency_ms: number,
+  hardware_description: string,
+  model?: string,
+) =>
+  req<PreScopingResult>('/advisor/pre-scoping', {
+    method: 'POST',
+    body: JSON.stringify({
+      need,
+      sovereignty_required,
+      requests_per_day,
+      max_latency_ms,
+      hardware_description,
+      model: model ?? 'us.anthropic.claude-sonnet-4-6',
+    }),
+  });
+
 export interface PairAnalysisResult {
   adapter_name: string;
   quality_report: {
