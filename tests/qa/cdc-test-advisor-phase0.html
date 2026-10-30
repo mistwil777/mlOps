@@ -417,9 +417,37 @@
     </div>
   </div>
 
+  <!-- ── Soumission des résultats ── -->
+  <h2>Soumettre les résultats</h2>
+
+  <div style="border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px;display:flex;flex-direction:column;gap:12px;">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div>
+        <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px">Testeur (optionnel)</label>
+        <input id="submit-tester" type="text" placeholder="Ton prénom" style="width:100%;border:1px solid var(--border);border-radius:var(--radius);padding:6px 10px;font-size:13px;font-family:var(--font);" />
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px">Notes globales (optionnel)</label>
+        <input id="submit-notes" type="text" placeholder="Ex: testé sur branche feat/xxx, Bedrock lent…" style="width:100%;border:1px solid var(--border);border-radius:var(--radius);padding:6px 10px;font-size:13px;font-family:var(--font);" />
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <button id="submit-btn" onclick="submitResults()"
+        style="background:var(--accent);color:#fff;border:none;border-radius:var(--radius);padding:8px 20px;font-size:13px;font-weight:600;cursor:pointer;font-family:var(--font);">
+        ↑ Enregistrer les résultats
+      </button>
+      <span id="submit-status" style="font-size:13px;color:var(--muted);"></span>
+    </div>
+  </div>
+
 </main>
 
 <script>
+  const CDC_ID = 'advisor-phase0';
+  const API_BASE = 'http://localhost:8002';
+
+  let _startTime = Date.now();
+
   function updateProgress() {
     const all = document.querySelectorAll('input[type="checkbox"]');
     const checked = Array.from(all).filter(c => c.checked).length;
@@ -464,6 +492,111 @@
       btn.textContent = '✓ Copié';
       setTimeout(() => { btn.textContent = 'Copier'; }, 1800);
     });
+  }
+
+  function collectChecks() {
+    const checks = [];
+
+    // Scenario groups
+    const groups = ['sc01','sc02','sc03','sc04','sc05','sc06'];
+    groups.forEach(g => {
+      const container = document.querySelector('[data-group="' + g + '"]');
+      if (!container) return;
+      container.querySelectorAll('.check-item').forEach((row, idx) => {
+        const cb = row.querySelector('input[type="checkbox"]');
+        const label = row.querySelector('label')?.textContent?.replace(/\s+/g,' ').trim() || '';
+        checks.push({
+          scenario_id: g.toUpperCase(),
+          check_index: idx,
+          label: label.substring(0, 200),
+          status: cb?.checked ? 'pass' : 'fail',
+          notes: '',
+        });
+      });
+    });
+
+    // Edge case table checkboxes (no group)
+    document.querySelectorAll('.edge-table input[type="checkbox"]').forEach((cb, idx) => {
+      const row = cb.closest('tr');
+      const cas = row?.cells[0]?.textContent?.trim() || ('edge-' + idx);
+      checks.push({
+        scenario_id: 'EDGE',
+        check_index: idx,
+        label: cas.substring(0, 200),
+        status: cb.checked ? 'pass' : 'fail',
+        notes: '',
+      });
+    });
+
+    // API curl checks
+    const curlSection = document.querySelector('.checks:not([data-group])');
+    if (curlSection) {
+      curlSection.querySelectorAll('.check-item').forEach((row, idx) => {
+        const cb = row.querySelector('input[type="checkbox"]');
+        const label = row.querySelector('label')?.textContent?.replace(/\s+/g,' ').trim() || '';
+        checks.push({
+          scenario_id: 'API',
+          check_index: idx,
+          label: label.substring(0, 200),
+          status: cb?.checked ? 'pass' : 'fail',
+          notes: '',
+        });
+      });
+    }
+
+    // Prereqs
+    document.querySelectorAll('.prereq-list input[type="checkbox"]').forEach((cb, idx) => {
+      checks.push({
+        scenario_id: 'PREREQ',
+        check_index: idx,
+        label: cb.closest('li')?.textContent?.replace(/\s+/g,' ').trim().substring(0, 200) || ('prereq-' + idx),
+        status: cb.checked ? 'pass' : 'skip',
+        notes: '',
+      });
+    });
+
+    return checks;
+  }
+
+  async function submitResults() {
+    const btn = document.getElementById('submit-btn');
+    const statusEl = document.getElementById('submit-status');
+    btn.disabled = true;
+    btn.textContent = '⏳ Envoi…';
+    statusEl.textContent = '';
+
+    const checks = collectChecks();
+    const payload = {
+      cdc_id: CDC_ID,
+      cdc_version: '1.0',
+      tester: document.getElementById('submit-tester').value.trim(),
+      notes: document.getElementById('submit-notes').value.trim(),
+      duration_s: (Date.now() - _startTime) / 1000,
+      checks,
+    };
+
+    try {
+      const resp = await fetch(API_BASE + '/api/qa/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.detail || resp.statusText);
+      }
+      const data = await resp.json();
+      const passed = checks.filter(c => c.status === 'pass').length;
+      const total = checks.filter(c => c.scenario_id !== 'PREREQ').length;
+      statusEl.style.color = '#16A34A';
+      statusEl.textContent = `✓ Run #${data.run_id} enregistré — ${passed}/${total} checks passés`;
+      btn.textContent = '✓ Enregistré';
+    } catch(e) {
+      statusEl.style.color = '#DC2626';
+      statusEl.textContent = '✗ Erreur : ' + e.message + ' (API démarrée ?)';
+      btn.disabled = false;
+      btn.textContent = '↑ Enregistrer les résultats';
+    }
   }
 
   // init

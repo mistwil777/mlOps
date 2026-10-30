@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 
 from api.routers import (
     adapters, advisor, analyze, base_models, data, datasets, delivery,
-    feedback, health, kpis, lifecycle, models, orchestrator, playground, projects, rag, runs, stream,
+    feedback, health, kpis, lifecycle, models, orchestrator, playground, projects, qa, rag, runs, stream,
 )
 
 app = FastAPI(title="MLOps Factory API", version="1.0.0", docs_url="/api/docs", redoc_url=None)
@@ -29,7 +29,7 @@ for r in (
     runs.router, stream.router, models.router, delivery.router,
     data.router, rag.router, playground.router, adapters.router,
     advisor.router, orchestrator.router, feedback.router, lifecycle.router,
-    kpis.router, analyze.router,
+    kpis.router, analyze.router, qa.router,
 ):
     app.include_router(r)
 
