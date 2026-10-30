@@ -11,6 +11,7 @@ from pipeline.utils.memory_store import (
     get_stats,
     list_corrections,
     reject_correction,
+    seed_kg_from_profiles,
     submit_correction,
     validate_correction,
 )
@@ -98,3 +99,10 @@ def get_memory_stats() -> dict:
 def get_memory_context(phase: str, need: str = "", hw_description: str = "") -> dict:
     ctx = build_memory_context(phase=phase, need=need, hw_description=hw_description)
     return {"context": ctx, "has_corrections": bool(ctx)}
+
+
+@router.post("/seed-kg", status_code=200)
+def post_seed_kg() -> dict:
+    """Seed KG from hardware_profiles.json. Idempotent."""
+    count = seed_kg_from_profiles(env="production")
+    return {"seeded": count, "message": f"{count} TPS facts written to KG"}

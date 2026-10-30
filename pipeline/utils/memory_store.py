@@ -1,19 +1,35 @@
-"""Corrective memory store — SQLite backend (Kuzu migration in Étape 3).
+"""Corrective memory store — SQLite + Kuzu KG + Qdrant.
 
-Stages corrections through staging before production.
-Never serves staging corrections as authoritative facts.
+SQLite is the source of truth for all corrections (always available).
+Kuzu mirrors structured facts (hardware→tps, correction nodes).
+Qdrant indexes validated corrections for semantic few-shot retrieval.
+
+All three are optional — SQLite always runs, KG/Qdrant are best-effort.
 """
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
+logger = logging.getLogger(__name__)
+
 _DB_PATH = Path("memory/corrections.db")
-_SCHEMA_VERSION = 1
+
+_HARDWARE_PROFILES = Path("memory/benchmarks/hardware_profiles.json")
+
+# KG + vector stores — imported lazily to avoid hard dependency
+def _kg():
+    from pipeline.utils import kg_store
+    return kg_store
+
+def _vec():
+    from pipeline.utils import vector_corrections
+    return vector_corrections
 
 
 def _connect(path: Path = _DB_PATH) -> sqlite3.Connection:
@@ -47,8 +63,8 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             rejected_at     TEXT,
             rejection_reason TEXT
         );
-        CREATE INDEX IF NOT EXISTS idx_corrections_phase  ON corrections(phase);
-        CREATE INDEX IF NOT EXISTS idx_corrections_status ON corrections(status);
+        CREATE INDEX IF NOT EXISTS idx_corrections_phase   ON corrections(phase);
+        CREATE INDEX IF NOT EXISTS idx_corrections_status  ON corrections(status);
         CREATE INDEX IF NOT EXISTS idx_corrections_created ON corrections(created_at);
     """)
     conn.commit()
@@ -77,6 +93,13 @@ def submit_correction(
             (correction_id, phase, description, observed_value, expected_value,
              rationale, confidence, source, context_need, context_hw, reported_by, now),
         )
+    # Mirror to KG (staging)
+    try:
+        correction = get_correction(correction_id)
+        if correction:
+            _kg().add_correction_to_kg(correction, env="staging")
+    except Exception as e:
+        logger.debug("KG staging mirror failed (non-critical): %s", e)
     return correction_id
 
 
@@ -88,7 +111,23 @@ def validate_correction(correction_id: str, validated_by: str) -> bool:
                WHERE id=? AND status='staging'""",
             (now, validated_by, correction_id),
         )
-        return cursor.rowcount > 0
+        updated = cursor.rowcount > 0
+    if not updated:
+        return False
+    correction = get_correction(correction_id)
+    if correction:
+        # Promote to KG production
+        try:
+            _kg().add_correction_to_kg(correction, env="production")
+            _kg().validate_correction_in_kg(correction_id, validated_by, now, env="production")
+        except Exception as e:
+            logger.debug("KG production mirror failed (non-critical): %s", e)
+        # Index in Qdrant for semantic retrieval
+        try:
+            _vec().upsert_correction(correction)
+        except Exception as e:
+            logger.debug("Qdrant index failed (non-critical): %s", e)
+    return True
 
 
 def reject_correction(correction_id: str, reason: str) -> bool:
@@ -99,7 +138,13 @@ def reject_correction(correction_id: str, reason: str) -> bool:
                WHERE id=? AND status='staging'""",
             (now, reason, correction_id),
         )
-        return cursor.rowcount > 0
+        updated = cursor.rowcount > 0
+    if updated:
+        try:
+            _vec().delete_correction(correction_id)
+        except Exception:
+            pass
+    return updated
 
 
 def list_corrections(
@@ -133,37 +178,95 @@ def get_correction(correction_id: str) -> dict | None:
 def get_stats() -> dict:
     with _connect() as conn:
         rows = conn.execute(
-            """SELECT phase, status, COUNT(*) as count
-               FROM corrections GROUP BY phase, status"""
+            "SELECT phase, status, COUNT(*) as count FROM corrections GROUP BY phase, status"
         ).fetchall()
+        total = conn.execute("SELECT COUNT(*) as c FROM corrections").fetchone()["c"]
     stats: dict[str, dict] = {}
     for row in rows:
         phase = row["phase"]
         if phase not in stats:
             stats[phase] = {"staging": 0, "validated": 0, "rejected": 0}
         stats[phase][row["status"]] = row["count"]
-    total = conn.execute("SELECT COUNT(*) FROM corrections").fetchone()[0] if False else None
-    with _connect() as conn:
-        total = conn.execute("SELECT COUNT(*) as c FROM corrections").fetchone()["c"]
-    return {"by_phase": stats, "total": total}
+    return {
+        "by_phase": stats,
+        "total": total,
+        "kg_available": _kg().is_available(),
+        "vector_available": _vec().is_available(),
+    }
 
 
 def build_memory_context(phase: str, need: str = "", hw_description: str = "") -> str:
-    """Build a text block of validated corrections to inject into prompts."""
+    """Build a structured text block to inject into advisor prompts.
+
+    Sources (in order of priority):
+    1. SQLite validated corrections — always available
+    2. KG hardware TPS facts — if kuzu available
+    3. Qdrant semantic few-shot — if Qdrant + Ollama available
+    """
+    lines: list[str] = []
+
+    # 1 — Validated corrections from SQLite (deterministic)
     with _connect() as conn:
         rows = conn.execute(
             "SELECT * FROM corrections WHERE status='validated' AND phase=? ORDER BY confidence DESC LIMIT 10",
             (phase,),
         ).fetchall()
-    if not rows:
-        return ""
-    lines = ["[CORRECTIONS VALIDÉES]"]
-    for row in rows:
-        line = f"- {row['description']}"
-        if row["expected_value"]:
-            line += f" → valeur correcte : {row['expected_value']}"
-        if row["rationale"]:
-            line += f" ({row['rationale']})"
-        lines.append(line)
-    lines.append("[FIN CORRECTIONS]")
+    if rows:
+        lines.append("[CORRECTIONS VALIDÉES]")
+        for row in rows:
+            line = f"- {row['description']}"
+            if row["expected_value"]:
+                line += f" → valeur correcte : {row['expected_value']}"
+            if row["rationale"]:
+                line += f" ({row['rationale']})"
+            lines.append(line)
+        lines.append("[FIN CORRECTIONS]")
+
+    # 2 — KG hardware TPS facts (if hw_description provided + kuzu available)
+    if hw_description and _kg().is_available():
+        try:
+            kg = _kg()
+            # Try to match hw_description against known hardware names
+            known_hw = ["Apple M4 Pro", "Apple M3 Ultra", "NVIDIA A100 80GB",
+                        "NVIDIA H100 80GB SXM", "NVIDIA RTX 4090 24GB", "CPU-only x86"]
+            matched = next(
+                (h for h in known_hw if any(kw in hw_description.lower()
+                 for kw in h.lower().split()[-2:])),
+                None,
+            )
+            if matched:
+                tps_facts = kg.get_hardware_tps(matched, env="production")
+                if tps_facts:
+                    lines.append(f"[FAITS MESURÉS — {matched}]")
+                    for f in tps_facts:
+                        lines.append(f"- {f['model']} : {f['tps']} t/s, TTFT {f['ttft_ms']} ms (source: {f['source']})")
+                    lines.append("[FIN FAITS MESURÉS]")
+        except Exception as e:
+            logger.debug("KG hw facts failed: %s", e)
+
+    # 3 — Semantic few-shot from Qdrant (if available)
+    if need and _vec().is_available():
+        try:
+            hits = _vec().search_similar_corrections(query=need, phase=phase, top_k=3)
+            new_hits = [h for h in hits if h.get("description") not in {r["description"] for r in rows}]
+            if new_hits:
+                lines.append("[EXEMPLES SIMILAIRES VALIDÉS]")
+                for h in new_hits:
+                    line = f"- {h['description']}"
+                    if h.get("expected_value"):
+                        line += f" → {h['expected_value']}"
+                    lines.append(line)
+                lines.append("[FIN EXEMPLES]")
+        except Exception as e:
+            logger.debug("Qdrant few-shot failed: %s", e)
+
     return "\n".join(lines)
+
+
+def seed_kg_from_profiles(env: str = "production") -> int:
+    """Load hardware_profiles.json into KG. Call once after benchmark."""
+    try:
+        return _kg().load_hardware_profiles_to_kg(_HARDWARE_PROFILES, env=env)
+    except Exception as e:
+        logger.warning("KG seeding failed: %s", e)
+        return 0

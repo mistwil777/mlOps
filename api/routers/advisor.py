@@ -452,7 +452,19 @@ def _load_memory_context(hw_description: str) -> str:
 
 
 def _call_prescoping(req: PreScopingRequest) -> str:
-    memory_ctx = _load_memory_context(req.hardware_description)
+    # Hardware perf facts (JSON profiles — always available)
+    hw_ctx = _load_memory_context(req.hardware_description)
+    # Validated corrections from corrective memory store (SQLite + KG + Qdrant)
+    try:
+        from pipeline.utils.memory_store import build_memory_context as _build_mem_ctx
+        corrections_ctx = _build_mem_ctx(
+            phase="pre-scoping",
+            need=req.need,
+            hw_description=req.hardware_description,
+        )
+    except Exception:
+        corrections_ctx = ""
+
     user_content = _PRESCOPING_USER_TEMPLATE.format(
         need=req.need,
         sovereignty="Oui — déploiement on-premise obligatoire" if req.sovereignty_required else "Non — cloud autorisé",
@@ -460,8 +472,9 @@ def _call_prescoping(req: PreScopingRequest) -> str:
         max_latency_ms=req.max_latency_ms,
         hardware_description=req.hardware_description if req.hardware_description.strip() else "non précisé",
     )
-    if memory_ctx:
-        user_content = memory_ctx + "\n\n" + user_content
+    prefix_parts = [p for p in [hw_ctx, corrections_ctx] if p]
+    if prefix_parts:
+        user_content = "\n\n".join(prefix_parts) + "\n\n" + user_content
     response = _client.messages.create(
         model=req.model,
         max_tokens=2048,
