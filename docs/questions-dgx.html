@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Questions DGX — Accès infrastructure GPU</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --ink:        #0F172A;
+      --ink-2:      #334155;
+      --ink-3:      #64748B;
+      --surface:    #FFFFFF;
+      --surface-2:  #F8FAFC;
+      --surface-3:  #F1F5F9;
+      --border:     #E2E8F0;
+      --accent:     #0284C7;
+      --green:      #059669;
+      --orange:     #D97706;
+      --red:        #DC2626;
+      --radius:     8px;
+      --shadow:     0 1px 3px rgba(0,0,0,.08);
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--surface-2);
+      color: var(--ink);
+      font-size: 15px;
+      line-height: 1.65;
+    }
+
+    .rainbow {
+      height: 4px;
+      background: linear-gradient(90deg, #2DD4BF, #22D3EE, #38BDF8 40%, #A855F7 62%, #EC4899 80%, #F59E0B);
+    }
+
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 32px 0 28px;
+    }
+    .header-inner {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 0 32px;
+    }
+    .eyebrow {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      color: var(--accent);
+      margin-bottom: 10px;
+    }
+    h1 {
+      font-size: 26px;
+      font-weight: 700;
+      line-height: 1.25;
+      margin-bottom: 10px;
+    }
+    .subtitle {
+      font-size: 14px;
+      color: var(--ink-3);
+    }
+
+    main {
+      max-width: 860px;
+      margin: 40px auto;
+      padding: 0 32px 80px;
+      display: flex;
+      flex-direction: column;
+      gap: 32px;
+    }
+
+    h2 {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--ink);
+      margin-bottom: 16px;
+    }
+
+    .section-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      color: var(--ink-3);
+      margin-bottom: 12px;
+    }
+
+    p { color: var(--ink-2); margin-bottom: 10px; }
+    p:last-child { margin-bottom: 0; }
+
+    /* Question cards */
+    .question-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .question-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+
+    .question-header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 14px 20px;
+      background: var(--surface-3);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .question-num {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: white;
+      font-size: 13px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .question-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--ink);
+    }
+
+    .question-body {
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .question-ask {
+      background: #EFF6FF;
+      border-left: 3px solid var(--accent);
+      border-radius: 0 6px 6px 0;
+      padding: 12px 16px;
+      font-size: 14px;
+      color: var(--ink);
+      font-style: italic;
+    }
+
+    ul {
+      padding-left: 0;
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    li {
+      font-size: 14px;
+      color: var(--ink-2);
+      padding-left: 18px;
+      position: relative;
+    }
+    li::before {
+      content: '—';
+      position: absolute;
+      left: 0;
+      color: var(--ink-3);
+    }
+
+    pre {
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      background: var(--surface-3);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 14px;
+      color: var(--ink-2);
+      white-space: pre-wrap;
+    }
+
+    code {
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      background: var(--surface-3);
+      padding: 1px 5px;
+      border-radius: 3px;
+      color: var(--ink);
+    }
+
+    .callout {
+      border-radius: var(--radius);
+      padding: 14px 18px;
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      font-size: 14px;
+    }
+    .callout.info    { background: #EFF6FF; border-left: 3px solid var(--accent); }
+    .callout.warning { background: #FFFBEB; border-left: 3px solid var(--orange); }
+    .callout.success { background: #ECFDF5; border-left: 3px solid var(--green); }
+    .callout-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+    .callout p { font-size: 14px; margin: 0; }
+
+    /* Tables */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    th {
+      background: var(--surface-3);
+      padding: 10px 14px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      color: var(--ink-3);
+      border-bottom: 2px solid var(--border);
+    }
+    td {
+      padding: 11px 14px;
+      border-bottom: 1px solid var(--border);
+      color: var(--ink-2);
+      vertical-align: top;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--surface-2); }
+
+    .badge {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 100px;
+    }
+    .badge-high   { background: #FEE2E2; color: #991B1B; }
+    .badge-medium { background: #FEF3C7; color: #92400E; }
+    .badge-low    { background: var(--surface-3); color: var(--ink-3); }
+    .badge-qwen25 { background: #DBEAFE; color: #1D4ED8; }
+    .badge-qwen3  { background: #EDE9FE; color: #5B21B6; }
+    .badge-ds     { background: #D1FAE5; color: #065F46; }
+
+    .model-name {
+      font-weight: 600;
+      color: var(--ink);
+      font-size: 13px;
+    }
+
+    .check { color: var(--green); font-weight: 700; }
+    .cross { color: var(--red); font-weight: 700; }
+
+    footer {
+      text-align: center;
+      padding: 24px;
+      font-size: 12px;
+      color: var(--ink-3);
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    @media (max-width: 640px) {
+      h1 { font-size: 20px; }
+      main { padding: 0 16px 60px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="rainbow"></div>
+
+<header>
+  <div class="header-inner">
+    <div class="eyebrow">Capgemini — Infrastructure IA</div>
+    <h1>Questions DGX — Accès infrastructure GPU</h1>
+    <p class="subtitle">Document préparé pour l'équipe infrastructure. Les réponses déterminent entièrement notre architecture technique.</p>
+  </div>
+</header>
+
+<main>
+
+  <!-- CONTEXTE -->
+  <section>
+    <div class="section-label">Contexte</div>
+    <div class="card">
+      <div style="padding: 20px;">
+        <p>Dans le cadre du projet MLOps, nous avons besoin d'accéder aux serveurs DGX pour entraîner et déployer des modèles de langage spécialisés (fine-tuning LoRA). Les réponses ci-dessous déterminent entièrement notre architecture technique.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- QUESTIONS -->
+  <section>
+    <div class="section-label">Questions à poser</div>
+    <div class="question-list">
+
+      <div class="question-card">
+        <div class="question-header">
+          <div class="question-num">1</div>
+          <div class="question-title">Type d'accès</div>
+        </div>
+        <div class="question-body">
+          <div class="question-ask">Les serveurs DGX sont-ils accessibles en <strong>inférence seulement</strong> ou en <strong>écriture (fine-tuning)</strong> ?</div>
+          <ul>
+            <li><strong>Inférence seulement</strong> : le serveur fait tourner un modèle pour répondre à des requêtes. Les poids ne changent pas.</li>
+            <li><strong>Fine-tuning (écriture)</strong> : on peut modifier les poids d'un modèle sur le serveur (entraînement PyTorch). C'est ce dont on a besoin pour spécialiser les modèles.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="question-card">
+        <div class="question-header">
+          <div class="question-num">2</div>
+          <div class="question-title">Format des modèles disponibles</div>
+        </div>
+        <div class="question-body">
+          <div class="question-ask">Les modèles déjà présents sur les serveurs sont-ils en format <strong>GGUF</strong> ou <strong>Safetensors</strong> ?</div>
+          <ul>
+            <li><strong>GGUF</strong> : format de déploiement (Ollama, llama.cpp) — lecture rapide, <strong>non fine-tunable</strong></li>
+            <li><strong>Safetensors</strong> : format HuggingFace — <strong>requis pour le fine-tuning</strong></li>
+          </ul>
+          <div class="callout warning">
+            <div class="callout-icon">⚠</div>
+            <p>Si les modèles sont uniquement en GGUF, il faudra télécharger les versions Safetensors depuis HuggingFace pour entraîner. Ce sont deux fichiers différents du même modèle — les deux peuvent coexister sur le serveur.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="question-card">
+        <div class="question-header">
+          <div class="question-num">3</div>
+          <div class="question-title">Bibliothèques disponibles — Unsloth</div>
+        </div>
+        <div class="question-body">
+          <div class="question-ask">Est-ce qu'<strong>Unsloth</strong> est installé sur les serveurs ?</div>
+          <pre>pip show unsloth</pre>
+          <p>Unsloth est la bibliothèque utilisée pour le fine-tuning sur GPU NVIDIA. Elle est 2× plus rapide que HuggingFace natif et optimisée pour les H200.</p>
+          <p>Si non installé : peut-on l'installer ? <code>pip install unsloth</code></p>
+        </div>
+      </div>
+
+      <div class="question-card">
+        <div class="question-header">
+          <div class="question-num">4</div>
+          <div class="question-title">PyTorch + CUDA</div>
+        </div>
+        <div class="question-body">
+          <div class="question-ask">PyTorch est-il disponible avec le support CUDA ?</div>
+          <pre>python -c "import torch; print(torch.cuda.is_available())"</pre>
+          <p>Doit retourner <code>True</code>. C'est le prérequis de base pour tout entraînement GPU.</p>
+          <div class="callout info">
+            <div class="callout-icon">💡</div>
+            <p><strong>Qu'est-ce que CUDA ?</strong> CUDA (Compute Unified Device Architecture) est le langage créé par NVIDIA pour programmer leurs GPUs. C'est le traducteur qui permet à Python/PyTorch de déléguer les calculs au GPU au lieu du CPU. Sans CUDA actif, le GPU H200 est présent mais inutilisé pour l'entraînement. C'est différent de l'environnement Mac (Apple Silicon) qui utilise une technologie équivalente mais incompatible appelée MLX.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="question-card">
+        <div class="question-header">
+          <div class="question-num">5</div>
+          <div class="question-title">Mode d'accès</div>
+        </div>
+        <div class="question-body">
+          <div class="question-ask">Comment accède-t-on aux serveurs ?</div>
+          <ul>
+            <li><strong>SSH direct</strong> : on se connecte et on lance les scripts directement</li>
+            <li><strong>Job scheduler (SLURM)</strong> : on soumet des jobs dans une queue, le scheduler alloue les GPUs</li>
+          </ul>
+          <p>Les deux sont compatibles avec notre pipeline, mais la configuration diffère.</p>
+        </div>
+      </div>
+
+      <div class="question-card">
+        <div class="question-header">
+          <div class="question-num">6</div>
+          <div class="question-title">Quota et partage</div>
+        </div>
+        <div class="question-body">
+          <div class="question-ask">Y a-t-il un quota d'heures GPU alloué par projet ? Les serveurs sont-ils partagés avec d'autres équipes ?</div>
+          <p>Utile pour planifier les runs d'entraînement. À titre indicatif, un fine-tuning d'un modèle 32B prend environ 2 à 4 heures sur H200.</p>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- TABLEAU SYNTHÈSE -->
+  <section>
+    <div class="section-label">Pourquoi ces questions sont bloquantes</div>
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>Question</th>
+            <th>Si oui / disponible</th>
+            <th>Si non</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Accès fine-tuning</strong></td>
+            <td><span class="check">✓</span> On entraîne sur H200, modèles 32B–72B</td>
+            <td>On entraîne sur Mac, limité à 7B 4-bit</td>
+          </tr>
+          <tr>
+            <td><strong>Safetensors disponibles</strong></td>
+            <td><span class="check">✓</span> Prêt à démarrer</td>
+            <td>Téléchargement HuggingFace nécessaire (~252 Go)</td>
+          </tr>
+          <tr>
+            <td><strong>Unsloth installé</strong></td>
+            <td><span class="check">✓</span> Pipeline prêt</td>
+            <td>Installation à demander</td>
+          </tr>
+          <tr>
+            <td><strong>PyTorch + CUDA</strong></td>
+            <td><span class="check">✓</span> Prêt</td>
+            <td>Environnement à configurer</td>
+          </tr>
+          <tr>
+            <td><strong>SSH direct</strong></td>
+            <td><span class="check">✓</span> Intégration pipeline simple</td>
+            <td>Adaptation pour SLURM nécessaire</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- MODÈLES -->
+  <section>
+    <div class="section-label">Modèles dont on a besoin</div>
+
+    <div class="callout warning" style="margin-bottom: 16px;">
+      <div class="callout-icon">⚠</div>
+      <p>Pour le fine-tuning, on a besoin des versions <strong>Safetensors</strong> (HuggingFace), pas GGUF. Si les modèles existants sont en GGUF, il faut les versions Safetensors en complément — ce sont deux fichiers différents du même modèle. Les modèles Qwen et DeepSeek sont <strong>déjà approuvés Cybersécurité</strong>.</p>
+    </div>
+
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>Modèle</th>
+            <th>Série</th>
+            <th>Taille (Safetensors)</th>
+            <th>Usage principal</th>
+            <th>Priorité</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="model-name">Qwen2.5-Coder-7B-Instruct</span></td>
+            <td><span class="badge badge-qwen25">Qwen2.5</span></td>
+            <td>~14 Go BF16 / ~4 Go INT4</td>
+            <td>Code, tests, docstrings (Mac + H200)</td>
+            <td><span class="badge badge-high">Haute</span></td>
+          </tr>
+          <tr>
+            <td><span class="model-name">Qwen2.5-Coder-32B-Instruct</span></td>
+            <td><span class="badge badge-qwen25">Qwen2.5</span></td>
+            <td>~64 Go BF16 / ~16 Go INT4</td>
+            <td>Code avancé, revue sécurité (H200)</td>
+            <td><span class="badge badge-high">Haute</span></td>
+          </tr>
+          <tr>
+            <td><span class="model-name">Qwen3-8B</span></td>
+            <td><span class="badge badge-qwen3">Qwen3</span></td>
+            <td>~16 Go BF16 / ~4 Go INT4</td>
+            <td>Rédaction, rapports, RH (Mac + H200)</td>
+            <td><span class="badge badge-high">Haute</span></td>
+          </tr>
+          <tr>
+            <td><span class="model-name">Qwen3-32B</span></td>
+            <td><span class="badge badge-qwen3">Qwen3</span></td>
+            <td>~64 Go BF16 / ~16 Go INT4</td>
+            <td>Raisonnement, juridique, avant-vente (H200)</td>
+            <td><span class="badge badge-high">Haute</span></td>
+          </tr>
+          <tr>
+            <td><span class="model-name">DeepSeek-Coder-V2-Lite-Instruct</span></td>
+            <td><span class="badge badge-ds">DeepSeek</span></td>
+            <td>~30 Go BF16</td>
+            <td>Code legacy, analyse CVE (H200)</td>
+            <td><span class="badge badge-medium">Moyenne</span></td>
+          </tr>
+          <tr>
+            <td><span class="model-name">DeepSeek-R1-Distill-Qwen-32B</span></td>
+            <td><span class="badge badge-ds">DeepSeek</span></td>
+            <td>~64 Go BF16</td>
+            <td>Raisonnement multi-étapes complexes (H200)</td>
+            <td><span class="badge badge-medium">Moyenne</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout info" style="margin-top: 12px;">
+      <div class="callout-icon">💡</div>
+      <p><strong>Pourquoi Qwen3 plutôt que Qwen2.5 pour les tâches générales :</strong> Qwen3 intègre un mode "thinking" (raisonnement pas à pas, comme GPT-o1) directement dans le modèle de base. Plus performant sur les tâches complexes (juridique, conformité, analyse de risque). Qwen2.5-Coder est conservé pour le code car Qwen3-Coder n'est pas encore disponible. Espace disque total estimé : <strong>~252 Go en BF16</strong>, ~65 Go en INT4.</p>
+    </div>
+  </section>
+
+  <!-- CE QU'ON PEUT FAIRE SANS -->
+  <section>
+    <div class="section-label">En attendant les réponses</div>
+    <div class="callout success">
+      <div class="callout-icon">✓</div>
+      <p>On peut démarrer le projet sur Mac (MacBook M4 Pro, 48 Go) : fine-tuning de modèles 7B en 4-bit via MLX, génération et validation des datasets, tests du pipeline complet. Le DGX devient nécessaire dès qu'on veut entraîner des modèles 32B+ ou accélérer les runs de production.</p>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  Document interne Capgemini — Usage confidentiel
+</footer>
+
+</body>
+</html>

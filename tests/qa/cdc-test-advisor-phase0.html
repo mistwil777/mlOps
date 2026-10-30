@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CDC Test — Advisor Phase 0</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --ink: #0F172A; --muted: #64748B; --border: #E2E8F0;
+      --surface: #F8FAFC; --accent: #0284C7;
+      --green: #16A34A; --orange: #D97706; --red: #DC2626;
+      --radius: 8px; --font: 'Inter', sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: var(--font); color: var(--ink); background: #fff; line-height: 1.6; }
+
+    .rainbow { height: 4px; background: linear-gradient(90deg,#2DD4BF,#22D3EE,#38BDF8 40%,#A855F7 62%,#EC4899 80%,#F59E0B); }
+
+    header { padding: 32px 48px 24px; border-bottom: 1px solid var(--border); }
+    .doc-label { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); margin-bottom: 6px; }
+    h1 { font-size: 26px; font-weight: 700; }
+    .meta { font-size: 13px; color: var(--muted); margin-top: 6px; }
+
+    main { max-width: 940px; margin: 0 auto; padding: 36px 48px 64px; }
+
+    h2 { font-size: 15px; font-weight: 700; margin: 36px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+    h3 { font-size: 13px; font-weight: 600; margin: 18px 0 8px; }
+    p, li { font-size: 13px; color: var(--muted); }
+    ul { padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+    code { font-family: 'Courier New', monospace; font-size: 11px; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; }
+
+    /* progress bar */
+    .progress-bar { display: flex; align-items: center; gap: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 16px; margin-bottom: 24px; }
+    .progress-label { font-size: 12px; color: var(--muted); white-space: nowrap; }
+    .progress-track { flex: 1; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+    .progress-fill  { height: 100%; background: var(--accent); border-radius: 3px; transition: width .3s; }
+    .progress-count { font-size: 12px; font-weight: 600; color: var(--accent); white-space: nowrap; }
+
+    /* prereqs */
+    .prereq-list { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+    .prereq-list li { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--ink); }
+
+    /* scenario */
+    .scenario { border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 16px; overflow: hidden; }
+    .scenario-header { display: flex; align-items: center; gap: 10px; padding: 11px 16px; background: var(--surface); border-bottom: 1px solid var(--border); flex-wrap: wrap; gap: 8px; }
+    .scen-id { font-size: 10px; font-weight: 700; background: var(--accent); color: #fff; padding: 2px 7px; border-radius: 4px; flex-shrink: 0; }
+    .scen-title { font-size: 13px; font-weight: 600; flex: 1; min-width: 160px; }
+    .badge { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; }
+    .badge-slm  { background: rgba(2,132,199,.12); color: #0284C7; }
+    .badge-rag  { background: rgba(16,185,129,.12); color: #059669; }
+    .badge-kg   { background: rgba(168,85,247,.12); color: #9333EA; }
+    .badge-none { background: rgba(100,116,139,.12); color: #64748B; }
+    .scen-score { font-size: 11px; color: var(--muted); margin-left: auto; white-space: nowrap; }
+
+    .scenario-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 14px; }
+
+    /* input grid with copy button */
+    .field-grid { display: grid; grid-template-columns: 150px 1fr 80px; gap: 5px 10px; align-items: center; }
+    .field-label { font-size: 12px; color: var(--muted); font-weight: 500; }
+    .field-value { font-size: 13px; color: var(--ink); font-family: 'Courier New', monospace; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; white-space: pre-wrap; word-break: break-word; }
+    .field-value.long { font-family: var(--font); }
+    .copy-btn {
+      font-size: 11px; padding: 3px 8px; border: 1px solid var(--border); border-radius: 4px;
+      background: #fff; cursor: pointer; color: var(--muted); transition: all .15s;
+      white-space: nowrap;
+    }
+    .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .copy-btn.copied { border-color: var(--green); color: var(--green); }
+
+    /* checks */
+    .section-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+    .checks { display: flex; flex-direction: column; gap: 6px; }
+    .check-item { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; border-radius: 5px; padding: 4px 6px; transition: background .1s; }
+    .check-item:hover { background: var(--surface); }
+    .check-item input[type="checkbox"] { width: 15px; height: 15px; margin-top: 2px; flex-shrink: 0; accent-color: var(--accent); cursor: pointer; }
+    .check-item label { font-size: 13px; color: var(--ink); cursor: pointer; line-height: 1.5; }
+    .check-item.done label { text-decoration: line-through; color: var(--muted); }
+    .check-expected { font-size: 11px; color: var(--muted); font-style: italic; display: block; }
+
+    /* edge cases table */
+    .edge-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .edge-table th { text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 8px 12px; background: var(--surface); border-bottom: 1px solid var(--border); }
+    .edge-table td { padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    .edge-table tr:last-child td { border-bottom: none; }
+    .edge-table td:last-child { display: flex; align-items: flex-start; gap: 10px; }
+    .ok   { color: var(--green); font-weight: 600; font-size: 11px; white-space: nowrap; }
+    .warn { color: var(--orange); font-weight: 600; font-size: 11px; white-space: nowrap; }
+    .fail { color: var(--red); font-weight: 600; font-size: 11px; white-space: nowrap; }
+
+    /* note */
+    .note { background: #FFFBEB; border: 1px solid #FDE68A; border-radius: var(--radius); padding: 10px 14px; font-size: 13px; color: #92400E; margin: 14px 0; }
+
+    pre { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; font-family: 'Courier New', monospace; font-size: 12px; overflow: auto; white-space: pre-wrap; color: var(--ink); position: relative; }
+    .pre-copy { position: absolute; top: 8px; right: 10px; font-size: 11px; padding: 3px 8px; border: 1px solid var(--border); border-radius: 4px; background: #fff; cursor: pointer; color: var(--muted); }
+    .pre-copy:hover { border-color: var(--accent); color: var(--accent); }
+  </style>
+</head>
+<body>
+
+<div class="rainbow"></div>
+
+<header>
+  <div class="doc-label">MLOps · Advisor</div>
+  <h1>CDC Test — Advisor Phase 0</h1>
+  <div class="meta">2026-10-30 · Fonctionnalité : pre-scoping architecture mémoire + faisabilité matériel</div>
+</header>
+
+<main>
+
+  <!-- Progress -->
+  <div class="progress-bar" id="progress-bar">
+    <span class="progress-label">Progression</span>
+    <div class="progress-track"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+    <span class="progress-count" id="progress-count">0 / 0</span>
+  </div>
+
+  <h2>Prérequis</h2>
+  <ul class="prereq-list" id="prereqs">
+    <li><input type="checkbox" onchange="updateProgress()"> Stack Docker : <code>docker-compose up -d</code></li>
+    <li><input type="checkbox" onchange="updateProgress()"> API backend : <code>uvicorn api.main:app --port 8002</code></li>
+    <li><input type="checkbox" onchange="updateProgress()"> Frontend : <code>cd frontend && npm run dev</code></li>
+    <li><input type="checkbox" onchange="updateProgress()"> Ouvrir <code>http://localhost:5173/advisor</code></li>
+    <li><input type="checkbox" onchange="updateProgress()"> Le bloc "Phase 0 — Architecture mémoire" est visible en haut de page</li>
+  </ul>
+
+  <div class="note"><strong>Mode d'emploi :</strong> Pour chaque scénario, utilise le bouton <strong>Copier</strong> à droite de chaque champ, colle la valeur dans le formulaire, lance l'analyse, puis coche les cases si le résultat correspond.</div>
+
+  <h2>Scénarios fonctionnels</h2>
+
+  <!-- SC-01 -->
+  <div class="scenario">
+    <div class="scenario-header">
+      <span class="scen-id">SC-01</span>
+      <span class="scen-title">Cabinet juridique — SLM + RAG</span>
+      <span class="badge badge-slm">SLM</span>
+      <span class="badge badge-rag">RAG</span>
+      <span class="scen-score" id="score-sc01">0/8</span>
+    </div>
+    <div class="scenario-body">
+      <div>
+        <div class="section-label" style="margin-bottom:8px">Entrées à saisir</div>
+        <div class="field-grid">
+          <span class="field-label">Besoin</span>
+          <span class="field-value long">Outil de rédaction de contrats pour un cabinet d'avocats. Accès à 15 000 modèles de contrats internes. Génération assistée, résumé de clauses.</span>
+          <button class="copy-btn" onclick="copyField(this, 'Outil de rédaction de contrats pour un cabinet d\'avocats. Accès à 15 000 modèles de contrats internes. Génération assistée, résumé de clauses.')">Copier</button>
+
+          <span class="field-label">Souveraineté</span>
+          <span class="field-value">✓ Cocher</span>
+          <span></span>
+
+          <span class="field-label">Requêtes / jour</span>
+          <span class="field-value">500</span>
+          <button class="copy-btn" onclick="copyField(this, '500')">Copier</button>
+
+          <span class="field-label">Latence max (ms)</span>
+          <span class="field-value">3000</span>
+          <button class="copy-btn" onclick="copyField(this, '3000')">Copier</button>
+
+          <span class="field-label">Matériel</span>
+          <span class="field-value">MacBook Pro M4 Pro 48 Go</span>
+          <button class="copy-btn" onclick="copyField(this, 'MacBook Pro M4 Pro 48 Go')">Copier</button>
+        </div>
+      </div>
+
+      <div>
+        <div class="section-label" style="margin-bottom:8px">Résultats attendus</div>
+        <div class="checks" data-group="sc01">
+          <div class="check-item" onclick="toggleCheck(this)"><input type="checkbox" onchange="updateProgress()"><label>Badge <strong>SLM ✓</strong> affiché en bleu <span class="check-expected">— génération de texte = SLM requis</span></label></div>
+          <div class="check-item" onclick="toggleCheck(this)"><input type="checkbox" onchange="updateProgress()"><label>Badge <strong>RAG ✓</strong> affiché en vert <span class="check-expected">— 15 000 documents = RAG requis</span></label></div>
+          <div class="check-item" onclick="toggleCheck(this)"><input type="checkbox" onchange="updateProgress()"><label>Badge <strong>KG ✗</strong> grisé/inactif <span class="check-expected">— pas de multi-hop ni graphe</span></label></div>
+          <div class="check-item" onclick="toggleCheck(this)"><input type="checkbox" onchange="updateProgress()"><label>Rationale affiché (2-3 phrases en français)</label></div>
+          <div class="check-item" onclick="toggleCheck(this)"><input type="checkbox" onchange="updateProgress()"><label>Tableau serveurs avec au moins 4 profils</label></div>
+          <div class="check-item" onclick="toggleCheck(this)"><input type="checkbox" onchange="updateProgress()"><label>Profil M4 Pro marqué <strong>✓</strong> dans le tableau</label></div>
+          <div class="check-item" onclick="toggleCheck(this)"><input type="checkbox" onchange="updateProgress()"><label>Box matériel : statut <strong>Faisable</strong> (fond vert) et modèles 7B mentionnés</label></div>
+          <div class="check-item" onclick="toggleCheck(this)"><input type="checkbox" onchange="updateProgress()"><label>Bouton <strong>"Continuer vers Phase 1"</strong> visible et clic → scroll jusqu'au formulaire adapter avec besoin pré-rempli</label></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SC-02 -->
+  <div class="scenario">
+    <div class="scenario-header">
+      <span class="scen-id">SC-02</span>
+      <span class="scen-title">Organigramme Defense — SLM + RAG + KG</span>
+      <span class="badge badge-slm">SLM</span>
+      <span class="badge badge-rag">RAG</span>
+      <span class="badge badge-kg">KG · Kuzu</span>
+      <span class="scen-score" id="score-sc02">0/5</span>
+    </div>
+    <div class="scenario-body">
+      <div>
+        <div class="section-label" style="margin-bottom:8px">Entrées à saisir</div>
+        <div class="field-grid">
+          <span class="field-label">Besoin</span>
+          <span class="field-value long">Système de requêtes sur organigramme hiérarchique classifié (3 000 personnes), cheminement entre postes, chaînes de commandement. Données sensibles — déploiement air-gapped.</span>
+          <button class="copy-btn" onclick="copyField(this, 'Système de requêtes sur organigramme hiérarchique classifié (3 000 personnes), cheminement entre postes, chaînes de commandement. Données sensibles — déploiement air-gapped.')">Copier</button>
+
+          <span class="field-label">Souveraineté</span>
+          <span class="field-value">✓ Cocher</span>
+          <span></span>
+
+          <span class="field-label">Requêtes / jour</span>
+          <span class="field-value">200</span>
+          <button class="copy-btn" onclick="copyField(this, '200')">Copier</button>
+
+          <span class="field-label">Latence max (ms)</span>
+          <span class="field-value">1500</span>
+          <button class="copy-btn" onclick="copyField(this, '1500')">Copier</button>
+
+          <span class="field-label">Matériel</span>
+          <span class="field-value">Serveur Dell PowerEdge avec 2× NVIDIA A100 80 Go</span>
+          <button class="copy-btn" onclick="copyField(this, 'Serveur Dell PowerEdge avec 2× NVIDIA A100 80 Go')">Copier</button>
+        </div>
+      </div>
+      <div>
+        <div class="section-label" style="margin-bottom:8px">Résultats attendus</div>
+        <div class="checks" data-group="sc02">
+          <div class="check-item" onclick="toggleCheck(this)"><input type="checkbox" onchange="updateProgress()"><label>Badge <strong>KG ✓</strong> en violet avec tag <strong>Kuzu</strong> visible</label></div>
+          <div class="check-item" onclick="toggleCheck(this)"><input type="checkbox" onchange="updateProgress()"><label>Rationale KG mentionne Kuzu ou "embedded" ou "classifié"</label></div>
+          <div class="check-item" onclick="toggleCheck(this)"><input type="checkbox" onchange="updateProgress()"><label>Profil A100 ou "serveur GPU" marqué <strong>✓</strong> dans le tableau</label></div>
+          <div class="check-item" onclick="toggleCheck(this)"><input type="checkbox" onchange="updateProgress()"><label>Box matériel : statut <strong>Faisable</strong>, profil matché proche de A100</label></div>
+          <div class="check-item" onclick="toggleCheck(this)"><input type="checkbox" onchange="updateProgress()"><label><code>tokens_per_second</code> estimé > 50 pour le profil A100 (visible en détail accordéon)</label></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SC-03 -->
+  <div class="scenario">
+    <div class="scenario-header">
+      <span class="scen-id">SC-03</span>
+      <span class="scen-title">Base RH — RAG seul, matériel inconnu</span>
+      <span class="badge badge-rag">RAG</span>
+      <span class="badge badge-none">SLM ?</span>
+      <span class="scen-score" id="score-sc03">0/4</span>
+    </div>
+    <div class="scenario-body">
+      <div>
+        <div class="section-label" style="margin-bottom:8px">Entrées à saisir</div>
+        <div class="field-grid">
+          <span class="field-label">Besoin</span>
+          <span class="field-value long">Moteur de recherche sémantique sur base de procédures RH internes (500 documents PDF). Questions/réponses factuelles uniquement, pas de génération libre.</span>
+          <button class="copy-btn" onclick="copyField(this, 'Moteur de recherche sémantique sur base de procédures RH internes (500 documents PDF). Questions/réponses factuelles uniquement, pas de génération libre.')">Copier</button>
+
+          <span class="field-label">Requêtes / jour</span>
+          <span class="field-value">2000</span>
+          <button class="copy-btn" onclick="copyField(this, '2000')">Copier</button>
+
+          <span class="field-label">Latence max (ms)</span>
+          <span class="field-value">800</span>
+          <button class="copy-btn" onclick="copyField(this, '800')">Copier</button>
+
+          <span class="field-label">Matériel</span>
+          <span class="field-value">(laisser vide)</span>
+          <span></span>
+        </div>
+      </div>
+      <div>
+        <div class="section-label" style="margin-bottom:8px">Résultats attendus</div>
+        <div class="checks" data-group="sc03">
+          <div class="check-item" onclick="toggleCheck(this)"><input type="checkbox" onchange="updateProgress()"><label>Badge <strong>RAG ✓</strong> affiché</label></div>
+          <div class="check-item" onclick="toggleCheck(this)"><input type="checkbox" onchange="updateProgress()"><label>Badge KG <strong>✗</strong> grisé</label></div>
+          <div class="check-item" onclick="toggleCheck(this)"><input type="checkbox" onchange="updateProgress()"><label>Box matériel : statut <strong>unknown</strong> ou absente <span class="check-expected">— matériel non renseigné</span></label></div>
+          <div class="check-item" onclick="toggleCheck(this)"><input type="checkbox" onchange="updateProgress()"><label>Aucune erreur JS dans la console navigateur (<kbd>F12</kbd>)</label></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SC-04 -->
+  <div class="scenario">
+    <div class="scenario-header">
+      <span class="scen-id">SC-04</span>
+      <span class="scen-title">Matériel insuffisant — CPU seul, latence serrée</span>
+      <span class="badge badge-slm">SLM</span>
+      <span class="scen-score" id="score-sc04">0/4</span>
+    </div>
+    <div class="scenario-body">
+      <div>
+        <div class="section-label" style="margin-bottom:8px">Entrées à saisir</div>
+        <div class="field-grid">
+          <span class="field-label">Besoin</span>
+          <span class="field-value long">Traduction automatique de documents techniques Python → Java en production continue.</span>
+          <button class="copy-btn" onclick="copyField(this, 'Traduction automatique de documents techniques Python → Java en production continue.')">Copier</button>
+
+          <span class="field-label">Requêtes / jour</span>
+          <span class="field-value">10000</span>
+          <button class="copy-btn" onclick="copyField(this, '10000')">Copier</button>
+
+          <span class="field-label">Latence max (ms)</span>
+          <span class="field-value">500</span>
+          <button class="copy-btn" onclick="copyField(this, '500')">Copier</button>
+
+          <span class="field-label">Matériel</span>
+          <span class="field-value">Serveur Linux Intel Xeon 32 cœurs, 64 Go RAM, pas de GPU</span>
+          <button class="copy-btn" onclick="copyField(this, 'Serveur Linux Intel Xeon 32 cœurs, 64 Go RAM, pas de GPU')">Copier</button>
+        </div>
+      </div>
+      <div>
+        <div class="section-label" style="margin-bottom:8px">Résultats attendus</div>
+        <div class="checks" data-group="sc04">
+          <div class="check-item" onclick="toggleCheck(this)"><input type="checkbox" onchange="updateProgress()"><label>Box matériel : statut <strong>Partiel</strong> (orange) ou <strong>Non faisable</strong> (rouge)</label></div>
+          <div class="check-item" onclick="toggleCheck(this)"><input type="checkbox" onchange="updateProgress()"><label>Notes mentionnent l'absence de GPU ou la contrainte 500ms</label></div>
+          <div class="check-item" onclick="toggleCheck(this)"><input type="checkbox" onchange="updateProgress()"><label>Profil CPU-only présent dans le tableau avec tokens/s faibles</label></div>
+          <div class="check-item" onclick="toggleCheck(this)"><input type="checkbox" onchange="updateProgress()"><label>Rationale indique une contrainte de déploiement ou recommande d'ajouter un GPU</label></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SC-05 -->
+  <div class="scenario">
+    <div class="scenario-header">
+      <span class="scen-id">SC-05</span>
+      <span class="scen-title">Navigation accordéon serveurs</span>
+      <span class="scen-score" id="score-sc05">0/5</span>
+    </div>
+    <div class="scenario-body">
+      <div class="note" style="margin:0">Reprendre les résultats de SC-01 ou SC-02 (pas besoin de relancer).</div>
+      <div>
+        <div class="section-label" style="margin-bottom:8px">Actions + vérifications</div>
+        <div class="checks" data-group="sc05">
+          <div class="check-item" onclick="toggleCheck(this)"><input type="checkbox" onchange="updateProgress()"><label>Clic sur un profil serveur → détail s'affiche (modèles, TTFT, notes)</label></div>
+          <div class="check-item" onclick="toggleCheck(this)"><input type="checkbox" onchange="updateProgress()"><label>Clic sur un autre profil → le premier se ferme, le nouveau s'ouvre</label></div>
+          <div class="check-item" onclick="toggleCheck(this)"><input type="checkbox" onchange="updateProgress()"><label>Re-clic sur le profil ouvert → se ferme</label></div>
+          <div class="check-item" onclick="toggleCheck(this)"><input type="checkbox" onchange="updateProgress()"><label>Lignes "suitable = true" ont un fond légèrement teinté bleu</label></div>
+          <div class="check-item" onclick="toggleCheck(this)"><input type="checkbox" onchange="updateProgress()"><label>Lignes "suitable = false" sont plus pâles / opacité réduite</label></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SC-06 -->
+  <div class="scenario">
+    <div class="scenario-header">
+      <span class="scen-id">SC-06</span>
+      <span class="scen-title">Enchaînement Phase 0 → Phase 1</span>
+      <span class="scen-score" id="score-sc06">0/5</span>
+    </div>
+    <div class="scenario-body">
+      <div class="note" style="margin:0">Partir des résultats de SC-01 (SLM + RAG confirmés).</div>
+      <div>
+        <div class="section-label" style="margin-bottom:8px">Actions + vérifications</div>
+        <div class="checks" data-group="sc06">
+          <div class="check-item" onclick="toggleCheck(this)"><input type="checkbox" onchange="updateProgress()"><label>Bouton <strong>"Continuer vers Phase 1"</strong> visible dans les résultats Phase 0</label></div>
+          <div class="check-item" onclick="toggleCheck(this)"><input type="checkbox" onchange="updateProgress()"><label>Clic → scroll smooth jusqu'au formulaire adapter (titre "Phase 1 — Adapters SLM")</label></div>
+          <div class="check-item" onclick="toggleCheck(this)"><input type="checkbox" onchange="updateProgress()"><label>Le textarea Phase 1 est pré-rempli avec le texte saisi en Phase 0</label></div>
+          <div class="check-item" onclick="toggleCheck(this)"><input type="checkbox" onchange="updateProgress()"><label>Clic "Analyser le besoin" → la recommandation adapter se génère normalement</label></div>
+          <div class="check-item" onclick="toggleCheck(this)"><input type="checkbox" onchange="updateProgress()"><label>Les résultats Phase 0 restent visibles en haut pendant l'analyse Phase 1</label></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2>Cas limites</h2>
+
+  <table class="edge-table">
+    <thead>
+      <tr><th>Cas</th><th>Action</th><th style="width:220px">Attendu</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Bouton désactivé</td>
+        <td>Cliquer "Analyser" avec textarea Phase 0 vide</td>
+        <td><span class="ok">OK</span> <input type="checkbox" onchange="updateProgress()" title="Bouton grisé, aucun appel"> Bouton grisé, aucun appel</td>
+      </tr>
+      <tr>
+        <td>Double-clic</td>
+        <td>Cliquer deux fois très vite sur "Analyser"</td>
+        <td><span class="ok">OK</span> <input type="checkbox" onchange="updateProgress()" title="Un seul appel, bouton se désactive"> Un seul appel, spinner visible</td>
+      </tr>
+      <tr>
+        <td>Nouvelle analyse</td>
+        <td>Lancer une 2ème analyse Phase 0 après une 1ère</td>
+        <td><span class="ok">OK</span> <input type="checkbox" onchange="updateProgress()" title="Anciens résultats remplacés"> Anciens résultats remplacés</td>
+      </tr>
+      <tr>
+        <td>Souveraineté décochée</td>
+        <td>Décocher la case et lancer</td>
+        <td><span class="warn">~</span> <input type="checkbox" onchange="updateProgress()" title="Pas d'erreur, résultats possiblement différents"> Pas d'erreur, résultat cohérent</td>
+      </tr>
+      <tr>
+        <td>Backend coupé</td>
+        <td>Arrêter l'API et lancer une analyse</td>
+        <td><span class="fail">ERR</span> <input type="checkbox" onchange="updateProgress()" title="Message d'erreur rouge, pas de crash"> Message d'erreur rouge, pas de crash</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>Vérification API directe</h2>
+
+  <div style="position:relative">
+    <pre id="curl-block">curl -s -X POST http://localhost:8002/api/advisor/pre-scoping \
+  -H "Content-Type: application/json" \
+  -d '{
+    "need": "Rédaction de contrats juridiques, accès à 10000 documents internes",
+    "sovereignty_required": true,
+    "requests_per_day": 500,
+    "max_latency_ms": 2000,
+    "hardware_description": "MacBook Pro M4 Pro 48 Go"
+  }' | python3 -m json.tool</pre>
+    <button class="pre-copy" onclick="copyPre(this, 'curl-block')">Copier</button>
+  </div>
+
+  <div>
+    <div class="section-label" style="margin:14px 0 8px">Champs attendus dans la réponse JSON</div>
+    <div class="checks">
+      <div class="check-item" onclick="toggleCheck(this)"><input type="checkbox" onchange="updateProgress()"><label>Champs <code>architecture</code>, <code>slm_needed</code>, <code>rag_needed</code>, <code>kg_needed</code>, <code>kg_type</code> présents</label></div>
+      <div class="check-item" onclick="toggleCheck(this)"><input type="checkbox" onchange="updateProgress()"><label><code>server_options</code> : tableau avec ≥ 3 entrées, chacune avec <code>tokens_per_second</code> et <code>ttft_ms</code></label></div>
+      <div class="check-item" onclick="toggleCheck(this)"><input type="checkbox" onchange="updateProgress()"><label><code>hardware_feasibility.status</code> ∈ <code>["feasible","partial","not_feasible","unknown"]</code></label></div>
+      <div class="check-item" onclick="toggleCheck(this)"><input type="checkbox" onchange="updateProgress()"><label><code>next_phase</code> ∈ <code>["slm","rag_only","none"]</code></label></div>
+      <div class="check-item" onclick="toggleCheck(this)"><input type="checkbox" onchange="updateProgress()"><label>Aucun champ <code>adapters</code> ni <code>orchestrator</code> dans la réponse</label></div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+  function updateProgress() {
+    const all = document.querySelectorAll('input[type="checkbox"]');
+    const checked = Array.from(all).filter(c => c.checked).length;
+    const total = all.length;
+    const pct = total > 0 ? Math.round(checked / total * 100) : 0;
+    document.getElementById('progress-fill').style.width = pct + '%';
+    document.getElementById('progress-count').textContent = checked + ' / ' + total;
+
+    // update per-scenario scores
+    const groups = ['sc01','sc02','sc03','sc04','sc05','sc06'];
+    groups.forEach(g => {
+      const el = document.getElementById('score-' + g);
+      if (!el) return;
+      const container = document.querySelector('[data-group="' + g + '"]');
+      if (!container) return;
+      const boxes = container.querySelectorAll('input[type="checkbox"]');
+      const done = Array.from(boxes).filter(b => b.checked).length;
+      el.textContent = done + '/' + boxes.length;
+      el.style.color = done === boxes.length ? '#16A34A' : '#64748B';
+    });
+  }
+
+  function toggleCheck(row) {
+    const cb = row.querySelector('input[type="checkbox"]');
+    if (!cb || event.target === cb) return;
+    cb.checked = !cb.checked;
+    row.classList.toggle('done', cb.checked);
+    updateProgress();
+  }
+
+  function copyField(btn, text) {
+    navigator.clipboard.writeText(text).then(() => {
+      btn.textContent = '✓ Copié';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = 'Copier'; btn.classList.remove('copied'); }, 1800);
+    });
+  }
+
+  function copyPre(btn, id) {
+    const text = document.getElementById(id).textContent;
+    navigator.clipboard.writeText(text).then(() => {
+      btn.textContent = '✓ Copié';
+      setTimeout(() => { btn.textContent = 'Copier'; }, 1800);
+    });
+  }
+
+  // init
+  updateProgress();
+</script>
+
+</body>
+</html>
