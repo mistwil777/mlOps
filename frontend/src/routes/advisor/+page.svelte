@@ -2,7 +2,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { onMount, tick } from 'svelte';
-  import { advisorRecommend, advisorAlternatives, advisorEvaluateSelection, advisorGetRecommendation, advisorFillGap, advisorResolveOverlap, advisorPreScoping } from '$lib/api';
+  import { advisorRecommend, advisorAlternatives, advisorEvaluateSelection, advisorGetRecommendation, advisorFillGap, advisorResolveOverlap, advisorPreScoping, submitCorrection } from '$lib/api';
   import type { AdvisorRecommendation, AdvisorAdapter, SelectionEval, OverlapResolution } from '$lib/types';
   import type { PreScopingResult } from '$lib/api';
   import AdapterCard from '$lib/components/AdapterCard.svelte';
@@ -33,6 +33,12 @@
   let p0Error       = $state('');
   let p0Result: PreScopingResult | null = $state(null);
   let p0ServerExpanded = $state<string | null>(null);
+  let p0ReportOpen     = $state(false);
+  let p0ReportDesc     = $state('');
+  let p0ReportObs      = $state('');
+  let p0ReportExp      = $state('');
+  let p0ReportLoading  = $state(false);
+  let p0ReportDone     = $state(false);
 
   let need  = $state('');
   let model = $state('us.anthropic.claude-sonnet-4-6');
@@ -131,6 +137,27 @@
       }
     } catch (e) { p0Error = (e as Error).message; }
     finally { p0Loading = false; }
+  }
+
+  async function p0SubmitReport() {
+    if (!p0ReportDesc.trim()) return;
+    p0ReportLoading = true;
+    try {
+      await submitCorrection({
+        phase: 'pre-scoping',
+        description: p0ReportDesc.trim(),
+        observed_value: p0ReportObs.trim() || undefined,
+        expected_value: p0ReportExp.trim() || undefined,
+        context_need: p0Need.trim() || undefined,
+        context_hw: p0Hardware.trim() || undefined,
+        source: 'human',
+        confidence: 0.8,
+      });
+      p0ReportDone = true;
+      p0ReportDesc = ''; p0ReportObs = ''; p0ReportExp = '';
+      setTimeout(() => { p0ReportOpen = false; p0ReportDone = false; }, 2000);
+    } catch (e) { /* silent — non-blocking */ }
+    finally { p0ReportLoading = false; }
   }
 
   function p0ContinuePhase1() {
@@ -524,6 +551,32 @@
             {/if}
           </div>
           {/each}
+        </div>
+
+        <!-- Signaler une incohérence -->
+        <div class="p0-report-zone mt-12">
+          {#if !p0ReportOpen}
+            <button class="btn-ghost-sm" onclick={() => p0ReportOpen = true}>
+              Signaler une incohérence
+            </button>
+          {:else}
+            <div class="p0-report-form">
+              <div class="p0-report-title">Signaler une incohérence</div>
+              {#if p0ReportDone}
+                <p class="p0-report-ok">Correction enregistrée — elle sera examinée avant validation.</p>
+              {:else}
+                <input class="p0-report-input" placeholder="Description de l'incohérence *" bind:value={p0ReportDesc} />
+                <input class="p0-report-input" placeholder="Valeur observée (ex: 30 t/s)" bind:value={p0ReportObs} />
+                <input class="p0-report-input" placeholder="Valeur attendue (ex: 47 t/s)" bind:value={p0ReportExp} />
+                <div class="p0-report-actions">
+                  <button class="btn btn-sm" onclick={p0SubmitReport} disabled={p0ReportLoading || !p0ReportDesc.trim()}>
+                    {p0ReportLoading ? 'Envoi…' : 'Envoyer'}
+                  </button>
+                  <button class="btn-ghost-sm" onclick={() => p0ReportOpen = false}>Annuler</button>
+                </div>
+              {/if}
+            </div>
+          {/if}
         </div>
 
         {#if p0Result.next_phase !== 'none'}
@@ -1214,4 +1267,15 @@
   .p0-server-models  { font-size: 11px; color: var(--text-muted); }
   .p0-server-latency { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
   .p0-server-notes   { font-size: 11px; color: var(--text-muted); margin-top: 3px; font-style: italic; }
+
+  /* Report incohérence */
+  .p0-report-zone { border-top: 1px solid var(--border); padding-top: 10px; }
+  .btn-ghost-sm { background: none; border: none; font-size: 12px; color: var(--text-muted); cursor: pointer; padding: 4px 0; text-decoration: underline; text-underline-offset: 2px; }
+  .btn-ghost-sm:hover { color: var(--text); }
+  .p0-report-form { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .p0-report-title { font-size: 12px; font-weight: 600; color: var(--text); margin-bottom: 2px; }
+  .p0-report-input { border: 1px solid var(--border); border-radius: 4px; padding: 6px 8px; font-size: 12px; background: var(--surface); color: var(--text); width: 100%; box-sizing: border-box; }
+  .p0-report-input::placeholder { color: var(--text-muted); }
+  .p0-report-actions { display: flex; gap: 8px; align-items: center; }
+  .p0-report-ok { font-size: 12px; color: #22c55e; margin: 0; }
 </style>

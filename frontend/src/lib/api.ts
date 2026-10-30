@@ -148,6 +148,25 @@ export const advisorPreScoping = (
     }),
   });
 
+export interface CorrectionPayload {
+  phase: string;
+  description: string;
+  observed_value?: string;
+  expected_value?: string;
+  rationale?: string;
+  context_need?: string;
+  context_hw?: string;
+  reported_by?: string;
+  confidence?: number;
+  source?: 'human' | 'llm_consensus' | 'measured';
+}
+
+export const submitCorrection = (payload: CorrectionPayload) =>
+  req<{ id: string; status: string }>('/memory/correction', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+
 export interface PairAnalysisResult {
   adapter_name: string;
   quality_report: {
