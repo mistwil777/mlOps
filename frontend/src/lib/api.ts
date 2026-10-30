@@ -167,6 +167,50 @@ export const submitCorrection = (payload: CorrectionPayload) =>
     body: JSON.stringify(payload),
   });
 
+export interface Correction {
+  id: string;
+  phase: string;
+  description: string;
+  observed_value: string | null;
+  expected_value: string | null;
+  rationale: string | null;
+  confidence: number;
+  source: string;
+  status: string;
+  context_need: string | null;
+  context_hw: string | null;
+  reported_by: string | null;
+  created_at: string;
+  validated_at: string | null;
+  validated_by: string | null;
+  rejected_at: string | null;
+  rejection_reason: string | null;
+}
+
+export interface MemoryStats {
+  by_phase: Record<string, { staging: number; validated: number; rejected: number }>;
+  total: number;
+  kg_available: boolean;
+  vector_available: boolean;
+}
+
+export const getCorrections = (status?: string) =>
+  req<Correction[]>(`/memory/corrections${status ? `?status=${status}` : ''}`);
+
+export const validateCorrection = (id: string, validated_by = 'user') =>
+  req<{ id: string; status: string }>(`/memory/validate/${id}`, {
+    method: 'POST',
+    body: JSON.stringify({ validated_by }),
+  });
+
+export const rejectCorrection = (id: string, reason: string) =>
+  req<{ id: string; status: string }>(`/memory/reject/${id}`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  });
+
+export const getMemoryStats = () => req<MemoryStats>('/memory/stats');
+
 export interface PairAnalysisResult {
   adapter_name: string;
   quality_report: {

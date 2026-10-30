@@ -3,7 +3,7 @@
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
   import type { Snippet } from 'svelte';
-  import { getProjects } from '$lib/api';
+  import { getProjects, getMemoryStats } from '$lib/api';
   import { projectCtx, setCurrentProject } from '$lib/stores/currentProject.svelte';
   import type { Project } from '$lib/types';
 
@@ -13,9 +13,19 @@
 
   let { healthPanel }: Props = $props();
   let recentProjects = $state<Project[]>([]);
+  let stagingCount = $state(0);
 
   onMount(async () => {
     recentProjects = await getProjects().catch(() => []);
+    const refreshBadge = async () => {
+      try {
+        const s = await getMemoryStats();
+        stagingCount = Object.values(s.by_phase ?? {}).reduce((acc, p) => acc + (p.staging ?? 0), 0);
+      } catch { /* silent */ }
+    };
+    await refreshBadge();
+    const timer = setInterval(refreshBadge, 30000);
+    return () => clearInterval(timer);
   });
 
   const groupDots: Record<number, string> = { 1: '#2DD4BF', 2: '#38BDF8', 3: '#A855F7', 4: '#EC4899' };
@@ -45,6 +55,7 @@
       label: 'Évaluation',
       items: [
         { href: '/eval',          icon: '◎', label: 'Tests' },
+        { href: '/evals',         icon: '◈', label: 'Dashboard KPIs' },
         { href: '/playground',    icon: '◐', label: 'Playground' },
       ],
     },
@@ -120,6 +131,13 @@
       <a href="/start" class:active={isActive('/start')} class="nav-top nav-start">
         <span class="nav-icon">▶</span>
         Nouveau projet
+      </a>
+      <a href="/memory" class:active={isActive('/memory')} class="nav-top nav-memory">
+        <span class="nav-icon">◎</span>
+        Mémoire
+        {#if stagingCount > 0}
+          <span class="nav-memory-badge">{stagingCount}</span>
+        {/if}
       </a>
 
       {#if recentProjects.length > 0}
@@ -255,5 +273,21 @@
     padding: 12px 14px;
     border-top: 1px solid #E2E8F0;
     flex-shrink: 0;
+  }
+
+  .nav-memory {
+    display: flex; align-items: center;
+    color: #64748B;
+    text-decoration: none;
+    border-radius: var(--radius);
+    transition: background 150ms, color 150ms;
+  }
+  .nav-memory:hover { background: #F8FAFC; color: #334155; }
+  .nav-memory.active { color: #0284C7; background: #EFF6FF; }
+  .nav-memory-badge {
+    margin-left: auto;
+    background: #DC2626; color: #fff;
+    font-size: 10px; font-weight: 700;
+    padding: 1px 6px; border-radius: 99px;
   }
 </style>
