@@ -1,0 +1,142 @@
+{
+  "_meta": {
+    "description": "Hardware performance profiles for MLOps advisor pre-scoping. Values with source=measured are authoritative and override LLM estimates. Values with source=reference come from public MLX/Ollama benchmarks.",
+    "schema_version": "1.0",
+    "last_updated": "2026-10-30T00:00:00Z"
+  },
+  "Apple M4 Pro": {
+    "source": "pending_measurement",
+    "hardware": {
+      "chip": "Apple M4 Pro",
+      "ram_gb": 48,
+      "type": "apple_silicon",
+      "unified_memory": true
+    },
+    "models": {
+      "Mistral-7B-v0.3-4bit": {
+        "tokens_per_second": 36.9,
+        "ttft_ms": 406.0,
+        "n_samples": 5,
+        "measured_at": "2026-10-30T13:32:06.272383+00:00"
+      },
+      "Qwen2.5-Coder-7B-Instruct-4bit": {
+        "tokens_per_second": 39.1,
+        "ttft_ms": 383.0,
+        "n_samples": 5,
+        "measured_at": "2026-10-30T13:32:24.401354+00:00"
+      }
+    },
+    "note": "Run scripts/benchmark_hardware.py to populate with measured values",
+    "last_run": "2026-10-30T13:32:24.401394+00:00"
+  },
+  "Apple M3 Ultra": {
+    "source": "reference",
+    "reference_url": "https://github.com/ml-explore/mlx/discussions",
+    "hardware": {
+      "chip": "Apple M3 Ultra",
+      "ram_gb": 192,
+      "type": "apple_silicon",
+      "unified_memory": true
+    },
+    "models": {
+      "Mistral-7B-4bit": {
+        "tokens_per_second": 90,
+        "ttft_ms": 180,
+        "source": "reference"
+      },
+      "Qwen2.5-14B-4bit": {
+        "tokens_per_second": 55,
+        "ttft_ms": 320,
+        "source": "reference"
+      }
+    }
+  },
+  "NVIDIA A100 80GB": {
+    "source": "reference",
+    "reference_url": "https://huggingface.co/spaces/optimum/llm-perf-leaderboard",
+    "hardware": {
+      "chip": "NVIDIA A100 80GB SXM",
+      "vram_gb": 80,
+      "type": "nvidia",
+      "unified_memory": false
+    },
+    "models": {
+      "Mistral-7B-4bit": {
+        "tokens_per_second": 120,
+        "ttft_ms": 80,
+        "source": "reference"
+      },
+      "Qwen2.5-14B-4bit": {
+        "tokens_per_second": 75,
+        "ttft_ms": 130,
+        "source": "reference"
+      }
+    }
+  },
+  "NVIDIA H100 80GB SXM": {
+    "source": "reference",
+    "reference_url": "https://huggingface.co/spaces/optimum/llm-perf-leaderboard",
+    "hardware": {
+      "chip": "NVIDIA H100 80GB SXM",
+      "vram_gb": 80,
+      "type": "nvidia",
+      "unified_memory": false
+    },
+    "models": {
+      "Mistral-7B-4bit": {
+        "tokens_per_second": 200,
+        "ttft_ms": 45,
+        "source": "reference"
+      },
+      "Qwen2.5-14B-4bit": {
+        "tokens_per_second": 130,
+        "ttft_ms": 75,
+        "source": "reference"
+      }
+    }
+  },
+  "NVIDIA RTX 4090 24GB": {
+    "source": "reference",
+    "reference_url": "https://llm-tracker.info/",
+    "hardware": {
+      "chip": "NVIDIA RTX 4090",
+      "vram_gb": 24,
+      "type": "nvidia",
+      "unified_memory": false
+    },
+    "models": {
+      "Mistral-7B-4bit": {
+        "tokens_per_second": 90,
+        "ttft_ms": 100,
+        "source": "reference"
+      },
+      "Qwen2.5-14B-4bit": {
+        "tokens_per_second": 45,
+        "ttft_ms": 200,
+        "note": "fits in VRAM with 4-bit",
+        "source": "reference"
+      }
+    }
+  },
+  "CPU-only x86": {
+    "source": "reference",
+    "hardware": {
+      "chip": "Intel/AMD x86",
+      "ram_gb": 64,
+      "type": "cpu",
+      "unified_memory": false
+    },
+    "models": {
+      "Mistral-7B-4bit": {
+        "tokens_per_second": 6,
+        "ttft_ms": 3000,
+        "source": "reference"
+      },
+      "Qwen2.5-14B-4bit": {
+        "tokens_per_second": 2,
+        "ttft_ms": 8000,
+        "source": "reference"
+      }
+    }
+  }
+}

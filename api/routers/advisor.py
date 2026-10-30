@@ -378,7 +378,81 @@ class PreScopingRequest(BaseModel):
     model: str = _DEFAULT_MODEL
 
 
+_HARDWARE_PROFILES_PATH = Path("memory/benchmarks/hardware_profiles.json")
+
+
+def _load_memory_context(hw_description: str) -> str:
+    """Build a memory context block from measured hardware profiles.
+
+    Matches the hardware description (fuzzy) against known profiles and returns
+    a structured block injected into the prescoping prompt to prevent hallucinated
+    or inconsistent performance estimates.
+    """
+    if not _HARDWARE_PROFILES_PATH.exists():
+        return ""
+    try:
+        profiles: dict = json.loads(_HARDWARE_PROFILES_PATH.read_text())
+    except Exception:
+        return ""
+
+    lines: list[str] = []
+    hw_lower = hw_description.lower()
+
+    # Keywords to match profile names
+    _MATCH_KEYWORDS: dict[str, list[str]] = {
+        "Apple M4 Pro":        ["m4 pro", "m4pro"],
+        "Apple M3 Ultra":      ["m3 ultra", "m3ultra"],
+        "NVIDIA A100 80GB":    ["a100"],
+        "NVIDIA H100 80GB SXM":["h100"],
+        "NVIDIA RTX 4090 24GB":["rtx 4090", "4090"],
+        "CPU-only x86":        ["xeon", "cpu only", "cpu-only", "sans gpu", "pas de gpu", "no gpu"],
+    }
+
+    matched_profiles: list[str] = []
+    for profile_name, keywords in _MATCH_KEYWORDS.items():
+        if any(kw in hw_lower for kw in keywords):
+            matched_profiles.append(profile_name)
+
+    # Always include all profiles for the server comparison table
+    all_profiles = [k for k in profiles if not k.startswith("_")]
+    for profile_name in all_profiles:
+        p = profiles[profile_name]
+        if p.get("source") == "pending_measurement":
+            continue
+        hw = p.get("hardware", {})
+        models_data = p.get("models", {})
+        if not models_data:
+            continue
+
+        # Build one line per model
+        model_lines = []
+        for model_name, metrics in models_data.items():
+            tps = metrics.get("tokens_per_second")
+            ttft = metrics.get("ttft_ms")
+            src = metrics.get("source", p.get("source", "reference"))
+            if tps:
+                model_lines.append(
+                    f"    {model_name}: {tps} t/s, TTFT {ttft}ms [{src}]"
+                )
+        if model_lines:
+            ram = hw.get("ram_gb") or hw.get("vram_gb", "?")
+            is_matched = profile_name in matched_profiles
+            prefix = "CLIENT HARDWARE — " if is_matched else ""
+            lines.append(f"{prefix}{profile_name} ({ram}GB):")
+            lines.extend(model_lines)
+
+    if not lines:
+        return ""
+
+    return (
+        "[MEASURED PERFORMANCE FACTS — use these exact values, do not estimate independently]\n"
+        + "\n".join(lines)
+        + "\n[END FACTS — tokens_per_second and ttft_ms in server_options and hardware_feasibility MUST match these values exactly]"
+    )
+
+
 def _call_prescoping(req: PreScopingRequest) -> str:
+    memory_ctx = _load_memory_context(req.hardware_description)
     user_content = _PRESCOPING_USER_TEMPLATE.format(
         need=req.need,
         sovereignty="Oui — déploiement on-premise obligatoire" if req.sovereignty_required else "Non — cloud autorisé",
@@ -386,6 +460,8 @@ def _call_prescoping(req: PreScopingRequest) -> str:
         max_latency_ms=req.max_latency_ms,
         hardware_description=req.hardware_description if req.hardware_description.strip() else "non précisé",
     )
+    if memory_ctx:
+        user_content = memory_ctx + "\n\n" + user_content
     response = _client.messages.create(
         model=req.model,
         max_tokens=2048,
