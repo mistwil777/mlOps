@@ -601,16 +601,16 @@
 
   <!-- ── Phase 1 — Adapters SLM ── -->
   {#if activePhase === 1}
-  {#if p0Result}
   <div class="phase1-header mb-16">
     <button class="btn-back" onclick={backToPhase0}>← Architecture</button>
+    {#if p0Result}
     <div class="phase1-header-badges">
       {#if p0Result.slm_needed}<span class="p0-arch-badge active">SLM</span>{/if}
       {#if p0Result.rag_needed}<span class="p0-arch-badge active">RAG</span>{/if}
       {#if p0Result.kg_needed}<span class="p0-arch-badge active">KG</span>{/if}
     </div>
+    {/if}
   </div>
-  {/if}
 
   <!-- ── Refine bar — disponible dès qu'une sélection existe ── -->
   {#if result && selection.length > 0}
