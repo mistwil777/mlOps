@@ -224,10 +224,10 @@
     <div class="step-header">
       <div class="step-num" class:step-done={analysisValidated}>0</div>
       <div class="step-info">
-        <div class="step-title">Analyse sémantique des sources</div>
+        <div class="step-title">Définir les catégories de données</div>
         <div class="step-desc text-muted">
-          Échantillonne les documents bruts et propose une taxonomie de catégories via LLM.
-          À valider avant de lancer le pipeline — garantit qu'aucune catégorie n'est oubliée.
+          Identifie automatiquement les types de cas présents dans vos données brutes.
+          À valider avant le pipeline pour garantir une couverture complète des cas d'usage.
         </div>
         {#if analysisReport && analysisReport.validation_status === 'pending'}
           <div class="analysis-panel">
@@ -275,7 +275,7 @@
         {:else}
           <button class="btn btn-secondary" onclick={handleRunAnalysis}
                   disabled={running || !selectedProject}>
-            ▶ Analyser les sources
+            ▶ Identifier les catégories
           </button>
         {/if}
         {#if analysisReport?.validation_status === 'pending'}

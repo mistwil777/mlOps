@@ -510,3 +510,46 @@ td,th{{border:1px solid #ccc;padding:8px}}
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         Path(output_path).write_text(html, encoding="utf-8")
         logger.info("Eval report written to %s", output_path)
+
+
+if __name__ == "__main__":
+    import argparse
+    from pipeline.utils.db import fetchone, execute
+
+    parser = argparse.ArgumentParser(description="Evaluate a completed training run")
+    parser.add_argument("--project", required=True)
+    parser.add_argument("--run-id", required=True)
+    parser.add_argument("--n", type=int, default=50)
+    parser.add_argument("--port", type=int, default=8080)
+    args = parser.parse_args()
+
+    run = fetchone(
+        "SELECT * FROM runs WHERE id = ? AND status = 'completed'",
+        (args.run_id,),
+    )
+    if not run:
+        logger.error("Run %s not found or not completed", args.run_id)
+        raise SystemExit(1)
+
+    project = run["project_id"] or args.project
+    model_path = run.get("model_path") or f"models/production/{project}"
+    adapter_path = run.get("adapter_path")
+
+    test_jsonl = Path(f"datalake/fine-tuning-ready/{project}/test.jsonl")
+    if not test_jsonl.exists():
+        test_jsonl = Path(f"datalake/fine-tuning-ready/{project}/train.jsonl")
+    if not test_jsonl.exists():
+        logger.error("No test data found for project %s", project)
+        raise SystemExit(1)
+
+    evaluator = ModelEvaluator(project)
+    metrics = evaluator.run_test_set(
+        model_path=model_path,
+        test_jsonl=test_jsonl,
+        n=args.n,
+        port=args.port,
+        run_id=args.run_id,
+        mlflow_run_id=run.get("mlflow_run_id"),
+        adapter_path=adapter_path,
+    )
+    logger.info("Evaluation complete: %s", metrics)

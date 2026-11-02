@@ -112,6 +112,8 @@
         ...(r.recommendation.orchestrator && Object.keys(r.recommendation.orchestrator).length > 0
           ? [r.recommendation.orchestrator] : []),
       ];
+      // Existing Phase 1 result — skip Phase 0, go directly to adapters
+      if (currentList.length > 0) activePhase = 1;
       if (currentNeed && currentList.length > 0) {
         await runEvalWith(currentNeed, currentList);
       }
