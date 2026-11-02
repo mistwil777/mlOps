@@ -160,10 +160,15 @@
     finally { p0ReportLoading = false; }
   }
 
+  let activePhase = $state<0 | 1>(0);
+
   function p0ContinuePhase1() {
     if (!need.trim() && p0Need.trim()) need = p0Need.trim();
-    const el = document.getElementById('phase1-input');
-    if (el) el.scrollIntoView({ behavior: 'smooth' });
+    activePhase = 1;
+  }
+
+  function backToPhase0() {
+    activePhase = 0;
   }
 
   // ── Actions ────────────────────────────────────────────────────────────────
@@ -429,6 +434,7 @@
 <div class="content">
 
   <!-- ── Phase 0 — Architecture mémoire ── -->
+  {#if activePhase === 0}
   <div class="card mb-16 p0-card">
     <div class="p0-header">
       <span class="p0-phase-badge">Phase 0</span>
@@ -588,6 +594,21 @@
       {/if}
     </div>
   </div>
+
+  {/if}<!-- end Phase 0 -->
+
+  <!-- ── Phase 1 — Adapters SLM ── -->
+  {#if activePhase === 1}
+  {#if p0Result}
+  <div class="phase1-header mb-16">
+    <button class="btn-back" onclick={backToPhase0}>← Architecture</button>
+    <div class="phase1-header-badges">
+      {#if p0Result.slm_needed}<span class="p0-arch-badge active">SLM</span>{/if}
+      {#if p0Result.rag_needed}<span class="p0-arch-badge active">RAG</span>{/if}
+      {#if p0Result.kg_needed}<span class="p0-arch-badge active">KG</span>{/if}
+    </div>
+  </div>
+  {/if}
 
   <!-- ── Refine bar — disponible dès qu'une sélection existe ── -->
   {#if result && selection.length > 0}
@@ -944,9 +965,17 @@
     {/if}
 
   </div>
+  {/if}<!-- end Phase 1 -->
+
 </div>
 
 <style>
+  /* Phase navigation */
+  .phase1-header { display: flex; align-items: center; gap: 12px; }
+  .phase1-header-badges { display: flex; gap: 6px; }
+  .btn-back { background: none; border: 1px solid var(--border); border-radius: var(--radius); padding: 5px 12px; font-size: 12px; color: var(--text-muted); cursor: pointer; }
+  .btn-back:hover { color: var(--text); border-color: var(--accent); }
+
   /* Refine bar */
   .refine-bar {
     display: flex; align-items: center; gap: 8px;

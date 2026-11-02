@@ -15,15 +15,14 @@
   let recentProjects = $state<Project[]>([]);
   let stagingCount = $state(0);
 
-  onMount(async () => {
-    recentProjects = await getProjects().catch(() => []);
-    const refreshBadge = async () => {
-      try {
-        const s = await getMemoryStats();
-        stagingCount = Object.values(s.by_phase ?? {}).reduce((acc, p) => acc + (p.staging ?? 0), 0);
-      } catch { /* silent */ }
+  onMount(() => {
+    getProjects().catch(() => []).then(p => { recentProjects = p; });
+    const refreshBadge = () => {
+      getMemoryStats().then(s => {
+        stagingCount = Object.values(s.by_phase ?? {}).reduce((acc: number, p: any) => acc + (p.staging ?? 0), 0);
+      }).catch(() => {});
     };
-    await refreshBadge();
+    refreshBadge();
     const timer = setInterval(refreshBadge, 30000);
     return () => clearInterval(timer);
   });
