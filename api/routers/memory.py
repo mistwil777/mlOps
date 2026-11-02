@@ -106,3 +106,20 @@ def post_seed_kg() -> dict:
     """Seed KG from hardware_profiles.json. Idempotent."""
     count = seed_kg_from_profiles(env="production")
     return {"seeded": count, "message": f"{count} TPS facts written to KG"}
+
+
+@router.post("/judge/{correction_id}")
+def post_judge(correction_id: str) -> dict:
+    """Run LLM-as-judge (Sonnet + Haiku) on a single staging correction."""
+    from pipeline.utils.llm_judge import run_judge_pipeline
+    result = run_judge_pipeline(correction_id)
+    if "error" in result:
+        raise HTTPException(400, result["error"])
+    return result
+
+
+@router.post("/judge-batch")
+def post_judge_batch(limit: int = 20) -> list[dict]:
+    """Run LLM-as-judge on all pending human-submitted staging corrections."""
+    from pipeline.utils.llm_judge import run_judge_pipeline_batch
+    return run_judge_pipeline_batch(limit=limit)
