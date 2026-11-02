@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { page as appPage } from '$app/stores';
   import { onMount } from 'svelte';
   import { getProjects, searchDatalakePairs, indexProjectPairs, browsePairs } from '$lib/api';
   import type { Project } from '$lib/types';
@@ -50,7 +51,7 @@
   onMount(async () => {
     projects = await getProjects().catch(() => []);
     if (projects.length > 0) {
-      filterProject = projects[0].id;
+      const _qp = $appPage.url.searchParams.get('project'); if (projects.length > 0) filterProject = _qp && projects.find(p => p.id === _qp) ? _qp : projects[0].id;
       await doBrowse(); // auto-load raw on mount
     }
   });

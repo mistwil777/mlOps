@@ -30,7 +30,7 @@
   onMount(async () => {
     [projects, models] = await Promise.all([getProjects(), getBaseModels()]);
     if (models.length) model_id = models[0].id;
-    if (!project_id && projects.length) project_id = projects[0].id;
+    if (!project_id && projects.length) { const _qp = $page.url.searchParams.get('project'); project_id = _qp && projects.find(p => p.id === _qp) ? _qp : projects[0].id; }
   });
 
   async function submit() {

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { page } from '$app/stores';
   import { onMount, onDestroy } from 'svelte';
   import { getProjects, startIngestRaw, getIngestRawStatus } from '$lib/api';
   import type { Project } from '$lib/types';
@@ -27,7 +28,7 @@
 
   onMount(async () => {
     projects = await getProjects().catch(() => []);
-    if (projects.length > 0) selectedProject = projects[0].id;
+    const _qp = $page.url.searchParams.get('project'); if (projects.length > 0) selectedProject = _qp && projects.find(p => p.id === _qp) ? _qp : projects[0].id;
   });
 
   onDestroy(() => { if (polling) clearInterval(polling); });

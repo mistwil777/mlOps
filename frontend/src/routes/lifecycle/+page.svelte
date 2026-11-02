@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { page } from '$app/stores';
   import { onMount, onDestroy } from 'svelte';
   import { getProjects } from '$lib/api';
   import type { Project } from '$lib/types';
@@ -45,7 +46,7 @@
   onMount(async () => {
     projects = await getProjects().catch(() => []);
     if (projects.length) {
-      selectedId = projects[0].id;
+      const _qp = $page.url.searchParams.get('project'); if (projects.length > 0) selectedId = _qp && projects.find(p => p.id === _qp) ? _qp : projects[0].id;
       await load();
     }
     interval = setInterval(load, 15000);

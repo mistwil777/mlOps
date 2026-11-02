@@ -96,3 +96,6 @@ Dockerfile.agent-tester
 
 # UV lock + workspace pyproject (workspace managed separately)
 uv.lock
+*.db-shm
+*.db-wal
+*.db.backup-*

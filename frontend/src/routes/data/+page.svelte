@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { page } from '$app/stores';
   import { onMount } from 'svelte';
   import { getProjects, getDataHealth, getLineage, getAdapterCoverage, getGenerateEstimate, startGeneratePairs } from '$lib/api';
   import type { Project, DataHealth } from '$lib/types';
@@ -21,7 +22,7 @@
   onMount(async () => {
     projects = await getProjects().catch(() => []);
     if (projects.length > 0) {
-      selectedProject = projects[0].id;
+      const _qp = $page.url.searchParams.get('project'); if (projects.length > 0) selectedProject = _qp && projects.find(p => p.id === _qp) ? _qp : projects[0].id;
       await loadAll();
     }
   });
