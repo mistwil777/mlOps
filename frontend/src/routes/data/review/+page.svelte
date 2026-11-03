@@ -269,7 +269,7 @@
     <div class="summary-grid" style="margin-bottom:20px">
       <div class="summary-card">
         <div class="sc-value">{summary.raw_total}</div>
-        <div class="sc-label">Brutes collectées</div>
+        <div class="sc-label">Paires brutes</div>
       </div>
       <div class="summary-card" style="border-color:var(--red)">
         <div class="sc-value" style="color:var(--red)">{summary.auto_rejected}</div>
