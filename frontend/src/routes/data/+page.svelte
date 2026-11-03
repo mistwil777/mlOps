@@ -3,6 +3,7 @@
   import { onMount } from 'svelte';
   import { getProjects, getDataHealth, getLineage, getAdapterCoverage, getGenerateEstimate, startGeneratePairs } from '$lib/api';
   import type { Project, DataHealth } from '$lib/types';
+  import { setCurrentProject } from '$lib/stores/currentProject.svelte';
 
   let projects: Project[] = $state([]);
   let selectedProject = $state('');
@@ -22,14 +23,26 @@
   onMount(async () => {
     projects = await getProjects().catch(() => []);
     if (projects.length > 0) {
-      const _qp = $page.url.searchParams.get('project'); if (projects.length > 0) selectedProject = _qp && projects.find(p => p.id === _qp) ? _qp : projects[0].id;
+      const qp = $page.url.searchParams.get('project');
+      selectedProject = (qp && projects.find(p => p.id === qp)) ? qp : projects[0].id;
       await loadAll();
+    }
+  });
+
+  // Re-select project when URL param changes (SvelteKit same-route navigation)
+  $effect(() => {
+    const qp = $page.url.searchParams.get('project');
+    if (qp && projects.length > 0 && projects.find(p => p.id === qp) && qp !== selectedProject) {
+      selectedProject = qp;
+      loadAll();
     }
   });
 
   async function loadAll() {
     if (!selectedProject) return;
     loading = true; error = '';
+    const proj = projects.find(p => p.id === selectedProject);
+    if (proj) setCurrentProject(proj);
     try {
       [health, lineage, coverage] = await Promise.all([
         getDataHealth(selectedProject),
@@ -103,7 +116,7 @@
         num: 1,
         title: 'Ingestion des données client',
         desc: 'Déposez les données client (code source, documents métier) via l\'ingestion manuelle. Les données sont immutables après ingestion (datalake/raw/).',
-        href: '/data/ingest',
+        href: `/data/ingest?project=${selectedProject}`,
         label: 'Ouvrir Ingestion →',
         status: rawCount > 0 ? 'done' : 'todo',
         stat: rawCount > 0 ? `${rawCount.toLocaleString()} records bruts` : 'Aucun record ingéré',
@@ -113,7 +126,7 @@
         num: 2,
         title: 'Nettoyage des données brutes (clean_raw)',
         desc: 'Déduplique, score la qualité, filtre les records hors-sujet, équilibre les volumes par adapter. À relancer après chaque collecte.',
-        href: '/data/pipeline',
+        href: `/data/pipeline?project=${selectedProject}`,
         label: 'Ouvrir Pipeline nettoyage →',
         status: cleanRawCount > 0 ? 'done' : rawCount > 0 ? 'ready' : 'blocked',
         stat: cleanRawCount > 0 ? `${cleanRawCount.toLocaleString()} records qualifiés` : 'À lancer',
@@ -123,7 +136,7 @@
         num: 3,
         title: 'Formation des paires bilingues',
         desc: 'Pour chaque adapter de traduction (pair_strategy=fuse) : le matching sémantique embed les descriptions des records Java et Python, calcule la similarité cosinus, et assemble les paires. Zéro LLM, vérification AST.',
-        href: '/data/pipeline',
+        href: `/data/pipeline?project=${selectedProject}`,
         label: 'Ouvrir Pipeline nettoyage → bouton 🧠 Matcher',
         status: hasFused ? 'done' : cleanRawCount > 0 ? 'ready' : 'blocked',
         stat: hasFused ? `${pairsCount.toLocaleString()} paires formées` : cleanRawCount > 0 ? `${cleanRawCount.toLocaleString()} records qualifiés — prêt à matcher` : 'En attente de clean_raw',
@@ -133,7 +146,7 @@
         num: 4,
         title: 'Nettoyage des paires (clean)',
         desc: 'Déduplique (MinHash), filtre par règles métier, score la qualité finale, divise en train/valid.',
-        href: '/data/pipeline',
+        href: `/data/pipeline?project=${selectedProject}`,
         label: 'Ouvrir Pipeline nettoyage →',
         status: ftCount > 0 ? 'done' : hasFused ? (pairsCount >= totalTarget * 0.9 ? 'ready' : 'todo') : 'blocked',
         stat: ftCount > 0
@@ -151,7 +164,7 @@
         num: 5,
         title: 'Contrôle qualité',
         desc: 'Vérifiez un échantillon des paires qualifiées. Rescapez les faux positifs, signalez les erreurs pour affiner les seuils.',
-        href: '/data/review',
+        href: `/data/review?project=${selectedProject}`,
         label: 'Ouvrir Contrôle qualité →',
         status: ftCount > 0 ? 'ready' : 'blocked',
         stat: ftCount > 0 ? 'Données disponibles pour inspection' : 'En attente du pipeline',

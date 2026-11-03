@@ -4,11 +4,12 @@
   interface Props {
     adapter: AdvisorAdapter;
     onAlternatives?: (a: AdvisorAdapter) => void;
+    onSources?: (a: AdvisorAdapter) => void;
     onRemove?: (name: string) => void;
     active?: boolean;
   }
 
-  let { adapter, onAlternatives, onRemove, active = false }: Props = $props();
+  let { adapter, onAlternatives, onSources, onRemove, active = false }: Props = $props();
 
   let expanded = $state(false);
   let showDepth = $state(false);

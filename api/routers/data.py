@@ -5,9 +5,12 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import logging
 import sys
 import uuid
 import zipfile
+
+logger = logging.getLogger(__name__)
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -898,6 +901,59 @@ async def flag_record(project_id: str, action: ReviewAction) -> dict[str, Any]:
     existing_flagged = _list_jsonl(flagged_path)
     _write_jsonl(flagged_path, existing_flagged + [r])
 
+    # Feed correction into memory store + defect cluster
+    try:
+        from pipeline.utils.memory_store import (
+            submit_correction, validate_correction as _validate_correction,
+            increment_defect_cluster,
+        )
+        note = action.note or ""
+        if note.startswith("[AI Audit]"):
+            # e.g. "[AI Audit] syntax_error: SyntaxError: invalid syntax (ligne 3)"
+            rest = note[len("[AI Audit]"):].strip()
+            # Extract reason slug (first token before ":")
+            audit_reason = rest.split(":")[0].strip() if ":" in rest else "unknown"
+            corr_id = submit_correction(
+                phase="data_quality",
+                description=rest[:200],
+                observed_value=(r.get("completion") or "")[:500],
+                rationale=rest,
+                confidence=0.9,
+                source="llm_consensus",
+                reported_by="ai_audit",
+            )
+            _validate_correction(corr_id, validated_by="ai_audit_auto")
+            increment_defect_cluster(audit_reason)
+        else:
+            submit_correction(
+                phase="data_quality",
+                description=f"Human flag: {note[:200]}" if note else "Human flag (no note)",
+                observed_value=(r.get("completion") or "")[:500],
+                rationale=note or "",
+                confidence=0.6,
+                source="human",
+                reported_by="hitl",
+            )
+            increment_defect_cluster("human_flag")
+    except Exception as _e:
+        logger.debug("Memory store feed failed (non-critical): %s", _e)
+
+    # Update audit cache: mark flagged item as ignored, shift subsequent indices
+    cache_path = _processed_dir(project_id) / "ai_audit.json"
+    if cache_path.exists():
+        with cache_path.open() as fh:
+            audit = json.load(fh)
+        for item in audit.get("suspicious", []):
+            if item.get("source", "train") != "train":
+                continue
+            if item["index"] == action.index:
+                item["_ignored"] = True
+                item["_flagged_at"] = datetime.now(timezone.utc).isoformat()
+            elif item["index"] > action.index:
+                item["index"] -= 1
+        with cache_path.open("w") as fh:
+            json.dump(audit, fh, ensure_ascii=False, indent=2)
+
     return {"ok": True, "index": action.index, "flagged_total": len(existing_flagged) + 1}
 
 
@@ -959,6 +1015,259 @@ async def rescue_record(project_id: str, action: ReviewAction) -> dict[str, Any]
     _write_jsonl(qualified_path, _list_jsonl(qualified_path) + [r])
 
     return {"ok": True, "rescued_from": target_step, "record": r}
+
+
+@router.get("/review/{project_id}/ai-audit")
+async def ai_audit(project_id: str, rerun: bool = False) -> dict[str, Any]:
+    """AI-assisted audit: flags suspicious accepted pairs and provides LLM recommendations."""
+    import re  # noqa: PLC0415
+    from concurrent.futures import ThreadPoolExecutor, as_completed  # noqa: PLC0415
+    from pipeline.utils.llm import call_llm_with_config  # noqa: PLC0415
+
+    ftr_dir = Path(f"datalake/projects/{project_id}/fine-tuning-ready")
+    cache_path = _processed_dir(project_id) / "ai_audit.json"
+
+    # Serve from cache unless rerun or train.jsonl is newer
+    if not rerun and cache_path.exists():
+        train_mtime = (ftr_dir / "train.jsonl").stat().st_mtime if (ftr_dir / "train.jsonl").exists() else 0
+        cache_mtime = cache_path.stat().st_mtime
+        if cache_mtime >= train_mtime:
+            with cache_path.open() as fh:
+                return json.load(fh)
+
+    train = _list_jsonl(ftr_dir / "train.jsonl") if (ftr_dir / "train.jsonl").exists() else []
+    valid = _list_jsonl(ftr_dir / "valid.jsonl") if (ftr_dir / "valid.jsonl").exists() else []
+    all_pairs = [(i, p, "train") for i, p in enumerate(train)] + \
+                [(i, p, "valid") for i, p in enumerate(valid)]
+
+    # Known modules that should have an import if used
+    _IMPORT_PATTERNS = [
+        ("pytest", r'\bpytest\.'),
+        ("np / numpy", r'\bnp\.'),
+        ("pd / pandas", r'\bpd\.'),
+        ("os", r'\bos\.'),
+        ("sys", r'\bsys\.'),
+        ("re", r'\bre\.'),
+        ("json", r'\bjson\.'),
+        ("datetime", r'\bdatetime\.'),
+        ("Path", r'\bPath\('),
+        ("dataclass", r'@dataclass'),
+    ]
+
+    def _check_pair(idx: int, pair: dict[str, Any], source: str) -> dict[str, Any] | None:
+        completion: str = pair.get("completion", "") or ""
+        prompt: str = pair.get("prompt", "") or ""
+
+        # 1 — empty completion
+        if len(completion.strip()) < 10:
+            return {"index": idx, "source": source, "reason": "empty_completion",
+                    "detail": "Completion vide ou trop courte (<10 chars)", "severity": "high",
+                    "prompt_snippet": prompt[:1500], "completion_snippet": completion[:1500],
+                    "recommendation": None}
+
+        # 2 — syntax error (Python)
+        try:
+            compile(completion, "<string>", "exec")
+        except SyntaxError as e:
+            return {"index": idx, "source": source, "reason": "syntax_error",
+                    "detail": f"SyntaxError: {e.msg} (ligne {e.lineno})", "severity": "high",
+                    "prompt_snippet": prompt[:1500], "completion_snippet": completion[:1500],
+                    "recommendation": None}
+
+        # 3 — truncated completion (ends mid-expression)
+        last_line = completion.rstrip("\n").split("\n")[-1]
+        if last_line and last_line[-1] in ("(", ",", "[", "{", "\\", ":"):
+            return {"index": idx, "source": source, "reason": "truncated",
+                    "detail": f"Completion tronquée — dernière ligne: {last_line!r}", "severity": "high",
+                    "prompt_snippet": prompt[:1500], "completion_snippet": completion[:1500],
+                    "recommendation": None}
+
+        # 4 — missing import
+        import_lines = {ln.strip() for ln in completion.split("\n") if ln.strip().startswith("import ") or ln.strip().startswith("from ")}
+        import_text = " ".join(import_lines)
+        for module_name, pattern in _IMPORT_PATTERNS:
+            if re.search(pattern, completion) and module_name.split("/")[0].split(" ")[0] not in import_text:
+                return {"index": idx, "source": source, "reason": "missing_import",
+                        "detail": f"Utilise `{module_name}` sans import déclaré", "severity": "medium",
+                        "prompt_snippet": prompt[:1500], "completion_snippet": completion[:1500],
+                        "recommendation": None}
+
+        # 5 — unvalidated high score (no llm_score, heuristic >= 0.9)
+        if pair.get("llm_score") is None and (pair.get("quality_score") or 0) >= 0.9:
+            return {"index": idx, "source": source, "reason": "unvalidated_high_score",
+                    "detail": f"Score heuristique élevé ({pair['quality_score']}) sans validation LLM judge",
+                    "severity": "medium",
+                    "prompt_snippet": prompt[:1500], "completion_snippet": completion[:1500],
+                    "recommendation": None}
+
+        return None
+
+    # Run deterministic checks in parallel
+    suspicious: list[dict[str, Any]] = []
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futs = {pool.submit(_check_pair, i, p, src): (i, src) for i, p, src in all_pairs}
+        for fut in as_completed(futs):
+            result = fut.result()
+            if result is not None:
+                suspicious.append(result)
+
+    suspicious.sort(key=lambda x: (0 if x["severity"] == "high" else 1, x["index"]))
+
+    # LLM recommendations (Sonnet, parallel, max 5 workers)
+    def _get_recommendation(item: dict[str, Any]) -> str:
+        prompt = (
+            "Tu es un expert en migration Java→Python. "
+            f"Cette paire d'entraînement a été détectée comme suspecte (raison: {item['reason']}, détail: {item['detail']}).\n\n"
+            f"PROMPT:\n{item['prompt_snippet']}\n\n"
+            f"COMPLETION:\n{item['completion_snippet']}\n\n"
+            "En 1-2 phrases max : explique le problème précis et recommande l'action parmi : "
+            "SUPPRIMER (erreur claire), CORRIGER (problème mineur récupérable), IGNORER (faux positif)."
+        )
+        result = call_llm_with_config(
+            prompt,
+            llm_config={"provider": "bedrock", "model": "us.anthropic.claude-sonnet-4-6"},
+            max_tokens=200,
+        )
+        return result or "Recommandation indisponible (LLM non joignable)."
+
+    if suspicious:
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            futs_rec = {pool.submit(_get_recommendation, item): i for i, item in enumerate(suspicious)}
+            for fut in as_completed(futs_rec):
+                idx = futs_rec[fut]
+                suspicious[idx]["recommendation"] = fut.result()
+
+    result_payload = {
+        "project_id":     project_id,
+        "total_checked":  len(all_pairs),
+        "suspicious":     suspicious,
+        "suspicious_count": len(suspicious),
+        "generated_at":   datetime.now(timezone.utc).isoformat(),
+    }
+
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    with cache_path.open("w") as fh:
+        json.dump(result_payload, fh, ensure_ascii=False, indent=2)
+
+    return result_payload
+
+
+@router.post("/review/{project_id}/ai-audit/ignore")
+async def ai_audit_ignore(project_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    """Mark an AI-flagged suspicious pair as ignored (human override)."""
+    cache_path = _processed_dir(project_id) / "ai_audit.json"
+    if not cache_path.exists():
+        raise HTTPException(404, "No AI audit found. Run /ai-audit first.")
+    with cache_path.open() as fh:
+        audit = json.load(fh)
+    index: int = body.get("index", -1)
+    source: str = body.get("source", "train")
+    for item in audit.get("suspicious", []):
+        if item["index"] == index and item.get("source", "train") == source:
+            item["_ignored"] = True
+            item["_ignored_at"] = datetime.now(timezone.utc).isoformat()
+    with cache_path.open("w") as fh:
+        json.dump(audit, fh, ensure_ascii=False, indent=2)
+    return {"ok": True}
+
+
+@router.post("/review/{project_id}/ai-audit/auto-correct")
+async def ai_audit_auto_correct(project_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    """Apply AI-suggested correction to a pair using Haiku, save back to train.jsonl."""
+    from pipeline.utils.llm import call_llm_with_config  # noqa: PLC0415
+
+    index: int = body.get("index", -1)
+    source: str = body.get("source", "train")
+    reason: str = body.get("reason", "")
+    recommendation: str = body.get("recommendation", "")
+
+    ftr_dir = Path(f"datalake/projects/{project_id}/fine-tuning-ready")
+    jsonl_path = ftr_dir / f"{source}.jsonl"
+    if not jsonl_path.exists():
+        raise HTTPException(404, f"{source}.jsonl not found")
+
+    records = _list_jsonl(jsonl_path)
+    if index < 0 or index >= len(records):
+        raise HTTPException(400, f"Index {index} out of range (total={len(records)})")
+
+    pair = records[index]
+    original_completion: str = pair.get("completion", "") or ""
+
+    prompt = (
+        "Tu es un expert en migration Java→Python. "
+        "Une completion de paire d'entraînement présente un défaut identifié.\n\n"
+        f"DÉFAUT DÉTECTÉ : {reason}\n"
+        f"CORRECTION À APPLIQUER : {recommendation}\n\n"
+        f"COMPLETION ORIGINALE :\n{original_completion}\n\n"
+        "INSTRUCTION STRICTE : applique UNIQUEMENT la correction décrite ci-dessus. "
+        "Ne modifie pas la logique, ne reformate pas, ne complète pas le code. "
+        "Retourne uniquement la completion corrigée, sans explication ni commentaire."
+    )
+
+    corrected = call_llm_with_config(
+        prompt,
+        llm_config={"provider": "bedrock", "model": "us.anthropic.claude-haiku-4-5"},
+        max_tokens=2048,
+    )
+    if not corrected:
+        raise HTTPException(502, "LLM unavailable — correction impossible")
+
+    # Save corrected pair back
+    records[index] = {
+        **pair,
+        "completion": corrected.strip(),
+        "_auto_corrected": True,
+        "_auto_corrected_at": datetime.now(timezone.utc).isoformat(),
+        "_correction_reason": reason,
+    }
+    _write_jsonl(jsonl_path, records)
+
+    # Update audit cache — mark item as resolved
+    cache_path = _processed_dir(project_id) / "ai_audit.json"
+    if cache_path.exists():
+        with cache_path.open() as fh:
+            audit = json.load(fh)
+        for item in audit.get("suspicious", []):
+            if item["index"] == index and item.get("source", "train") == source:
+                item["_auto_corrected"] = True
+                item["_auto_corrected_at"] = datetime.now(timezone.utc).isoformat()
+                item["_ignored"] = True
+        with cache_path.open("w") as fh:
+            json.dump(audit, fh, ensure_ascii=False, indent=2)
+
+    # Feed correction pattern into memory store + defect cluster
+    try:
+        from pipeline.utils.memory_store import (
+            submit_correction, validate_correction as _validate_correction,
+            increment_defect_cluster,
+        )
+        increment_defect_cluster(reason or "unknown")
+        corr_id = submit_correction(
+            phase="data_quality",
+            description=f"Auto-correction: {reason[:200]}",
+            observed_value=original_completion[:500],
+            expected_value=corrected.strip()[:500],
+            rationale=recommendation[:500] if recommendation else reason,
+            confidence=0.85,
+            source="llm_consensus",
+            reported_by="haiku_auto_correct",
+        )
+        _validate_correction(corr_id, validated_by="haiku_auto_correct")
+    except Exception as _e:
+        logger.debug("Memory store feed failed (non-critical): %s", _e)
+
+    return {"ok": True, "index": index, "corrected_completion": corrected.strip()}
+
+
+@router.get("/review/{project_id}/corrections-memory")
+async def corrections_memory(project_id: str) -> dict[str, Any]:
+    """Validated corrections learned from flagged/auto-corrected pairs (data_quality phase)."""
+    try:
+        from pipeline.utils.memory_store import get_validated_corrections_for_phase
+        corrections = get_validated_corrections_for_phase("data_quality")
+        return {"project_id": project_id, "count": len(corrections), "corrections": corrections}
+    except Exception as e:
+        raise HTTPException(500, str(e)) from e
 
 
 @router.get("/review/{project_id}/stats")
@@ -1319,11 +1628,11 @@ async def data_health(project_id: str) -> dict[str, Any]:
 
     alerts: list[str] = []
     if raw["count"] == 0:
-        alerts.append("Aucune donnée collectée — lancez AWA pour collecter des sources.")
+        alerts.append("Aucune donnée ingérée — déposez les données client via l'ingestion manuelle.")
     elif clean_raw_count == 0:
         alerts.append("Données brutes disponibles — lancez le nettoyage (clean_raw, Étape 1 dans Pipeline nettoyage).")
     elif pairs_count == 0:
-        alerts.append("Records nettoyés disponibles — lancez le matching sémantique (Collecte AWA → 🧠 Matcher).")
+        alerts.append("Records nettoyés disponibles — lancez le matching sémantique (Pipeline nettoyage → 🧠 Matcher).")
     elif splits["train"] == 0:
         alerts.append("Paires formées — lancez le nettoyage final (clean, Étape 2 dans Pipeline nettoyage).")
 

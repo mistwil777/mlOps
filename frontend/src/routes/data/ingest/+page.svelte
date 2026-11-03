@@ -3,6 +3,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { getProjects, startIngestRaw, getIngestRawStatus } from '$lib/api';
   import type { Project } from '$lib/types';
+  import { setCurrentProject } from '$lib/stores/currentProject.svelte';
 
   // ── State ──────────────────────────────────────────────────────────
   let projects: Project[]  = $state([]);
@@ -28,7 +29,7 @@
 
   onMount(async () => {
     projects = await getProjects().catch(() => []);
-    const _qp = $page.url.searchParams.get('project'); if (projects.length > 0) selectedProject = _qp && projects.find(p => p.id === _qp) ? _qp : projects[0].id;
+    const _qp = $page.url.searchParams.get('project'); if (projects.length > 0) { selectedProject = _qp && projects.find(p => p.id === _qp) ? _qp : projects[0].id; const proj = projects.find(p => p.id === selectedProject); if (proj) setCurrentProject(proj); }
   });
 
   onDestroy(() => { if (polling) clearInterval(polling); });

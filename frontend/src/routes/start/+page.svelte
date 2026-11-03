@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
-  import { createProject, advisorRecommend, advisorAlternatives, advisorEvaluateSelection, advisorFillGap, advisorResolveOverlap, advisorExtractDoc, advisorAnalyzePairs, advisorCrossProjectMatches, getDataHealth, launchEvaluation, startCollect, startPipeline } from '$lib/api';
+  import { createProject, advisorRecommend, advisorAlternatives, advisorEvaluateSelection, advisorFillGap, advisorResolveOverlap, advisorExtractDoc, advisorAnalyzePairs, advisorCrossProjectMatches, startCollect, startPipeline } from '$lib/api';
   import type { PairAnalysisResult, CrossProjectMatch } from '$lib/api';
   import type { AdvisorRecommendation, AdvisorAdapter, SelectionEval, ReviewItem, OverlapResolution } from '$lib/types';
   import Topbar from '$lib/components/Topbar.svelte';
@@ -134,48 +134,23 @@
   let collectEs: EventSource | null = null;
   let pipelineEs: EventSource | null = null;
 
+  const MANUAL_COLLECTOR_TYPES = new Set(['manual']);
+
   function initSourceEntries() {
-    if (sourceEntries.length > 0) return; // ne pas écraser si déjà initialisé
+    if (sourceEntries.length > 0) return;
     const seen = new Set<string>();
     const entries: SourceEntry[] = [];
     for (const a of wizardSelection) {
-      if (a.source_configs && a.source_configs.length > 0) {
-        // Derive langs for multilang_wiki from fusible doc_crawl sources in the same adapter
-        const fusibleLangs = (a.source_configs as Array<{ fusible?: boolean; lang_hint?: string }>)
-          .filter(s => s.fusible && s.lang_hint)
-          .map(s => s.lang_hint as string);
-        const adapterLangs = [...new Set(fusibleLangs)];
-
-        for (const sc of (a.source_configs as Array<{ collector_type: string; value: string; label: string; lang_hint?: string; estimated_pairs?: number; max_pages?: number; max_depth?: number }>)) {
-          const key = `${sc.collector_type}:${sc.value}`;
-          if (!seen.has(key)) {
-            seen.add(key);
-            const estPairs = sc.estimated_pairs ?? 100;
-            // For doc_crawl: max_pages defaults to estimated_pairs * 4 so crawl depth isn't bounded
-            // by the number of *expected* pairs — many pages yield 0 pairs (navigation, intros)
-            const maxPages = sc.max_pages ?? (sc.collector_type === 'doc_crawl' ? estPairs * 4 : estPairs);
-            const maxDepth = sc.max_depth ?? (sc.collector_type === 'doc_crawl' ? 5 : undefined);
-            const entry: SourceEntry = { source: sc.label, adapter: a.name, selected: true, collector_type: sc.collector_type, source_value: sc.value, estimated_pairs: estPairs, max_pages: maxPages, max_depth: maxDepth };
-            if (sc.collector_type === 'multilang_wiki' && adapterLangs.length >= 2) {
-              entry.langs = adapterLangs;
-            } else if (sc.lang_hint) {
-              entry.lang_hint = sc.lang_hint;
-            }
-            entries.push(entry);
-          }
-        }
-      } else {
-        // Fallback: legacy string data_sources → web_crawl
-        for (const s of (a.data_sources ?? [])) {
-          if (!seen.has(s)) {
-            seen.add(s);
-            entries.push({ source: s, adapter: a.name, selected: true, collector_type: 'web_crawl', source_value: s });
-          }
+      for (const sc of (a.source_configs as Array<{ collector_type: string; value: string; label: string; estimated_pairs?: number }> ?? [])) {
+        if (!MANUAL_COLLECTOR_TYPES.has(sc.collector_type)) continue; // web/docs collecte supprimée
+        const key = `${sc.collector_type}:${sc.value}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          entries.push({ source: sc.label, adapter: a.name, selected: true, collector_type: sc.collector_type, source_value: sc.value, estimated_pairs: sc.estimated_pairs ?? 100 });
         }
       }
     }
     sourceEntries = entries;
-    if (!collectTopic) collectTopic = need.trim().slice(0, 80);
   }
 
   function switchToSources() {
@@ -352,15 +327,6 @@
   // Nom de session précédent — permet de supprimer l'ancienne clé si le nom change
   let _prevSavedName = $state('');
 
-  // Étape 4 — données
-  let dataReady  = $state(false);
-  let pairCount  = $state(0);
-
-  // Étape 5 — training
-  let runId      = $state('');
-
-  // Étape 6 — éval
-  let evalLaunched = $state(false);
 
   const DOMAINS = ['code','legal','hr','finance','defense','healthcare','sales','compliance','other'];
   const BASE_MODELS = [
@@ -372,11 +338,7 @@
   const STEPS = [
     { num: 1, label: 'Besoin client' },
     { num: 2, label: 'Architecture' },
-    { num: 3, label: 'Sources & données' },
-    { num: 4, label: 'Créer le projet' },
-    { num: 5, label: 'Training' },
-    { num: 6, label: 'Évaluation' },
-    { num: 7, label: 'Livraison' },
+    { num: 3, label: 'Paramètres' },
   ];
 
   // ── Actions ───────────────────────────────────────────────────────────────
@@ -704,7 +666,7 @@
         transform:            _deriveTransform(),
       });
       projectId = (proj as { id: string }).id;
-      step = 4;
+      goto(`/projects/${projectId}`);
     } catch (e) {
       const msg = (e as Error).message ?? '';
       // 409 = project already exists — derive its ID and proceed rather than blocking
@@ -712,7 +674,7 @@
         const derivedId = projName.trim().toLowerCase().replace(/ /g, '-').replace(/_/g, '-');
         projectId = derivedId;
         createErr = '';
-        step = 4;
+        goto(`/projects/${derivedId}`);
       } else {
         createErr = msg;
       }
@@ -720,22 +682,6 @@
     finally { creating = false; }
   }
 
-  async function checkDataReady() {
-    if (!projectId) return;
-    try {
-      const health = await getDataHealth(projectId);
-      pairCount = health.stages.fine_tuning_ready.count;
-      dataReady = pairCount >= 200;
-    } catch { dataReady = false; }
-  }
-
-  async function launchEval() {
-    if (!runId) return;
-    try {
-      await launchEvaluation(runId);
-      evalLaunched = true;
-    } catch { /* non-blocking */ }
-  }
 
   // ── Persistance multi-analyses ────────────────────────────────────────────
   // Une clé par analyse : wizard_analysis_v2__{projName}
@@ -938,7 +884,7 @@
       orchestrator = wizardHandoff.orchestrator ? { ...wizardHandoff.orchestrator } : null;
       if (adapters[0] && !projName) projName = adapters[0].name.split('-').slice(0, 2).join('-');
       clearWizardHandoff();
-      step = 2;
+      step = 3; // architecture déjà validée dans l'advisor → aller directement à la config projet
       runWizardEval();
       return;
     }
@@ -1015,7 +961,7 @@
       {/if}
 
       <button class="btn btn-primary btn-lg" onclick={() => {
-        need = ''; projName = ''; projectId = ''; runId = '';
+        need = ''; projName = ''; projectId = '';
         adapters = []; orchestrator = null; selEval = null;
         recommendation = null; uploadedDocs = []; sourceEntries = [];
         generatedPairsStore = {}; collectTopic = ''; step2Tab = 'architecture';
@@ -1164,8 +1110,8 @@
           <span class="tab-badge">{wizardSelection.length}</span>
         </button>
         <button class="step2-tab" class:active={step2Tab === 'sources'} onclick={switchToSources}>
-          Sources & Collecte
-          <span class="tab-badge">{allSources.length}</span>
+          Données client
+          {#if sourceEntries.length > 0}<span class="tab-badge">{sourceEntries.length}</span>{/if}
         </button>
         <button class="step2-tab" class:active={step2Tab === 'data-analysis'} onclick={switchToDataAnalysis}>
           Analyse données
@@ -1175,7 +1121,7 @@
       <div class="step2-actions">
         <button class="btn btn-ghost btn-sm" onclick={() => { step = 1; altTarget = null; sourcesAdapter = null; }}>← Besoin</button>
         <button class="btn btn-ghost btn-sm" onclick={copyYaml}>Copier YAML</button>
-        <button class="btn btn-primary btn-sm" onclick={() => step = 3}>✓ Créer le projet</button>
+        <button class="btn btn-primary btn-sm" onclick={() => step = 3}>Configurer le projet →</button>
       </div>
     </div>
 
@@ -1528,140 +1474,45 @@
 
     </div>
 
-    <!-- Onglet Sources & Collecte -->
+    <!-- Onglet Données client -->
     {:else if step2Tab === 'sources'}
-      {@const tempProjectId = projName.trim() || 'wizard-temp'}
-      <div class="collect-layout">
-
-        <!-- Col gauche : sélection + paramètres -->
-        <div class="collect-left">
-          <div class="card mb-16">
-            <div class="card-header mb-12">
-              <div class="card-title">Sources proposées</div>
-              <span class="hint">{collectSelectedCount} / {sourceEntries.length} sélectionnées</span>
-            </div>
-            {#if sourceEntries.length === 0}
-              <div class="empty-state">Aucune source détectée dans les adapters.</div>
-            {:else}
-              {@const byAdapter = sourceEntries.reduce<Record<string, typeof sourceEntries>>((acc, e) => {
-                (acc[e.adapter] ??= []).push(e); return acc;
-              }, {})}
-              {#each Object.entries(byAdapter) as [adapterName, entries]}
-                <div class="source-group mb-12">
-                  <div class="source-group-label">{adapterName}</div>
-                  {#each entries as entry}
-                    <label class="source-row">
-                      <input type="checkbox" bind:checked={entry.selected} class="source-checkbox" />
-                      <span class="collector-badge collector-badge--{entry.collector_type}">
-                        {entry.collector_type === 'multilang_wiki' ? 'Wiki' : entry.collector_type === 'web_crawl' ? 'Web' : entry.collector_type === 'manual' ? 'Manuel' : entry.collector_type === 'doc_crawl' ? 'Docs' : 'GitHub'}
-                      </span>
-                      <span class="source-name">{entry.source}</span>
-                      {#if (entry.collector_type === 'web_crawl' || entry.collector_type === 'doc_crawl') && entry.source_value?.startsWith('http')}
-                        <a href={entry.source_value} target="_blank" rel="noopener noreferrer" class="source-ext" title="Ouvrir">↗</a>
-                      {:else if entry.collector_type === 'multilang_wiki'}
-                        <a href="https://rosettacode.org/wiki/Category:Programming_Tasks" target="_blank" rel="noopener noreferrer" class="source-ext" title="Rosetta Code">↗</a>
-                      {/if}
-                    </label>
-                  {/each}
-                </div>
-              {/each}
-            {/if}
+      <div class="client-data-layout">
+        <div class="card mb-16">
+          <div class="card-header mb-12">
+            <div class="card-title">Corpus client attendus</div>
+            <span class="hint">Données à fournir par le client — aucune collecte web</span>
           </div>
-
-          <div class="card">
-            <div class="card-title mb-12">Paramètres de collecte</div>
-            <div class="form-group">
-              <label class="form-label" for="collect-topic">Sujet / mots-clés</label>
-              <input id="collect-topic" class="form-input" bind:value={collectTopic} placeholder="ex: contrats droit des affaires" />
+          {#if sourceEntries.length === 0}
+            <div class="empty-state">
+              Aucun corpus manuel défini dans les adapters.<br>
+              <span class="hint">Les données seront à uploader directement dans la page projet après création.</span>
             </div>
-            {#if collectErr}<div class="api-error mt-8">{collectErr}</div>{/if}
-            <button
-              class="btn btn-primary mt-12"
-              style="width:100%"
-              disabled={collectRunning || collectSelectedCount === 0 || collectStatus === 'completed'}
-              onclick={() => launchCollect(tempProjectId)}
-            >
-              {#if collectRunning}<span class="spinner"></span> Collecte en cours…
-              {:else if collectStatus === 'completed'}✓ Collecte terminée
-              {:else}⬇ Lancer le scraping{/if}
-            </button>
-          </div>
+          {:else}
+            {@const byAdapter = sourceEntries.reduce<Record<string, typeof sourceEntries>>((acc, e) => {
+              (acc[e.adapter] ??= []).push(e); return acc;
+            }, {})}
+            {#each Object.entries(byAdapter) as [adapterName, entries]}
+              <div class="source-group mb-12">
+                <div class="source-group-label">{adapterName}</div>
+                {#each entries as entry}
+                  <div class="source-row source-row--static">
+                    <span class="collector-badge collector-badge--manual">Manuel</span>
+                    <span class="source-name">{entry.source}</span>
+                    <span class="hint ml-auto">~{entry.estimated_pairs} paires</span>
+                  </div>
+                {/each}
+              </div>
+            {/each}
+          {/if}
         </div>
 
-        <!-- Col droite : logs + résultats -->
-        <div class="collect-right">
-          {#if collectLogs.length === 0 && collectStatus === 'idle'}
-            <div class="collect-placeholder">
-              <div class="cp-icon">⬇</div>
-              <div class="cp-title">Collecte web automatique</div>
-              <div class="cp-sub">Sélectionnez les sources à gauche, ajustez les paramètres, puis lancez le scraping pour collecter des paires d'entraînement.</div>
-            </div>
-          {/if}
-
-          {#if collectLogs.length > 0 || collectRunning}
-            <div class="card mb-16">
-              <div class="card-header mb-8">
-                <div class="card-title">Journal de collecte</div>
-                <div style="display:flex;align-items:center;gap:8px">
-                  {#if collectRunning}<span class="spinner spinner-sm"></span>{/if}
-                  {#if collectStatus === 'completed'}<span class="status-ok">✓ Terminé</span>{/if}
-                  {#if collectStatus === 'failed'}<span class="status-err">✕ Erreur</span>{/if}
-                </div>
-              </div>
-              <pre id="collect-log" class="log-box">{collectLogs.join('\n')}</pre>
-            </div>
-          {/if}
-
-          {#if collectStatus === 'completed'}
-            <div class="card">
-              <div class="card-header mb-12">
-                <div>
-                  <div class="card-title">Données collectées</div>
-                  <div class="hint mt-4">{collectedTotal} paires brutes disponibles</div>
-                </div>
-                <button
-                  class="btn btn-primary btn-sm"
-                  disabled={pipelineRunning || pipelineStatus === 'completed'}
-                  onclick={() => launchPipeline(tempProjectId)}
-                >
-                  {#if pipelineRunning}<span class="spinner"></span> Pipeline…
-                  {:else if pipelineStatus === 'completed'}✓ Traité
-                  {:else}⟳ Lancer le pipeline{/if}
-                </button>
-              </div>
-
-              {#if pipelineLogs.length > 0 || pipelineRunning}
-                <pre id="pipeline-log" class="log-box mb-12">{pipelineLogs.join('\n')}</pre>
-              {/if}
-
-              {#if collectedPairs.length > 0}
-                <div class="pairs-header mb-8">
-                  <span class="meta-label">Aperçu — 20 premières paires</span>
-                  <button class="sources-toggle" onclick={() => showPairsPreview = !showPairsPreview}>
-                    {showPairsPreview ? '▾ Masquer' : "▸ Afficher l'aperçu"}
-                  </button>
-                </div>
-                {#if showPairsPreview}
-                  <div class="pairs-list">
-                    {#each collectedPairs as pair, i}
-                      <div class="pair-item">
-                        <div class="pair-idx">#{i + 1}</div>
-                        <div class="pair-body">
-                          <div class="pair-prompt">{pair.prompt}</div>
-                          <div class="pair-completion">{pair.completion}</div>
-                        </div>
-                        {#if pair.quality_score != null}
-                          <div class="pair-score" style="color:{pair.quality_score >= 0.7 ? 'var(--green)' : pair.quality_score >= 0.4 ? 'var(--yellow)' : 'var(--red)'}">
-                            {(pair.quality_score * 20).toFixed(0)}/20
-                          </div>
-                        {/if}
-                      </div>
-                    {/each}
-                  </div>
-                {/if}
-              {/if}
-            </div>
-          {/if}
+        <div class="card" style="background:rgba(var(--accent-rgb, 2,132,199),.04); border-color:rgba(var(--accent-rgb, 2,132,199),.2);">
+          <div class="card-title mb-8">Comment fournir les données ?</div>
+          <ol class="client-data-steps">
+            <li>Dans la page projet → section <strong>Données</strong> → <strong>Ingest manuel</strong></li>
+            <li>Uploadez vos fichiers (CSV, JSONL, TXT) par adapter</li>
+            <li>Le pipeline de nettoyage se lance automatiquement après ingestion</li>
+          </ol>
         </div>
       </div>
     <!-- Onglet Analyse données -->
@@ -1714,38 +1565,36 @@
             {@const an = dataAnalyses[dataAnalysisAdapter]}
             {#if selectedAdapter}
               <div class="card mb-16">
-                <div class="card-header mb-12">
-                  <div>
-                    <div class="card-title">Analyse — <span class="mono">{selectedAdapter.name}</span></div>
-                    <div class="hint mt-2">{selectedAdapter.description}</div>
-                  </div>
-                  <div style="display:flex;align-items:center;gap:8px">
-                    <label class="da-n-label" for="da-ngen">Paires à générer</label>
-                    <input
-                      id="da-ngen"
-                      type="number" min="1" max="50" class="da-n-input"
-                      value={an?.nGenerate ?? 10}
-                      onchange={(e) => {
-                        const v = parseInt((e.currentTarget as HTMLInputElement).value) || 10;
-                        dataAnalyses = { ...dataAnalyses, [dataAnalysisAdapter]: { ...(dataAnalyses[dataAnalysisAdapter] ?? { result: null, loading: false, error: '', nGenerate: 10 }), nGenerate: Math.min(50, Math.max(1, v)) } };
-                      }}
-                    />
-                    <button
-                      class="btn btn-primary btn-sm"
-                      disabled={an?.loading || (collectedPairs.length === 0 && collectStatus !== 'completed')}
-                      onclick={() => runDataAnalysis(selectedAdapter)}
-                    >
-                      {#if an?.loading}<span class="spinner"></span> Analyse Haiku…
-                      {:else if an?.result}↺ Relancer
-                      {:else}◎ Analyser{/if}
-                    </button>
-                  </div>
+                <div class="mb-8">
+                  <div class="card-title">Analyse — <span class="mono">{selectedAdapter.name}</span></div>
+                  <div class="hint mt-2">{selectedAdapter.description}</div>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+                  <label class="da-n-label" for="da-ngen">Paires à générer</label>
+                  <input
+                    id="da-ngen"
+                    type="number" min="1" max="50" class="da-n-input"
+                    value={an?.nGenerate ?? 10}
+                    onchange={(e) => {
+                      const v = parseInt((e.currentTarget as HTMLInputElement).value) || 10;
+                      dataAnalyses = { ...dataAnalyses, [dataAnalysisAdapter]: { ...(dataAnalyses[dataAnalysisAdapter] ?? { result: null, loading: false, error: '', nGenerate: 10 }), nGenerate: Math.min(50, Math.max(1, v)) } };
+                    }}
+                  />
+                  <button
+                    class="btn btn-primary btn-sm"
+                    disabled={an?.loading || (collectedPairs.length === 0 && collectStatus !== 'completed')}
+                    onclick={() => runDataAnalysis(selectedAdapter)}
+                  >
+                    {#if an?.loading}<span class="spinner"></span> Analyse Haiku…
+                    {:else if an?.result}↺ Relancer
+                    {:else}◎ Analyser{/if}
+                  </button>
                 </div>
 
                 {#if collectedPairs.length === 0 && collectStatus !== 'completed'}
                   <div class="da-hint-collect">
                     <span class="da-hint-icon">⚠</span>
-                    Lancez d'abord une collecte dans l'onglet <button class="da-link" onclick={switchToSources}>Sources & Collecte</button> pour avoir des paires à analyser.
+                    Uploadez d'abord des données client dans la page projet, puis revenez ici pour analyser les paires.
                     L'analyse de qualité et la génération synthétique fonctionnent indépendamment.
                   </div>
                 {/if}
@@ -1848,14 +1697,14 @@
     <div class="wizard-card">
       <div class="wc-header">
         <div class="wc-step-badge">3 / {STEPS.length}</div>
-        <h2 class="wc-title">Créer le projet</h2>
-        <p class="wc-sub">Configurez les paramètres de base. Vous pourrez tout modifier ensuite.</p>
+        <h2 class="wc-title">Paramètres techniques</h2>
+        <p class="wc-sub">Nom, domaine, modèle de base — tout est modifiable depuis la page projet.</p>
       </div>
 
       <div class="wc-body">
         <div class="form-group">
-          <label class="form-label" for="proj-name">Nom du projet</label>
-          <input id="proj-name" class="form-input" bind:value={projName} placeholder="ex: legal-contracts" />
+          <div class="form-label">Nom du projet</div>
+          <div class="mono" style="padding:10px 14px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);font-size:14px;color:var(--ink)">{projName}</div>
         </div>
         <div class="grid-2 mt-12">
           <div class="form-group">
@@ -1884,201 +1733,17 @@
       </div>
 
       <div class="wc-footer">
-        <button class="btn btn-ghost" onclick={() => step = recommendation ? 2 : 1}>← Retour</button>
+        <button class="btn btn-ghost" onclick={() => step = (adapters.length > 0 || recommendation) ? 2 : 1}>← Retour</button>
         <button
           class="btn btn-primary"
           disabled={creating || !projName.trim()}
           onclick={createProj}
         >
-          {creating ? 'Création…' : 'Créer et continuer →'}
+          {creating ? 'Initialisation…' : 'Confirmer et ouvrir le projet →'}
         </button>
       </div>
     </div>
 
-  <!-- Étape 4 : données -->
-  {:else if step === 4}
-    <div class="wizard-card">
-      <div class="wc-header">
-        <div class="wc-step-badge">4 / {STEPS.length}</div>
-        <h2 class="wc-title">Préparer les données</h2>
-        <p class="wc-sub">
-          Le projet <span class="mono text-accent">{projectId}</span> est créé.
-          Ingérez et nettoyez vos paires d'entraînement avant de lancer le fine-tuning.
-        </p>
-      </div>
-
-      <div class="wc-body">
-        <div class="data-checklist">
-          <div class="dc-item">
-            <span class="dc-icon">◧</span>
-            <div class="dc-text">
-              <div class="dc-label">Ingestion des sources</div>
-              <div class="dc-sub">Copiez vos fichiers dans <span class="mono">datalake/projects/{projectId}/raw/</span></div>
-            </div>
-            <a href="/data/ingest?project={projectId}" class="btn btn-ghost btn-sm">Ouvrir →</a>
-          </div>
-          <div class="dc-item">
-            <span class="dc-icon">⟳</span>
-            <div class="dc-text">
-              <div class="dc-label">Pipeline de nettoyage</div>
-              <div class="dc-sub">Score qualité, déduplication, filtrage des tokens</div>
-            </div>
-            <a href="/data/pipeline?project={projectId}" class="btn btn-ghost btn-sm">Ouvrir →</a>
-          </div>
-          <div class="dc-item">
-            <span class="dc-icon">◩</span>
-            <div class="dc-text">
-              <div class="dc-label">Ingestion des données</div>
-              <div class="dc-sub">Déposez les données client via l'ingestion manuelle</div>
-            </div>
-            <a href="/data/ingest?project={projectId}" class="btn btn-ghost btn-sm">Ouvrir →</a>
-          </div>
-        </div>
-
-        {#if !dataReady}
-          <div class="data-check-row mt-16">
-            <button class="btn btn-ghost" onclick={checkDataReady}>↻ Vérifier l'état des données</button>
-            {#if pairCount > 0}
-              <span class="text-muted" style="font-size:var(--text-sm)">
-                {pairCount} paires prêtes {pairCount < 200 ? '(minimum 200 requis)' : ''}
-              </span>
-            {/if}
-          </div>
-        {:else}
-          <div class="data-ok mt-16">
-            <span class="text-green">✓</span> {pairCount} paires fine-tuning-ready — prêt pour le training.
-          </div>
-        {/if}
-      </div>
-
-      <div class="wc-footer">
-        <button class="btn btn-ghost" onclick={() => step = 3}>← Retour</button>
-        <button class="btn btn-primary" onclick={() => step = 5}>
-          Continuer vers le training →
-        </button>
-      </div>
-    </div>
-
-  <!-- Étape 5 : training -->
-  {:else if step === 5}
-    <div class="wizard-card">
-      <div class="wc-header">
-        <div class="wc-step-badge">5 / {STEPS.length}</div>
-        <h2 class="wc-title">Lancer le fine-tuning</h2>
-        <p class="wc-sub">Configurez et lancez un run QLoRA sur votre dataset.</p>
-      </div>
-
-      <div class="wc-body">
-        <div class="action-card">
-          <div class="ac-icon">▷</div>
-          <div class="ac-text">
-            <div class="ac-title">Ouvrir le configurateur de training</div>
-            <div class="ac-sub">Paramétrez les hyperparamètres (rank, LR, batch…) et lancez le run MLX.</div>
-          </div>
-          <a href="/train?project={projectId}" class="btn btn-primary">Ouvrir →</a>
-        </div>
-
-        <div class="form-group mt-16">
-          <label class="form-label" for="run-id">ID du run lancé (à coller après lancement)</label>
-          <input
-            id="run-id"
-            class="form-input mono"
-            bind:value={runId}
-            placeholder="ex: a1b2c3d4"
-          />
-          <div class="form-hint">Visible dans /train → historique des runs</div>
-        </div>
-      </div>
-
-      <div class="wc-footer">
-        <button class="btn btn-ghost" onclick={() => step = 4}>← Retour</button>
-        <button
-          class="btn btn-primary"
-          disabled={!runId.trim()}
-          onclick={() => step = 6}
-        >
-          Run lancé, continuer →
-        </button>
-      </div>
-    </div>
-
-  <!-- Étape 6 : évaluation -->
-  {:else if step === 6}
-    <div class="wizard-card">
-      <div class="wc-header">
-        <div class="wc-step-badge">6 / {STEPS.length}</div>
-        <h2 class="wc-title">Évaluer le modèle</h2>
-        <p class="wc-sub">Évaluation obligatoire avant déploiement — BLEU, ROUGE-L, pass rate, latence.</p>
-      </div>
-
-      <div class="wc-body">
-        {#if !evalLaunched}
-          <div class="action-card">
-            <div class="ac-icon">◉</div>
-            <div class="ac-text">
-              <div class="ac-title">Lancer l'évaluation du run <span class="mono text-accent">{runId}</span></div>
-              <div class="ac-sub">Compare votre modèle au baseline Bedrock Nova Pro.</div>
-            </div>
-            <button class="btn btn-primary" onclick={launchEval}>▷ Évaluer</button>
-          </div>
-          <div class="action-card mt-12">
-            <div class="ac-icon">◐</div>
-            <div class="ac-text">
-              <div class="ac-title">Tester dans le Playground</div>
-              <div class="ac-sub">Envoyez des prompts manuels pour valider la qualité.</div>
-            </div>
-            <a href="/playground?project={projectId}" class="btn btn-ghost">Ouvrir →</a>
-          </div>
-        {:else}
-          <div class="data-ok">
-            <span class="text-green">✓</span> Évaluation lancée pour le run <span class="mono">{runId}</span>.
-          </div>
-          <a href="/eval" class="btn btn-ghost mt-12">Voir les résultats →</a>
-        {/if}
-      </div>
-
-      <div class="wc-footer">
-        <button class="btn btn-ghost" onclick={() => step = 5}>← Retour</button>
-        <button class="btn btn-primary" onclick={() => step = 7}>Continuer vers la livraison →</button>
-      </div>
-    </div>
-
-  <!-- Étape 7 : livraison -->
-  {:else if step === 7}
-    <div class="wizard-card">
-      <div class="wc-header">
-        <div class="wc-step-badge">7 / {STEPS.length}</div>
-        <h2 class="wc-title">Livraison du modèle</h2>
-        <p class="wc-sub">Fusionnez l'adapter, passez la gate qualité, promouvez en production.</p>
-      </div>
-
-      <div class="wc-body">
-        <div class="action-card">
-          <div class="ac-icon">⬡</div>
-          <div class="ac-text">
-            <div class="ac-title">Déployer le modèle</div>
-            <div class="ac-sub">Fuse → staging → gate → production → serving port.</div>
-          </div>
-          <a href="/delivery?project={projectId}" class="btn btn-primary">Ouvrir →</a>
-        </div>
-
-        <div class="done-banner mt-24">
-          <div class="done-icon">✓</div>
-          <div>
-            <div class="done-title">Vous avez complété toutes les étapes</div>
-            <div class="done-sub">Le projet <span class="mono text-accent">{projectId}</span> est prêt pour la mise en production.</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="wc-footer">
-        <button class="btn btn-ghost" onclick={() => step = 6}>← Retour</button>
-        <button class="btn btn-ghost" onclick={() => goto(`/projects/${projectId}`)}>Voir le projet</button>
-        <button class="btn btn-primary" onclick={() => { step = 0; need = ''; projName = ''; projectId = ''; runId = ''; recommendation = null; evalLaunched = false; }}>
-          ↺ Nouveau projet
-        </button>
-      </div>
-    </div>
   {/if}
 
   <!-- Barre de progression -->
@@ -2479,6 +2144,12 @@
     align-items: start;
   }
   @media (max-width: 1100px) { .collect-layout { grid-template-columns: 1fr; } }
+
+  .client-data-layout { display: flex; flex-direction: column; gap: 16px; max-width: 700px; }
+  .source-row--static { cursor: default; }
+  .source-row--static:hover { background: transparent; }
+  .client-data-steps { padding-left: 20px; margin: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--text-muted); }
+  .client-data-steps li { line-height: 1.5; }
 
   .source-group { display: flex; flex-direction: column; gap: 4px; }
   .source-group-label {

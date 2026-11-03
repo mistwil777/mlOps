@@ -9,10 +9,10 @@
 
   const STEPS = [
     { num: 0, label: 'Scoping',    icon: '◎', href: projectId ? `/advisor?project=${projectId}` : '/advisor' },
-    { num: 1, label: 'Données',    icon: '◧', href: '/data' },
-    { num: 2, label: 'Training',   icon: '▷', href: '/train' },
-    { num: 3, label: 'Évaluation', icon: '◉', href: '/models' },
-    { num: 4, label: 'Livraison',  icon: '⬡', href: '/delivery' },
+    { num: 1, label: 'Données',    icon: '◧', href: projectId ? `/data?project=${projectId}` : '/data' },
+    { num: 2, label: 'Training',   icon: '▷', href: projectId ? `/train?project=${projectId}` : '/train' },
+    { num: 3, label: 'Évaluation', icon: '◉', href: projectId ? `/models?project=${projectId}` : '/models' },
+    { num: 4, label: 'Livraison',  icon: '⬡', href: projectId ? `/delivery?project=${projectId}` : '/delivery' },
   ];
 </script>
 

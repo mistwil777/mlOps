@@ -217,18 +217,31 @@ class DataCleaner:
         logger.info("LLM judge: scoring %d/%d pairs (skipping %d below heuristic threshold)",
                     len(to_llm), len(pairs), len(skip))
 
-        llm_scored = []
+        from concurrent.futures import ThreadPoolExecutor, as_completed  # noqa: PLC0415
+
+        max_workers = min(10, len(to_llm))
+        llm_scored: list[dict[str, Any]] = [{}] * len(to_llm)
         failed = 0
-        for p in to_llm:
-            llm_s = self._llm_judge_score(p)
-            if llm_s is None:
-                failed += 1
-                llm_scored.append(p)  # keep heuristic score
-            else:
-                # Weighted blend: 30% heuristic + 70% LLM judge
-                blended = 0.3 * p["quality_score"] + 0.7 * llm_s
-                llm_scored.append({**p, "quality_score": round(blended, 3),
-                                   "llm_score": round(llm_s, 3)})
+
+        def _score_one(idx: int, p: dict[str, Any]) -> tuple[int, float | None]:
+            return idx, self._llm_judge_score(p)
+
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = {pool.submit(_score_one, i, p): i for i, p in enumerate(to_llm)}
+            done_count = 0
+            for fut in as_completed(futures):
+                idx, llm_s = fut.result()
+                p = to_llm[idx]
+                done_count += 1
+                if done_count % 100 == 0:
+                    logger.info("LLM judge: %d/%d scored", done_count, len(to_llm))
+                if llm_s is None:
+                    failed += 1
+                    llm_scored[idx] = p
+                else:
+                    blended = 0.3 * p["quality_score"] + 0.7 * llm_s
+                    llm_scored[idx] = {**p, "quality_score": round(blended, 3),
+                                       "llm_score": round(llm_s, 3)}
 
         if failed:
             logger.warning("LLM judge: %d calls failed, kept heuristic score for those", failed)

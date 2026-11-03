@@ -3,6 +3,8 @@
   import { goto } from '$app/navigation';
   import { listEvaluations, launchEvaluation, getRuns, getProjects } from '$lib/api';
   import type { Evaluation, Project, Run } from '$lib/types';
+  import { page } from '$app/stores';
+  import { setCurrentProject } from '$lib/stores/currentProject.svelte';
   import Topbar from '$lib/components/Topbar.svelte';
   import StatusBadge from '$lib/components/StatusBadge.svelte';
   import SectionTabs from '$lib/components/SectionTabs.svelte';
@@ -23,6 +25,12 @@
       getRuns({ status: 'completed', limit: 50 }).catch(() => []),
       listEvaluations().catch(() => []),
     ]);
+    const _qp = $page.url.searchParams.get('project');
+    if (_qp && projects.find(p => p.id === _qp)) {
+      selectedProject = _qp;
+      const proj = projects.find(p => p.id === _qp);
+      if (proj) setCurrentProject(proj);
+    }
     loading = false;
   });
 

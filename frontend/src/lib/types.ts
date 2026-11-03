@@ -252,11 +252,21 @@ export interface OverlapResolution {
   adapters: AdvisorAdapter[];
 }
 
+export interface AutoCritiqueItem {
+  adapter: string | null;
+  type: 'deterministic_candidate' | 'over_segmentation' | 'underestimated_context' | 'weak_solo_score' | 'undocumented_dependency' | 'other';
+  observation: string;
+  confidence: number;
+  human_question: string;
+}
+
 export interface AdvisorRecommendation {
   project: string;
   n_specialists: number;
   total_estimated_pairs: number;
   config_updated: string | null;
+  auto_critique?: AutoCritiqueItem[];
+  critique_submitted?: number;
   recommendation: {
     adapters: AdvisorAdapter[];
     orchestrator: AdvisorAdapter;
@@ -298,6 +308,36 @@ export interface AdapterCoverageResult {
   total_raw: number;
   untagged: number;
   adapters: AdapterCoverageItem[];
+}
+
+export interface ReviewItem {
+  prompt: string;
+  completion: string;
+  quality_score?: number;
+  source_url?: string;
+  adapter_name?: string;
+  pair_hash?: string;
+}
+
+export interface SuspiciousPair {
+  index: number;
+  source: 'train' | 'valid';
+  reason: 'syntax_error' | 'empty_completion' | 'truncated' | 'missing_import' | 'unvalidated_high_score' | 'borderline_score';
+  detail: string;
+  severity: 'high' | 'medium';
+  prompt_snippet: string;
+  completion_snippet: string;
+  recommendation: string | null;
+  _ignored?: boolean;
+  _ignored_at?: string;
+}
+
+export interface AiAuditResult {
+  project_id: string;
+  total_checked: number;
+  suspicious: SuspiciousPair[];
+  suspicious_count: number;
+  generated_at: string;
 }
 
 export interface PackageInfo {

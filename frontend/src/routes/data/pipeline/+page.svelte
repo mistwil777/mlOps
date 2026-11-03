@@ -2,8 +2,10 @@
   import { page } from '$app/stores';
   import { onMount, onDestroy } from 'svelte';
   import { getProjects, startCleanRaw, cancelCleanRaw, getCleanRawEstimate, startPipeline,
-           getAnalysisReport, runAnalysis, validateAnalysis, type AnalysisCategory, type AnalysisReport } from '$lib/api';
+           getAnalysisReport, runAnalysis, validateAnalysis, getDataHealth, startSemanticMatch,
+           type AnalysisCategory, type AnalysisReport } from '$lib/api';
   import type { Project } from '$lib/types';
+  import { setCurrentProject } from '$lib/stores/currentProject.svelte';
 
   let projects: Project[] = $state([]);
   let selectedProject = $state('');
@@ -26,18 +28,32 @@
   let acceptedCats     = $state<AnalysisCategory[]>([]);
   let rejectedNames    = $state<string[]>([]);
 
-  // Step 2 — clean (pairs pipeline)
+  // Step 2 — Matcher (semantic match)
+  let matcherRunning = $state(false);
+  let matcherStatus  = $state<'idle' | 'running' | 'completed' | 'failed'>('idle');
+  let matcherJobId   = $state('');
+
+  // Step 3 — clean (pairs pipeline)
   let pipelineRunning = $state(false);
   let pipelineStatus  = $state<'idle' | 'running' | 'completed' | 'failed'>('idle');
   let pipelineJobId   = $state('');
+  let existingCleanRawCount = $state(0);
+  let existingPairsCount = $state(0);
 
   onMount(async () => {
     projects = await getProjects().catch(() => []);
     if (projects.length > 0) {
       const _qp = $page.url.searchParams.get('project');
       selectedProject = _qp && projects.find(p => p.id === _qp) ? _qp : projects[0].id;
+      const proj = projects.find(p => p.id === selectedProject);
+      if (proj) setCurrentProject(proj);
       cleanRawEstimate = await getCleanRawEstimate(selectedProject).catch(() => null);
       analysisReport = await getAnalysisReport(selectedProject).catch(() => null);
+      const health = await getDataHealth(selectedProject).catch(() => null);
+      existingCleanRawCount = (health as any)?.funnel?.clean_raw ?? 0;
+      existingPairsCount = (health as any)?.funnel?.pairs ?? 0;
+      if (existingCleanRawCount > 0) cleanRawStatus = 'completed';
+      if (existingPairsCount > 0) matcherStatus = 'completed';
       if (analysisReport?.proposed_categories) acceptedCats = [...analysisReport.proposed_categories];
     }
   });
@@ -175,10 +191,36 @@
     }
   }
 
+  async function handleMatcher() {
+    if (!selectedProject || matcherRunning) return;
+    error = '';
+    logs = [...logs, '\n── Étape 2 : Matching sémantique (transform) ──'];
+    matcherRunning = true;
+    matcherStatus = 'running';
+    try {
+      const res = await startSemanticMatch({ project_id: selectedProject, lang_pair: 'java-python' });
+      matcherJobId = res.job_id;
+      openSSE(res.job_id, (s) => {
+        matcherRunning = false;
+        matcherStatus = s === 'completed' ? 'completed' : 'failed';
+        matcherJobId = '';
+        if (s === 'completed') {
+          getDataHealth(selectedProject).then(h => {
+            existingPairsCount = (h as any)?.funnel?.pairs ?? existingPairsCount;
+          }).catch(() => {});
+        }
+      });
+    } catch (e) {
+      error = (e as Error).message;
+      matcherRunning = false;
+      matcherStatus = 'failed';
+    }
+  }
+
   async function handlePipeline() {
     if (!selectedProject || pipelineRunning) return;
     error = '';
-    logs = [...logs, '\n── Étape 2 : Nettoyage des paires (clean) ──'];
+    logs = [...logs, '\n── Étape 3 : Nettoyage des paires (clean) ──'];
     pipelineRunning = true;
     pipelineStatus = 'running';
     try {
@@ -197,7 +239,7 @@
   }
 
   const analysisValidated = $derived(analysisReport?.validation_status === 'validated');
-  const running = $derived(cleanRawRunning || pipelineRunning);
+  const running = $derived(cleanRawRunning || matcherRunning || pipelineRunning);
 </script>
 
 <div class="topbar">
@@ -288,7 +330,7 @@
   <!-- Step 1 — clean_raw -->
   <div class="card step-card" style="margin-bottom:12px">
     <div class="step-header">
-      <div class="step-num">1</div>
+      <div class="step-num" class:step-done={cleanRawStatus === 'completed'}>1</div>
       <div class="step-info">
         <div class="step-title">Nettoyage des données brutes</div>
         <div class="step-desc text-muted">
@@ -322,12 +364,12 @@
           <span class="badge-running">⟳ En cours…</span>
         {:else}
           <button class="btn btn-primary" onclick={handleCleanRaw}
-                  disabled={running || !selectedProject || !analysisValidated}>
-            ▶ Lancer clean_raw
+                  disabled={running || !selectedProject}>
+            {existingCleanRawCount > 0 ? '↺ Relancer clean_raw' : '▶ Lancer clean_raw'}
           </button>
         {/if}
         {#if cleanRawStatus === 'completed'}
-          <span class="badge-ok">✓ Terminé</span>
+          <span class="badge-ok">✓ Terminé{existingCleanRawCount > 0 ? ` — ${existingCleanRawCount.toLocaleString()} records qualifiés` : ''}</span>
         {:else if cleanRawStatus === 'failed'}
           <span class="badge-err">✗ Échoué</span>
         {:else if cleanRawStatus === 'cancelled'}
@@ -337,16 +379,50 @@
     </div>
   </div>
 
-  <!-- Step 2 — clean (pairs) -->
+  <!-- Step 2 — Matcher (semantic match) -->
+  <div class="card step-card" style="margin-bottom:12px">
+    <div class="step-header">
+      <div class="step-num" class:step-done={matcherStatus === 'completed'}>2</div>
+      <div class="step-info">
+        <div class="step-title">Matching sémantique</div>
+        <div class="step-desc text-muted">
+          Aligne les fichiers source et cible par similarité sémantique pour former les paires d'entraînement.
+          Produit <span class="mono">processed/pairs/&lt;adapter&gt;.jsonl</span>.
+          Requiert les données nettoyées de l'étape 1.
+        </div>
+      </div>
+      <div class="step-actions">
+        {#if matcherRunning}
+          <span class="badge-running">⟳ En cours…</span>
+        {:else}
+          <button class="btn btn-primary" onclick={handleMatcher}
+                  disabled={running || !selectedProject || existingCleanRawCount === 0}>
+            {existingPairsCount > 0 ? '↺ Relancer le Matcher' : '▶ Lancer le Matcher'}
+          </button>
+        {/if}
+        {#if matcherStatus === 'completed'}
+          <span class="badge-ok">✓ Terminé{existingPairsCount > 0 ? ` — ${existingPairsCount.toLocaleString()} paires formées` : ''}</span>
+        {:else if matcherStatus === 'failed'}
+          <span class="badge-err">✗ Échoué</span>
+        {:else if existingCleanRawCount === 0}
+          <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">
+            → Lancez d'abord l'étape 1 (clean_raw).
+          </div>
+        {/if}
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 3 — clean (pairs) -->
   <div class="card step-card" style="margin-bottom:20px">
     <div class="step-header">
-      <div class="step-num">2</div>
+      <div class="step-num">3</div>
       <div class="step-info">
         <div class="step-title">Nettoyage des paires</div>
         <div class="step-desc text-muted">
           Déduplique (exact + minhash), filtre par règles métier, score la qualité, split train/valid.
           Produit <span class="mono">fine-tuning-ready/train.jsonl</span>.
-          À lancer après transform ou semantic-match.
+          À lancer après le Matcher.
         </div>
       </div>
       <div class="step-actions">
@@ -355,8 +431,17 @@
           <input type="range" min="0.3" max="0.95" step="0.05" bind:value={threshold} style="width:120px" />
           <span class="mono" style="font-size:13px; width:36px">{threshold.toFixed(2)}</span>
         </div>
+        {#if existingPairsCount === 0}
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;">
+            → Lancez d'abord le Matcher (étape 2) pour former les paires.
+          </div>
+        {:else}
+          <div style="font-size:12px;color:var(--green);margin-bottom:6px;">
+            {existingPairsCount.toLocaleString()} paires disponibles
+          </div>
+        {/if}
         <button class="btn btn-primary" onclick={handlePipeline}
-                disabled={running || !selectedProject || !analysisValidated}>
+                disabled={running || !selectedProject || existingPairsCount === 0}>
           {pipelineRunning ? '⟳ En cours…' : '▶ Lancer clean'}
         </button>
         {#if pipelineStatus === 'completed'}

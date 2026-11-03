@@ -4,6 +4,7 @@
   import StatusBadge from '$lib/components/StatusBadge.svelte';
   import SectionTabs from '$lib/components/SectionTabs.svelte';
   import { req } from '$lib/api';
+  import { projectCtx } from '$lib/stores/currentProject.svelte';
 
   const tabs = [{ href: '/eval', label: 'Tests' }, { href: '/evals', label: 'Dashboard KPIs' }, { href: '/playground', label: 'Playground' }];
 
@@ -25,24 +26,18 @@
   let projects: ProjectKpiSummary[] = $state([]);
   let loading = $state(true);
   let error = $state('');
-  let search = $state('');
-  let sectorFilter = $state('all');
+
+  const currentProjectId = $derived(projectCtx.project?.id ?? null);
 
   const filtered = $derived(
-    projects.filter(p => {
-      const matchSearch = p.project_name.toLowerCase().includes(search.toLowerCase());
-      const matchSector = sectorFilter === 'all' || p.sector === sectorFilter;
-      return matchSearch && matchSector;
-    })
+    currentProjectId ? projects.filter(p => p.project_id === currentProjectId) : projects
   );
 
-  const sectors = $derived(['all', ...new Set(projects.map(p => p.sector).filter((s): s is string => s != null))]);
-
   const stats = $derived({
-    total: projects.length,
-    passing: projects.filter(p => p.quality_gate_pass === true).length,
-    regressing: projects.filter(p => p.delta_pass_rate != null && p.delta_pass_rate < -0.03).length,
-    noData: projects.filter(p => p.last_eval_at == null).length,
+    total: filtered.length,
+    passing: filtered.filter(p => p.quality_gate_pass === true).length,
+    regressing: filtered.filter(p => p.delta_pass_rate != null && p.delta_pass_rate < -0.03).length,
+    noData: filtered.filter(p => p.last_eval_at == null).length,
   });
 
   function formatDate(iso: string | null): string {
@@ -88,11 +83,12 @@
   <div class="page-header">
     <div>
       <h1>Dashboard KPIs</h1>
-      <p class="subtitle">Suivi des évaluations sur {projects.length} projets</p>
+      <p class="subtitle">Suivi des évaluations{currentProjectId ? ` — ${projectCtx.project?.name}` : ` sur ${projects.length} projets`}</p>
     </div>
   </div>
 
-  <!-- Stats globales -->
+  <!-- Stats globales (vue multi-projets uniquement) -->
+  {#if !currentProjectId}
   <div class="stat-row">
     <div class="stat-card">
       <div class="stat-value">{stats.total}</div>
@@ -111,26 +107,7 @@
       <div class="stat-label">Sans données</div>
     </div>
   </div>
-
-  <!-- Filtres -->
-  <div class="filter-row">
-    <input
-      class="search-input"
-      type="search"
-      placeholder="Rechercher un projet…"
-      bind:value={search}
-    />
-    <div class="sector-tabs">
-      {#each sectors as s}
-        <button
-          class="sector-tab {sectorFilter === s ? 'active' : ''}"
-          onclick={() => sectorFilter = s}
-        >
-          {s === 'all' ? 'Tous' : sectorLabel(s)}
-        </button>
-      {/each}
-    </div>
-  </div>
+  {/if}
 
   {#if loading}
     <div class="loading">Chargement…</div>

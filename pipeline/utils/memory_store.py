@@ -42,6 +42,9 @@ def _connect(path: Path = _DB_PATH) -> sqlite3.Connection:
     return conn
 
 
+_CLUSTER_AUTO_FIX_THRESHOLD = 3  # occurrences before promoting to pipeline-level fix
+
+
 def _init_schema(conn: sqlite3.Connection) -> None:
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS corrections (
@@ -62,6 +65,13 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             validated_by    TEXT,
             rejected_at     TEXT,
             rejection_reason TEXT
+        );
+        CREATE TABLE IF NOT EXISTS defect_clusters (
+            reason              TEXT PRIMARY KEY,
+            count               INTEGER NOT NULL DEFAULT 0,
+            first_seen          TEXT NOT NULL,
+            last_seen           TEXT NOT NULL,
+            auto_fix_promoted   INTEGER NOT NULL DEFAULT 0
         );
         CREATE INDEX IF NOT EXISTS idx_corrections_phase   ON corrections(phase);
         CREATE INDEX IF NOT EXISTS idx_corrections_status  ON corrections(status);
@@ -164,6 +174,58 @@ def list_corrections(
     params.append(limit)
     with _connect() as conn:
         rows = conn.execute(query, params).fetchall()
+    return [dict(r) for r in rows]
+
+
+def increment_defect_cluster(reason: str) -> dict:
+    """Increment occurrence count for a defect reason. Returns cluster state after update."""
+    now = datetime.now(timezone.utc).isoformat()
+    with _connect() as conn:
+        conn.execute(
+            """INSERT INTO defect_clusters (reason, count, first_seen, last_seen)
+               VALUES (?, 1, ?, ?)
+               ON CONFLICT(reason) DO UPDATE SET
+                 count = count + 1,
+                 last_seen = excluded.last_seen""",
+            (reason, now, now),
+        )
+        row = conn.execute(
+            "SELECT * FROM defect_clusters WHERE reason=?", (reason,)
+        ).fetchone()
+    cluster = dict(row)
+    count = cluster["count"]
+    if count >= _CLUSTER_AUTO_FIX_THRESHOLD and not cluster["auto_fix_promoted"]:
+        logger.warning(
+            "Defect cluster '%s' reached %d occurrences — candidate for pipeline-level auto-fix in clean_raw.py",
+            reason, count,
+        )
+    return cluster
+
+
+def get_defect_clusters() -> list[dict]:
+    """Return all defect clusters ordered by occurrence count."""
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM defect_clusters ORDER BY count DESC"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def mark_cluster_promoted(reason: str) -> None:
+    """Mark a cluster as promoted to a pipeline-level fix (suppresses further warnings)."""
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE defect_clusters SET auto_fix_promoted=1 WHERE reason=?", (reason,)
+        )
+
+
+def get_validated_corrections_for_phase(phase: str) -> list[dict]:
+    """Return all validated corrections for a phase — used by augment pipeline to filter bad patterns."""
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM corrections WHERE status='validated' AND phase=? ORDER BY confidence DESC",
+            (phase,),
+        ).fetchall()
     return [dict(r) for r in rows]
 
 

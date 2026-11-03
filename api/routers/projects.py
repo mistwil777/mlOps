@@ -33,6 +33,8 @@ class ProjectCreate(BaseModel):
         "min_pass_rate": 0.85,
         "min_rouge_l": 0.65,
         "max_latency_ratio": 2.0,
+        "min_pairs": 50,
+        "min_avg_quality": 0.6,
     }
     min_tokens: int = 50
     max_tokens: int = 2048
@@ -165,7 +167,8 @@ def delete_project(project_id: str):
     import shutil
 
     cfg = get_project_config(project_id)
-    if not cfg:
+    db_row = fetchone("SELECT id FROM projects WHERE id = ?", (project_id,))
+    if not cfg and not db_row:
         raise HTTPException(404, f"Project '{project_id}' not found")
 
     # Remove YAML config
@@ -176,7 +179,6 @@ def delete_project(project_id: str):
     execute("DELETE FROM evaluations WHERE run_id IN (SELECT id FROM runs WHERE project_id = ?)", (project_id,))
     execute("DELETE FROM runs WHERE project_id = ?", (project_id,))
     execute("DELETE FROM rag_feedback WHERE project_id = ?", (project_id,))
-    execute("DELETE FROM deployed_models WHERE project_id = ?", (project_id,))
     execute("DELETE FROM projects WHERE id = ?", (project_id,))
 
     # Remove datalake directory (non-blocking — log on error)

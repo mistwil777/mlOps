@@ -522,6 +522,76 @@ def _augment_text_truncation(text: str) -> str | None:
     return result if result != stripped else None
 
 
+# ── Missing import auto-fixer ─────────────────────────────────────────────────
+
+_IMPORT_FIXES: list[tuple[str, str, str]] = [
+    # (usage_pattern, import_check, import_line_to_add)
+    (r'\bnp\.', "import numpy", "import numpy as np"),
+    (r'\bpd\.', "import pandas", "import pandas as pd"),
+    (r'\bpytest\.', "import pytest", "import pytest"),
+    (r'\bos\.', "import os", "import os"),
+    (r'\bsys\.', "import sys", "import sys"),
+    (r'\bre\.', "import re", "import re"),
+    (r'\bjson\.', "import json", "import json"),
+    (r'\bdatetime\.', "import datetime", "from datetime import datetime"),
+    (r'\bPath\(', "from pathlib", "from pathlib import Path"),
+    (r'@dataclass', "from dataclasses", "from dataclasses import dataclass"),
+    (r'\bTyping\b|\bList\[|\bDict\[|\bOptional\[|\bTuple\[', "from typing", "from typing import List, Dict, Optional, Tuple, Any"),
+]
+
+
+def fix_missing_imports(completion: str) -> tuple[str, list[str]]:
+    """Add missing standard imports to a Python completion. Returns (fixed_completion, added_imports)."""
+    import re as _re  # noqa: PLC0415
+    if not completion or not completion.strip():
+        return completion, []
+
+    added: list[str] = []
+    lines = completion.split("\n")
+    existing = "\n".join(l for l in lines if l.strip().startswith(("import ", "from ")))
+
+    imports_to_add: list[str] = []
+    for pattern, check, import_line in _IMPORT_FIXES:
+        if _re.search(pattern, completion) and check not in existing:
+            imports_to_add.append(import_line)
+            added.append(import_line)
+
+    if not imports_to_add:
+        return completion, []
+
+    # Insert imports at the top, after any existing imports block
+    insert_pos = 0
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith(("import ", "from ")):
+            insert_pos = i + 1
+        elif insert_pos > 0:
+            break
+
+    for imp in reversed(imports_to_add):
+        if imp not in existing:
+            lines.insert(insert_pos, imp)
+
+    return "\n".join(lines), added
+
+
+def apply_missing_import_fixes(
+    records: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], int]:
+    """Apply fix_missing_imports to all records that have a completion field. Returns (records, n_fixed)."""
+    n_fixed = 0
+    for r in records:
+        completion = r.get("completion") or ""
+        if not completion:
+            continue
+        fixed, added = fix_missing_imports(completion)
+        if added:
+            r["completion"] = fixed
+            r["_import_fixes_applied"] = added
+            n_fixed += 1
+    return records, n_fixed
+
+
 def augment_record(r: dict[str, Any], domain: str = "code") -> list[dict[str, Any]]:
     """Produce up to MAX_AUG_PER_RECORD augmented variants of a qualifying record."""
     lang = str(r.get("lang") or "").lower()
@@ -587,12 +657,35 @@ def augment_batch(
                     and r.get("_heuristic_score", 0) >= AUGMENT_THRESHOLD]
         eligible = priority + [r for r in eligible if r not in priority]
 
+    # Load validated bad patterns from memory store (best-effort)
+    known_bad: list[dict] = []
+    try:
+        from pipeline.utils.memory_store import get_validated_corrections_for_phase
+        known_bad = get_validated_corrections_for_phase("data_quality")
+    except Exception:
+        pass
+
+    def _matches_bad_pattern(completion: str) -> bool:
+        for c in known_bad:
+            obs = (c.get("observed_value") or "")
+            if len(obs) > 20 and obs[:100] in completion:
+                return True
+        return False
+
     augmented: list[dict[str, Any]] = []
+    filtered_out = 0
     for r in eligible:
         if len(records) + len(augmented) >= target:
             break
-        augmented.extend(augment_record(r, domain=domain))
+        variants = augment_record(r, domain=domain)
+        for v in variants:
+            if _matches_bad_pattern(v.get("completion", "")):
+                filtered_out += 1
+            else:
+                augmented.append(v)
 
+    if filtered_out:
+        logger.info("Augmentation: filtered %d variants matching known-bad patterns", filtered_out)
     logger.info("Augmentation (%s): produced %d variants from %d eligible records", domain, len(augmented), len(eligible))
     log_metric("raw_augmented", len(augmented))
     return records + augmented
@@ -688,6 +781,18 @@ def clean_adapter_records(
         records = augment_batch(records, target=target, coverage=coverage, domain=domain)
         report["steps"]["augmentation"] = len(records) - report["steps"]["volume_control"]["count"]
 
+    # 7. Missing import auto-fix (deterministic, no LLM)
+    if domain == "code" and not dry_run:
+        records, n_import_fixed = apply_missing_import_fixes(records)
+        if n_import_fixed:
+            report["steps"]["missing_import_fix"] = n_import_fixed
+            logger.info("[%s] Missing import fix: %d records patched", adapter_name, n_import_fixed)
+            try:
+                from pipeline.utils.memory_store import mark_cluster_promoted
+                mark_cluster_promoted("missing_import")
+            except Exception:
+                pass
+
     report["output_count"] = len(records)
     report["action"] = action
     return report, records
@@ -724,16 +829,36 @@ def main() -> None:
     logger.info("Loaded %d raw records total from %s", len(all_raw), raw_dir)
 
     records_by_adapter: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    orphans: list[dict[str, Any]] = []
     for r in all_raw:
         name = r.get("adapter_name")
         if name:
             records_by_adapter[name].append(r)
+        else:
+            orphans.append(r)
+
+    if orphans:
+        adapter_names = [a["name"] for a in adapters]
+        if len(adapter_names) == 1:
+            # Single adapter — assign all orphans to it
+            target = adapter_names[0]
+            logger.info("Assigning %d orphan records (no adapter_name) → %s", len(orphans), target)
+            for r in orphans:
+                records_by_adapter[target].append({**r, "adapter_name": target})
+        else:
+            # Multiple adapters — let cross-adapter reassignment route them
+            # Tag with a sentinel so they participate in embedding-based routing
+            logger.info("Queuing %d orphan records for cross-adapter routing", len(orphans))
+            for r in orphans:
+                records_by_adapter["__orphan__"].append({**r, "adapter_name": "__orphan__"})
 
     # Cross-adapter reassignment (pass 1 — before per-adapter cleaning)
     if len(adapters) > 1 and not args.dry_run:
         adapter_descriptions = {a["name"]: a.get("description", "") for a in adapters}
         # We need embeddings for cross-adapter reassignment — embed all at once
-        all_names_records = [(name, recs) for name, recs in records_by_adapter.items() if name in adapter_descriptions]
+        # Include orphans as a source to reassign; exclude the sentinel from target descriptions
+        all_names_records = [(name, recs) for name, recs in records_by_adapter.items()
+                             if name in adapter_descriptions or name == "__orphan__"]
         if all_names_records:
             flat_records = [r for _, recs in all_names_records for r in recs]
             flat_texts   = [_record_text(r) for r in flat_records]

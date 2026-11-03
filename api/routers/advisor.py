@@ -278,8 +278,25 @@ Return ONLY a raw JSON object (no markdown, no prose, start immediately with {{)
   "software_components": [
     "composant déterministe 1 — description courte",
     "composant déterministe 2 — description courte"
+  ],
+  "auto_critique": [
+    {{
+      "adapter": "nom-adapter-ou-null",
+      "type": "deterministic_candidate|over_segmentation|underestimated_context|weak_solo_score|undocumented_dependency|other",
+      "observation": "Ce que tu observes objectivement dans ta propre recommandation",
+      "confidence": 0.85,
+      "human_question": "Question en français, contexte métier uniquement, sans jargon LLM — ex: Le naming BRA a-t-il des cas ambigus qu'une règle fixe ne couvrirait pas ?"
+    }}
   ]
 }}
+
+IMPORTANT: The "auto_critique" field is MANDATORY. After completing your recommendation, critically review it:
+- Any adapter whose task could be solved by deterministic rules/templates → type: deterministic_candidate
+- More than 4 specialist adapters → consider type: over_segmentation
+- Sequential dependency between adapters not documented → type: undocumented_dependency
+- Orchestrator estimated_pairs < 300 → type: underestimated_context
+- Any adapter with score < 15 without strong justification → type: weak_solo_score
+If no issues found, return an empty array. Be honest — this self-critique feeds a correction memory system.
 
 The "domain" field MUST be one of: code, legal, hr, finance, defense, healthcare, sales, compliance, customer-support, other.
 The "task_type" field MUST be one of: migration, summarization, classification, qa, generation, review, extraction, translation, refactoring, documentation.
@@ -518,7 +535,7 @@ def _call_claude(model: str, need: str, doc_contexts: list[str] | None = None) -
             )
     response = _client.messages.create(
         model=model,
-        max_tokens=4096,
+        max_tokens=8192,
         system=_SYSTEM_PROMPT,
         messages=[
             {"role": "user", "content": user_content},
@@ -1366,10 +1383,87 @@ def recommend(body: AdvisorRequest) -> dict[str, Any]:
     total_pairs = sum(a.get("estimated_pairs", 0) for a in recommendation.get("adapters", []))
     total_pairs += recommendation.get("orchestrator", {}).get("estimated_pairs", 0)
 
+    # Auto-submit self-critique items to judge pipeline (background, non-blocking)
+    critique_items = recommendation.pop("auto_critique", []) or []
+    submitted_ids: list[str] = []
+    if critique_items:
+        try:
+            from pipeline.utils.memory_store import MemoryStore
+            from pipeline.utils.llm_judge import run_judge_pipeline
+            store = MemoryStore()
+            for item in critique_items:
+                if not item.get("observation"):
+                    continue
+                adapter_tag = f"[{item['adapter']}] " if item.get("adapter") else ""
+                cid = store.submit_correction(
+                    phase="adapter-recommendation",
+                    description=f"{adapter_tag}{item.get('human_question') or item.get('observation', '')}",
+                    observed_value=item.get("observation", ""),
+                    expected_value="",
+                    rationale=f"Self-critique ({item.get('type','other')}) — confidence {item.get('confidence', 0.0)}",
+                    context_need=body.need[:200] if body.need else None,
+                    reported_by="self_critique",
+                    confidence=float(item.get("confidence", 0.7)),
+                    source="llm_consensus",
+                )
+                submitted_ids.append(cid)
+                # Run judge in background thread — do not block HTTP response
+                import threading
+                threading.Thread(
+                    target=run_judge_pipeline, args=(cid,), daemon=True
+                ).start()
+        except Exception:
+            pass  # Graceful degradation — critique pipeline must never break the advisor
+
     return {
         "project": body.project,
         "n_specialists": n_specialists,
         "total_estimated_pairs": total_pairs,
         "recommendation": recommendation,
         "config_updated": config_updated,
+        "auto_critique": critique_items,
+        "critique_submitted": len(submitted_ids),
     }
+
+
+# ── Suggest Phase 0 params ────────────────────────────────────────────────────
+
+_SUGGEST_PARAMS_SYSTEM = """Tu es un expert en déploiement de modèles IA en entreprise.
+À partir d'un besoin décrit en langage naturel, tu dois estimer des paramètres de déploiement réalistes.
+Réponds UNIQUEMENT avec un JSON valide, sans markdown ni explication.
+Format attendu :
+{
+  "requests_per_day": <entier — volume journalier réaliste pour ce type d'usage>,
+  "max_latency_ms": <entier — latence acceptable en ms (2000 pour interactif, 5000 pour batch)>,
+  "hardware_description": "<description matériel type pour ce client — ex: serveur Dell PowerEdge avec 2x NVIDIA A100, ou MacBook Pro M3 32GB>",
+  "sovereignty_required": <true/false — true si le besoin mentionne défense, bancaire, données sensibles, on-premise>,
+  "rationale": "<1 phrase justifiant ces choix>"
+}"""
+
+class SuggestParamsRequest(BaseModel):
+    need: str
+
+
+@router.post("/suggest-params")
+def suggest_params(body: SuggestParamsRequest) -> dict[str, Any]:
+    """Suggest Phase 0 parameters from a need description (Haiku, fast)."""
+    if not body.need.strip():
+        raise HTTPException(400, "need is required")
+    try:
+        response = _client.messages.create(
+            model=_HAIKU_MODEL,
+            max_tokens=512,
+            system=_SUGGEST_PARAMS_SYSTEM,
+            messages=[{"role": "user", "content": f"Besoin : {body.need.strip()}"}],
+        )
+        raw = response.content[0].text.strip()
+        # Strip markdown fences if present
+        if raw.startswith("```"):
+            raw = "\n".join(raw.split("\n")[1:])
+        if raw.endswith("```"):
+            raw = "\n".join(raw.split("\n")[:-1])
+        return json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise HTTPException(502, f"Model returned invalid JSON: {e}")
+    except anthropic.APIError as e:
+        raise HTTPException(502, f"Anthropic API error: {e}")

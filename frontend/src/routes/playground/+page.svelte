@@ -3,6 +3,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { getProjects } from '$lib/api';
   import type { Project } from '$lib/types';
+  import { setCurrentProject } from '$lib/stores/currentProject.svelte';
   import SectionTabs from '$lib/components/SectionTabs.svelte';
   const tabs = [{ href: '/eval', label: 'Tests' }, { href: '/evals', label: 'Dashboard KPIs' }, { href: '/playground', label: 'Playground' }];
 
@@ -67,7 +68,7 @@
 
   onMount(async () => {
     projects = await getProjects().catch(() => []);
-    const _qp = $page.url.searchParams.get('project'); if (projects.length > 0) { ragProject = _qp && projects.find(p => p.id === _qp) ? _qp : projects[0].id; selectedProject = ragProject; }
+    const _qp = $page.url.searchParams.get('project'); if (projects.length > 0) { ragProject = _qp && projects.find(p => p.id === _qp) ? _qp : projects[0].id; selectedProject = ragProject; const proj = projects.find(p => p.id === ragProject); if (proj) setCurrentProject(proj); }
   });
 
   async function loadTestSets() {

@@ -8,8 +8,16 @@ export async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
     ...opts,
   });
   if (!r.ok) {
-    const err = await r.text().catch(() => r.statusText);
-    throw new Error(`${r.status} ${err}`);
+    let detail: unknown;
+    try { detail = await r.json(); } catch { detail = null; }
+    const err: Error & { status?: number; detail?: unknown } = new Error(
+      typeof detail === 'object' && detail !== null && 'detail' in detail
+        ? (typeof (detail as any).detail === 'string' ? (detail as any).detail : `${r.status} ${r.statusText}`)
+        : `${r.status} ${r.statusText}`
+    );
+    err.status = r.status;
+    err.detail = typeof detail === 'object' && detail !== null && 'detail' in detail ? (detail as any).detail : detail;
+    throw err;
   }
   if (r.status === 204 || r.headers.get('content-length') === '0') return undefined as T;
   return r.json() as Promise<T>;
@@ -127,6 +135,20 @@ export interface PreScopingResult {
   rationale: string;
   next_phase: 'slm' | 'rag_only' | 'none';
 }
+
+export interface SuggestedParams {
+  requests_per_day: number;
+  max_latency_ms: number;
+  hardware_description: string;
+  sovereignty_required: boolean;
+  rationale: string;
+}
+
+export const advisorSuggestParams = (need: string) =>
+  req<SuggestedParams>('/advisor/suggest-params', {
+    method: 'POST',
+    body: JSON.stringify({ need }),
+  });
 
 export const advisorPreScoping = (
   need: string,
@@ -271,6 +293,12 @@ export const flagRecord          = (projectId: string, body: { index: number; ac
 export const rescueRecord        = (projectId: string, body: { index: number; action: 'rescue'; corrections?: Record<string, string>; note?: string }) =>
   req<{ ok: boolean; rescued_from: string; record: unknown }>(`/data/review/${projectId}/rescue`, { method: 'POST', body: JSON.stringify(body) });
 export const getReviewStats      = (projectId: string) => req<ReviewStats>(`/data/review/${projectId}/stats`);
+export const getAiAudit          = (projectId: string, rerun = false) =>
+  req<import('./types').AiAuditResult>(`/data/review/${projectId}/ai-audit${rerun ? '?rerun=true' : ''}`);
+export const ignoreAiAuditFlag   = (projectId: string, body: { index: number; source: string }) =>
+  req<{ ok: boolean }>(`/data/review/${projectId}/ai-audit/ignore`, { method: 'POST', body: JSON.stringify(body) });
+export const autoCorrectAuditPair = (projectId: string, body: { index: number; source: string; reason: string; recommendation: string }) =>
+  req<{ ok: boolean; corrected_completion: string }>(`/data/review/${projectId}/ai-audit/auto-correct`, { method: 'POST', body: JSON.stringify(body) });
 export const startCleanRaw     = (body: { project_id: string; adapter?: string; dry_run?: boolean }) =>
   req<CollectJob>('/data/clean-raw', { method: 'POST', body: JSON.stringify(body) });
 export const cancelCleanRaw      = (jobId: string) =>
@@ -334,3 +362,25 @@ export const advisorGetRecommendation = (projectId: string) =>
 
 // Project next-actions
 export const getNextActions    = (projectId: string) => req<import('./types').NextActions>(`/projects/${projectId}/next-actions`);
+
+// Document extraction for advisor (file upload)
+export const advisorExtractDoc = async (file: File): Promise<{ filename: string; char_count: number; was_summarized: boolean; text: string }> => {
+  const fd = new FormData();
+  fd.append('file', file);
+  const res = await fetch('/api/advisor/extract-doc', { method: 'POST', body: fd });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+};
+
+// Cross-project reuse detection
+export interface CrossProjectMatch {
+  total_matching: number;
+  by_project: Record<string, number>;
+  oldest_collected_at?: string;
+}
+
+export const advisorCrossProjectMatches = (description: string, k = 10) =>
+  req<CrossProjectMatch>('/advisor/cross-project-matches', {
+    method: 'POST',
+    body: JSON.stringify({ description, k }),
+  });

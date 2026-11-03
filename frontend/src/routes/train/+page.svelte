@@ -25,6 +25,8 @@
   let use_rag        = $state(true);
   let resume         = $state(false);
 
+  let gateError: { reasons: string[]; ftr_count: number; avg_quality: number | null; min_pairs: number; min_quality: number } | null = $state(null);
+
   const selectedModel = $derived(models.find(m => m.id === model_id) ?? models[0]);
 
   onMount(async () => {
@@ -33,18 +35,23 @@
     if (!project_id && projects.length) { const _qp = $page.url.searchParams.get('project'); project_id = _qp && projects.find(p => p.id === _qp) ? _qp : projects[0].id; }
   });
 
-  async function submit() {
+  async function submit(bypass = false) {
     if (!project_id) { error = 'Sélectionner un projet'; return; }
-    submitting = true; error = '';
+    submitting = true; error = ''; gateError = null;
     try {
       const { run_id } = await createRun({
         project_id, experiment_name: experiment || `${project_id}-lora`,
         iters, batch_size, learning_rate, lora_rank, lora_layers: lora_layers,
-        use_rag, resume,
+        use_rag, resume, bypass_gate: bypass,
       });
       goto(`/runs/${run_id}`);
-    } catch (e) {
-      error = (e as Error).message;
+    } catch (e: any) {
+      const detail = e?.detail ?? e?.body?.detail;
+      if (detail?.error === 'data_quality_gate_failed') {
+        gateError = detail;
+      } else {
+        error = e instanceof Error ? e.message : String(e);
+      }
     } finally {
       submitting = false;
     }
@@ -137,7 +144,24 @@
       </div>
 
       {#if error}<p class="text-red mb-16">{error}</p>{/if}
-      <button class="btn btn-primary w-full" style="padding:12px" onclick={submit} disabled={submitting || !project_id}>
+
+      {#if gateError}
+        <div style="background:rgba(230,103,103,.08);border:1px solid rgba(230,103,103,.3);border-radius:8px;padding:14px 16px;margin-bottom:16px;">
+          <div style="font-weight:600;color:var(--red);margin-bottom:8px;">⛔ Gate qualité données non satisfait</div>
+          <ul style="margin:0 0 10px 16px;padding:0;font-size:13px;color:var(--text-muted);">
+            {#each gateError.reasons as r}<li>{r}</li>{/each}
+          </ul>
+          <div style="font-size:12px;color:var(--text-dim);margin-bottom:12px;">
+            {gateError.ftr_count} paires fine-tuning-ready
+            {#if gateError.avg_quality != null} · qualité moy. {gateError.avg_quality.toFixed(2)}{/if}
+          </div>
+          <button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:rgba(230,103,103,.4);" onclick={() => submit(true)} disabled={submitting}>
+            Forcer quand même (non recommandé)
+          </button>
+        </div>
+      {/if}
+
+      <button class="btn btn-primary w-full" style="padding:12px" onclick={() => submit()} disabled={submitting || !project_id}>
         {submitting ? '▷ Lancement…' : '▷ Lancer le fine-tuning'}
       </button>
     </div>

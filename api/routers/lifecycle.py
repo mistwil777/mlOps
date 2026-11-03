@@ -175,7 +175,7 @@ def next_actions(project_id: str) -> dict[str, Any]:
         })
 
     # 2 — Data: not enough fine-tuning-ready pairs
-    ft_ready_dir = Path("datalake/fine-tuning-ready") / project_id
+    ft_ready_dir = Path("datalake/projects") / project_id / "fine-tuning-ready"
     ft_count = 0
     if ft_ready_dir.exists():
         for f in ft_ready_dir.glob("*.jsonl"):

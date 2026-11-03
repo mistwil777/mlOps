@@ -3,6 +3,7 @@
   import { onMount } from 'svelte';
   import { getProjects, searchDatalakePairs, indexProjectPairs, browsePairs } from '$lib/api';
   import type { Project } from '$lib/types';
+  import { setCurrentProject } from '$lib/stores/currentProject.svelte';
 
   type RawRecord = Record<string, unknown>;
 
@@ -51,7 +52,7 @@
   onMount(async () => {
     projects = await getProjects().catch(() => []);
     if (projects.length > 0) {
-      const _qp = $appPage.url.searchParams.get('project'); if (projects.length > 0) filterProject = _qp && projects.find(p => p.id === _qp) ? _qp : projects[0].id;
+      const _qp = $appPage.url.searchParams.get('project'); if (projects.length > 0) { filterProject = _qp && projects.find(p => p.id === _qp) ? _qp : projects[0].id; const proj = projects.find(p => p.id === filterProject); if (proj) setCurrentProject(proj); }
       await doBrowse(); // auto-load raw on mount
     }
   });

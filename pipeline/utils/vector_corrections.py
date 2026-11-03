@@ -1,6 +1,6 @@
 """Qdrant vector store for semantic few-shot correction retrieval.
 
-Collection: corrections_validated
+Collection: corrections_validated_{dim} (dim depends on active embedding backend)
 Each correction is embedded as: "phase | description | observed | expected"
 At inference: find top-K similar corrections to inject as few-shot examples.
 """
@@ -13,9 +13,10 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-_COLLECTION = "corrections_validated"
-_EMBED_DIM = 768  # nomic-embed-text v1.5
-_OLLAMA_BASE = "http://localhost:11434"
+
+def _collection_name() -> str:
+    from pipeline.utils.embeddings import embed_dim
+    return f"corrections_validated_{embed_dim()}"
 
 
 def _qdrant():
@@ -24,20 +25,10 @@ def _qdrant():
 
 
 def _embed(text: str) -> list[float] | None:
-    """Embed text via nomic-embed-text through Ollama."""
     try:
-        import httpx
-        r = httpx.post(
-            f"{_OLLAMA_BASE}/api/embed",
-            json={"model": "nomic-embed-text:latest", "input": text},
-            timeout=10,
-        )
-        r.raise_for_status()
-        data = r.json()
-        embeddings = data.get("embeddings") or data.get("embedding")
-        if isinstance(embeddings, list) and embeddings:
-            vec = embeddings[0] if isinstance(embeddings[0], list) else embeddings
-            return vec
+        from pipeline.utils.embeddings import embed
+        vecs = embed([text])
+        return vecs[0] if vecs else None
     except Exception as e:
         logger.warning("Embedding failed: %s", e)
     return None
@@ -45,13 +36,15 @@ def _embed(text: str) -> list[float] | None:
 
 def _ensure_collection() -> bool:
     try:
+        from pipeline.utils.embeddings import embed_dim
         client = _qdrant()
+        name = _collection_name()
         existing = {c.name for c in client.get_collections().collections}
-        if _COLLECTION not in existing:
+        if name not in existing:
             from qdrant_client.models import Distance, VectorParams
             client.create_collection(
-                _COLLECTION,
-                vectors_config=VectorParams(size=_EMBED_DIM, distance=Distance.COSINE),
+                name,
+                vectors_config=VectorParams(size=embed_dim(), distance=Distance.COSINE),
             )
         return True
     except Exception as e:
@@ -74,9 +67,10 @@ def upsert_correction(correction: dict) -> bool:
         return False
     try:
         from qdrant_client.models import PointStruct
+        name = _collection_name()
         point_id = int(hashlib.md5(correction["id"].encode()).hexdigest()[:8], 16)
         _qdrant().upsert(
-            collection_name=_COLLECTION,
+            collection_name=name,
             points=[PointStruct(
                 id=point_id,
                 vector=vec,
@@ -107,7 +101,7 @@ def search_similar_corrections(query: str, phase: str, top_k: int = 5) -> list[d
     try:
         from qdrant_client.models import Filter, FieldCondition, MatchValue
         results = _qdrant().search(
-            collection_name=_COLLECTION,
+            collection_name=_collection_name(),
             query_vector=vec,
             query_filter=Filter(must=[FieldCondition(key="phase", match=MatchValue(value=phase))]),
             limit=top_k,
@@ -125,8 +119,9 @@ def search_similar_corrections(query: str, phase: str, top_k: int = 5) -> list[d
 def delete_correction(correction_id: str) -> bool:
     """Remove a correction from the vector index (e.g. after rejection)."""
     try:
+        name = _collection_name()
         point_id = int(hashlib.md5(correction_id.encode()).hexdigest()[:8], 16)
-        _qdrant().delete(collection_name=_COLLECTION, points_selector=[point_id])
+        _qdrant().delete(collection_name=name, points_selector=[point_id])
         return True
     except Exception as e:
         logger.warning("Qdrant delete failed: %s", e)

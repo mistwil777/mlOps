@@ -2,13 +2,12 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { onMount, tick } from 'svelte';
-  import { advisorRecommend, advisorAlternatives, advisorEvaluateSelection, advisorGetRecommendation, advisorFillGap, advisorResolveOverlap, advisorPreScoping, submitCorrection } from '$lib/api';
+  import { advisorRecommend, advisorAlternatives, advisorEvaluateSelection, advisorGetRecommendation, advisorFillGap, advisorResolveOverlap, advisorPreScoping, submitCorrection, advisorSuggestParams, createProject } from '$lib/api';
   import type { AdvisorRecommendation, AdvisorAdapter, SelectionEval, OverlapResolution } from '$lib/types';
   import type { PreScopingResult } from '$lib/api';
   import AdapterCard from '$lib/components/AdapterCard.svelte';
   import Topbar from '$lib/components/Topbar.svelte';
   import SovereigntyBadge from '$lib/components/SovereigntyBadge.svelte';
-  import { setWizardHandoff } from '$lib/stores/wizard.svelte';
   import SectionTabs from '$lib/components/SectionTabs.svelte';
 
   const donneesTabs = [
@@ -21,7 +20,7 @@
 
   // ── State ──────────────────────────────────────────────────────────────────
   const projectId = $derived($page.url.searchParams.get('project'));
-  const readOnly  = $derived(false);
+  const readOnly  = $derived(!!projectId);
 
   // Phase 0 — pre-scoping
   let p0Need        = $state('');
@@ -37,8 +36,12 @@
   let p0ReportDesc     = $state('');
   let p0ReportObs      = $state('');
   let p0ReportExp      = $state('');
+  let p0SuggestLoading = $state(false);
+  let p0SuggestError   = $state('');
   let p0ReportLoading  = $state(false);
   let p0ReportDone     = $state(false);
+
+  let p1ActiveTab = $state<'adapters' | 'score' | 'software' | 'critique'>('adapters');
 
   let need  = $state('');
   let model = $state('us.anthropic.claude-sonnet-4-6');
@@ -73,6 +76,54 @@
 
   // Selection dirty flag — prevents auto-re-eval after manual apply actions
   let selectionDirty = $state(false);
+
+  // Project creation panel
+  const DOMAINS = ['code','legal','hr','finance','defense','healthcare','sales','compliance','other'];
+  const BASE_MODELS = [
+    { id: 'qwen2.5-coder-7b-4bit', label: 'Qwen 2.5 Coder 7B (recommandé)' },
+    { id: 'mistral-7b-instruct-4bit', label: 'Mistral 7B Instruct' },
+    { id: 'qwen2.5-14b-instruct-4bit', label: 'Qwen 2.5 14B (plus lent)' },
+  ];
+  let showConfirmPanel = $state(false);
+  let projDomain   = $state('code');
+  let projClass    = $state('interne');
+  let baseModel    = $state('qwen2.5-coder-7b-4bit');
+  let creating     = $state(false);
+  let createErr    = $state('');
+
+  async function confirmAndCreate() {
+    creating = true; createErr = '';
+    const projName = need.trim().toLowerCase().replace(/\s+/g, '-').slice(0, 40)
+      || (adapters[0]?.name.split('-').slice(0, 2).join('-') ?? 'projet');
+    try {
+      const proj = await createProject({
+        name: projName,
+        domain: projDomain,
+        classification: projClass,
+        model: baseModel,
+        model_format: baseModel.includes('qwen') ? 'qwen' : 'mistral',
+        description: need.trim().slice(0, 200),
+        adapters: adapters.map(a => ({
+          name: a.name, role: a.role, description: a.description,
+          estimated_pairs: a.estimated_pairs, rag_recommended: a.rag_recommended ?? false,
+        })),
+        advisor_need: need.trim(),
+        advisor_notes: result?.recommendation.notes ?? '',
+        rag_global: result?.recommendation.rag_global ?? false,
+        software_components: result?.recommendation.software_components ?? [],
+      });
+      const id = (proj as { id: string }).id;
+      goto(`/projects/${id}`);
+    } catch (e: any) {
+      const msg = (e as Error).message ?? '';
+      if (msg.startsWith('409')) {
+        const id = projName.toLowerCase().replace(/ /g, '-').replace(/_/g, '-');
+        goto(`/projects/${id}`);
+      } else {
+        createErr = msg;
+      }
+    } finally { creating = false; }
+  }
 
   // Software components accordion
   let swOpen     = $state(false);
@@ -126,6 +177,23 @@
   const totalPairs = $derived(selection.reduce((s, a) => s + a.estimated_pairs, 0));
 
   // ── Phase 0 actions ────────────────────────────────────────────────────────
+  async function suggestP0Params() {
+    if (!p0Need.trim()) return;
+    p0SuggestLoading = true;
+    p0SuggestError   = '';
+    try {
+      const s = await advisorSuggestParams(p0Need.trim());
+      p0ReqPerDay   = s.requests_per_day;
+      p0Latency     = s.max_latency_ms;
+      p0Hardware    = s.hardware_description;
+      p0Sovereignty = s.sovereignty_required;
+    } catch (e: any) {
+      p0SuggestError = e.message ?? 'Erreur lors de la suggestion';
+    } finally {
+      p0SuggestLoading = false;
+    }
+  }
+
   async function analysePhase0() {
     if (!p0Need.trim()) return;
     p0Loading = true; p0Error = ''; p0Result = null;
@@ -451,6 +519,17 @@
           placeholder="Ex: Outil d'aide à la rédaction de contrats pour un cabinet d'avocats, accès à 10 000 documents internes…"
           rows={3} disabled={p0Loading}></textarea>
 
+        {#if p0Need.trim()}
+        <div class="suggest-params-row mt-4">
+          <button class="btn btn-ghost btn-sm" onclick={suggestP0Params}
+            disabled={p0SuggestLoading || p0Loading}>
+            {#if p0SuggestLoading}<span class="spinner spinner-sm"></span> Suggestion en cours…
+            {:else}✦ Suggérer les paramètres{/if}
+          </button>
+          {#if p0SuggestError}<span class="suggest-error">{p0SuggestError}</span>{/if}
+        </div>
+        {/if}
+
         <div class="p0-form-row mt-8">
           <div class="p0-form-field">
             <label class="form-label">Requêtes / jour</label>
@@ -612,10 +691,32 @@
     {/if}
   </div>
 
-  <!-- ── Refine bar — disponible dès qu'une sélection existe ── -->
-  {#if result && selection.length > 0}
-    <div class="refine-bar mb-16">
-      <span class="refine-label">Modifier la sélection :</span>
+  <!-- ── Phase 1 top bar : formulaire + refine ── -->
+  <div class="p1-topbar card mb-16">
+    {#if !readOnly}
+    <div class="p1-topbar-inner">
+      <textarea
+        class="form-textarea p1-need-inline"
+        bind:value={need}
+        placeholder="Ex: Système d'aide à la rédaction de contrats pour un cabinet d'avocats…"
+        rows={2}
+        disabled={loading}
+      ></textarea>
+      <div class="p1-topbar-actions">
+        <select class="form-select p1-model-select" bind:value={model} disabled={loading}>
+          {#each models as m}<option value={m.id}>{m.label}</option>{/each}
+        </select>
+        <button class="btn btn-primary" onclick={analyse} disabled={loading || !need.trim()}>
+          {#if loading}<span class="spinner spinner-sm"></span> Analyse…{:else}◈ Analyser{/if}
+        </button>
+      </div>
+    </div>
+    {#if error}<div class="api-error mt-8">{error}</div>{/if}
+    {/if}
+
+    {#if result && selection.length > 0}
+    <div class="refine-bar-inline {!readOnly ? 'mt-10' : ''}">
+      <span class="refine-label">Affiner :</span>
       <input
         class="refine-input"
         bind:value={refineInput}
@@ -624,217 +725,48 @@
         onkeydown={e => e.key === 'Enter' && refineSelection()}
       />
       <button class="btn btn-ghost btn-sm" onclick={refineSelection} disabled={refineLoading || !refineInput.trim()}>
-        {#if refineLoading}<span class="spinner spinner-sm"></span>{:else}↺ Affiner{/if}
+        {#if refineLoading}<span class="spinner spinner-sm"></span>{:else}↺{/if}
       </button>
     </div>
-    {#if refineError}<div class="api-error mb-8">{refineError}</div>{/if}
-  {/if}
+    {#if refineError}<div class="api-error mt-4" style="font-size:11px">{refineError}</div>{/if}
+    {/if}
+  </div>
 
-  <div class="phase0-layout" class:has-panel={altTarget || gapTarget || overlapTarget}>
+  {#if loading && !result}
+    <div class="card p-24 text-center"><span class="spinner"></span> Analyse en cours…</div>
+  {:else if result}
 
-    <!-- ── Col 1 : input + résumé ── -->
-    <div class="col-input">
-      {#if !readOnly}
-      <div class="card mb-16" id="phase1-input">
-        <div class="card-title mb-8">Phase 1 — Adapters SLM</div>
-        <p class="hint mb-12">Langage naturel — domaine, contraintes, déploiement.</p>
-        <textarea
-          class="form-textarea need-input"
-          bind:value={need}
-          placeholder="Ex: Système d'aide à la rédaction de contrats pour un cabinet d'avocats…"
-          rows={6}
-          disabled={loading}
-        ></textarea>
-        <div class="form-group mt-12">
-          <label class="form-label">Modèle</label>
-          <select class="form-select" bind:value={model} disabled={loading}>
-            {#each models as m}<option value={m.id}>{m.label}</option>{/each}
-          </select>
-        </div>
-        <button class="btn btn-primary w-full mt-12" onclick={analyse} disabled={loading || !need.trim()}>
-          {#if loading}<span class="spinner"></span> Analyse en cours…{:else}◈ Analyser le besoin{/if}
-        </button>
-        {#if error}<div class="api-error mt-12">{error}</div>{/if}
-      </div>
-      {:else if loading}
-        <div class="card mb-16"><span class="spinner"></span> Chargement de l'analyse…</div>
-      {:else if error}
-        <div class="api-error mb-16">{error}</div>
-      {/if}
+  <!-- ── Tabs ── -->
+  <div class="p1-tabs-bar mb-0">
+    <button class="p1-tab" class:active={p1ActiveTab === 'adapters'} onclick={() => p1ActiveTab = 'adapters'}>
+      Adapters
+      <span class="p1-tab-count">{selection.length}</span>
+    </button>
+    <button class="p1-tab" class:active={p1ActiveTab === 'score'} onclick={() => p1ActiveTab = 'score'}>
+      Score &amp; Lacunes
+      {#if selEval}<span class="p1-tab-score" style="color:{scoreColor(selEval.overall)}">{selEval.overall.toFixed(1)}</span>{/if}
+    </button>
+    {#if result.recommendation.software_components?.length}
+    <button class="p1-tab" class:active={p1ActiveTab === 'software'} onclick={() => p1ActiveTab = 'software'}>
+      Logiciels
+      <span class="p1-tab-count">{result.recommendation.software_components.length}</span>
+    </button>
+    {/if}
+    {#if result.auto_critique?.length}
+    <button class="p1-tab p1-tab-critique" class:active={p1ActiveTab === 'critique'} onclick={() => p1ActiveTab = 'critique'}>
+      Auto-critique
+      <span class="p1-tab-count p1-tab-count-warn">{result.auto_critique.length}</span>
+    </button>
+    {/if}
+  </div>
 
-      {#if result}
-        {#if result.recommendation.software_components?.length}
-        <div class="card mb-16">
-          <div class="sw-accordion">
-              <button class="sw-accordion__header" onclick={() => swOpen = !swOpen}>
-                <span class="sw-accordion__title">Composants logiciels (déterministes — pas d'IA)</span>
-                <span class="sw-accordion__count">{result.recommendation.software_components.length}</span>
-                <span class="sw-accordion__chevron" class:open={swOpen}>▾</span>
-              </button>
-              {#if swOpen}
-                <ul class="sw-accordion__list">
-                  {#each result.recommendation.software_components as comp}
-                    {@const sep = comp.indexOf(' — ')}
-                    {@const name = sep >= 0 ? comp.slice(0, sep) : comp}
-                    {@const desc = sep >= 0 ? comp.slice(sep + 3) : ''}
-                    <li class="sw-accordion__item">
-                      <button class="sw-accordion__item-btn" onclick={() => swExpanded = swExpanded === comp ? null : comp}>
-                        <span class="sw-accordion__item-name">{name}</span>
-                        <span class="sw-accordion__item-chevron" class:open={swExpanded === comp}>▾</span>
-                      </button>
-                      {#if swExpanded === comp && desc}
-                        <div class="sw-accordion__item-desc">{desc}</div>
-                      {/if}
-                    </li>
-                  {/each}
-                </ul>
-              {/if}
-          </div>
-        </div>
-        {/if}
+  <div class="p1-tab-panels">
 
-        <!-- Score équipe -->
-        <div class="card mb-16">
-          <div class="card-header mb-12">
-            <div class="card-title">Score équipe</div>
-            {#if evalLoading}
-              <span class="spinner spinner-sm"></span>
-            {:else if selectionDirty}
-              <button class="btn btn-ghost btn-sm" onclick={() => { selectionDirty = false; runEval(); }}>
-                ↺ Réévaluer
-              </button>
-            {/if}
-          </div>
-          {#if selEval}
-            <div class="team-score-hero">
-              <span class="team-score-value" style="color:{scoreColor(selEval.overall)}">{selEval.overall.toFixed(1)}</span>
-              <span class="team-score-label">/20</span>
-            </div>
-            <div class="score-bars mt-12">
-              {#each [['Couverture', selEval.coverage], ['Cohésion', selEval.cohesion], ['Équilibre', selEval.balance], ['Orchestrabilité', selEval.orchestrability]] as [label, val]}
-                <div class="score-bar-row">
-                  <span class="score-bar-label">{label}</span>
-                  <div class="score-bar-track">
-                    <div class="score-bar-fill" style="{scoreBar(val as number)};background:{scoreColor(val as number)}"></div>
-                  </div>
-                  <span class="score-bar-val" style="color:{scoreColor(val as number)}">{val}</span>
-                </div>
-              {/each}
-            </div>
-            {@const visibleGaps = selEval.gaps.filter(g => !dismissedGaps.has(g))}
-            {@const isSufficient = selEval.overall >= 14}
-            {#if isSufficient && visibleGaps.length === 0}
-              <div class="sufficiency-banner mt-12">
-                <span class="sufficiency-icon">✓</span>
-                <span>Sélection suffisante pour commencer l'entraînement</span>
-              </div>
-            {:else if !isSufficient && visibleGaps.length > 0}
-              {@const shownGaps = visibleGaps.slice(0, 3)}
-              {@const hiddenCount = visibleGaps.length - shownGaps.length}
-              <div class="eval-section mt-12">
-                <div class="eval-section-header">
-                  <span class="meta-label">Lacunes ({visibleGaps.length})</span>
-                  <button class="tag-fill-all" disabled={fillAllLoading} onclick={fillAllGaps} title="Générer un adapter pour chaque lacune">
-                    {#if fillAllLoading}<span class="spinner spinner-xs"></span>{/if}
-                    Tout couvrir
-                  </button>
-                </div>
-                <div class="action-tags mt-6">
-                  {#each shownGaps as g}
-                    <div class="gap-row">
-                      <button class="tag tag-warn tag-action" class:tag-active={gapTarget === g}
-                        disabled={fillAllLoading} onclick={() => openFillGap(g)}>
-                        {#if gapLoading && gapTarget === g}<span class="spinner spinner-xs"></span>{:else}+{/if}
-                        {g}
-                      </button>
-                      <button class="gap-dismiss" title="Ignorer cette lacune" onclick={() => dismissGap(g)}>✕</button>
-                    </div>
-                  {/each}
-                  {#if hiddenCount > 0}
-                    <span class="gaps-hidden">+{hiddenCount} autre{hiddenCount > 1 ? 's' : ''} (non critiques)</span>
-                  {/if}
-                </div>
-                {#if fillAllResults.length > 0}
-                  <div class="fill-all-results mt-10">
-                    <div class="fill-all-header">
-                      <span class="meta-label" style="color:var(--green)">{fillAllResults.length} adapter{fillAllResults.length > 1 ? 's' : ''} générés</span>
-                      <button class="btn-use" onclick={applyAllGapAdapters}>+ Tous ajouter</button>
-                    </div>
-                    <div class="fill-all-list mt-6">
-                      {#each fillAllResults as r}
-                        <div class="fill-all-item">
-                          <span class="mono" style="font-size:11px;color:var(--accent)">{r.name}</span>
-                          <span style="font-size:11px;color:var(--text-muted)">{r.description}</span>
-                        </div>
-                      {/each}
-                    </div>
-                  </div>
-                {/if}
-              </div>
-            {/if}
-            {#if selEval.overlaps?.length}
-              <div class="eval-section mt-10">
-                <div class="eval-section-header">
-                  <span class="meta-label">Chevauchements ({selEval.overlaps.length})</span>
-                  <button class="tag-fill-all tag-fill-all-danger" disabled={resolveAllLoading} onclick={resolveAllOverlaps}>
-                    {#if resolveAllLoading}<span class="spinner spinner-xs"></span>{/if}
-                    Tout résoudre
-                  </button>
-                </div>
-                <div class="action-tags mt-6">
-                  {#each selEval.overlaps as pair}
-                    {@const pairKey = pair as [string, string]}
-                    <button class="tag tag-danger tag-action"
-                      class:tag-active={overlapTarget?.[0] === pairKey[0] && overlapTarget?.[1] === pairKey[1]}
-                      disabled={resolveAllLoading} onclick={() => openResolveOverlap(pairKey)}>
-                      {#if overlapLoading && overlapTarget?.[0] === pairKey[0]}<span class="spinner spinner-xs"></span>{:else}⚡{/if}
-                      {pairKey.join(' ↔ ')}
-                    </button>
-                  {/each}
-                </div>
-                {#if resolveAllResults.length > 0}
-                  <div class="fill-all-results mt-10" style="border-color:rgba(247,84,84,.2);background:rgba(247,84,84,.04)">
-                    <div class="fill-all-header">
-                      <span class="meta-label" style="color:var(--red)">{resolveAllResults.length} résolution{resolveAllResults.length > 1 ? 's' : ''} prête{resolveAllResults.length > 1 ? 's' : ''}</span>
-                      <button class="btn-use" onclick={applyAllOverlapResolutions}>Tout appliquer</button>
-                    </div>
-                    <div class="fill-all-list mt-6">
-                      {#each resolveAllResults as { pair, resolution }}
-                        <div class="fill-all-item">
-                          <div style="display:flex;align-items:center;gap:6px">
-                            <span class="res-type res-type-{resolution.type}">{resolution.label}</span>
-                            <span class="mono" style="font-size:10px;color:var(--text-muted)">{pair.join(' ↔ ')}</span>
-                          </div>
-                          <span style="font-size:11px;color:var(--text-muted)">{resolution.explanation}</span>
-                        </div>
-                      {/each}
-                    </div>
-                  </div>
-                {/if}
-              </div>
-            {/if}
-            {#if selEval.recommendation}
-              <div class="eval-reco mt-12">{selEval.recommendation}</div>
-            {/if}
-          {:else if evalError}
-            <div class="api-error" style="font-size:11px">{evalError}</div>
-          {:else if !evalLoading}
-            <p class="hint">Sera calculé après l'analyse.</p>
-          {/if}
-        </div>
-
-      {/if}
-    </div>
-
-    <!-- ── Col 2 : adapters ── -->
-    {#if result}
-      <div class="col-adapters">
-        <div class="card">
-          <div class="card-header mb-12">
-            <div class="card-title">Architecture recommandée</div>
-            <span class="hint">{selection.length} adapter{selection.length > 1 ? 's' : ''}</span>
-          </div>
-
+    <!-- ── Tab : Adapters ── -->
+    {#if p1ActiveTab === 'adapters'}
+    <div class="p1-tab-panel">
+      <div class="p1-adapters-layout" class:has-panel={altTarget || gapTarget || overlapTarget}>
+        <div class="p1-adapters-main">
           <div class="adapters-list">
             {#each adapters as adapter (adapter.name)}
               <AdapterCard
@@ -844,7 +776,6 @@
                 onRemove={removeAdapter}
               />
             {/each}
-
             {#if orchestrator}
               <AdapterCard
                 adapter={orchestrator}
@@ -853,18 +784,48 @@
                 onRemove={() => removeOrchestrator()}
               />
             {/if}
-
             {#if selection.length === 0}
               <div class="empty-state">Tous les adapters supprimés. ↺ Recommencez.</div>
             {/if}
           </div>
-
           {#if selection.length > 0 && !readOnly}
             <div class="validation-bar mt-16">
-              <button
-                class="btn btn-primary"
-                onclick={() => { setWizardHandoff(need, adapters, orchestrator); goto('/start'); }}
-              >✓ Valider et créer le projet</button>
+              {#if !showConfirmPanel}
+                <button class="btn btn-primary" onclick={() => showConfirmPanel = true}>
+                  Configurer le projet →
+                </button>
+              {:else}
+                <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-top:8px;">
+                  <div style="font-weight:600;margin-bottom:12px;font-size:14px;">Paramètres techniques</div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+                    <div>
+                      <div class="form-label" style="font-size:12px;">Domaine</div>
+                      <select class="form-select" bind:value={projDomain}>
+                        {#each DOMAINS as d}<option value={d}>{d}</option>{/each}
+                      </select>
+                    </div>
+                    <div>
+                      <div class="form-label" style="font-size:12px;">Classification</div>
+                      <select class="form-select" bind:value={projClass}>
+                        {#each ['interne','confidentiel','secret','public'] as c}<option value={c}>{c}</option>{/each}
+                      </select>
+                    </div>
+                  </div>
+                  <div style="margin-bottom:12px;">
+                    <div class="form-label" style="font-size:12px;">Modèle de base</div>
+                    <select class="form-select" bind:value={baseModel}>
+                      {#each BASE_MODELS as m}<option value={m.id}>{m.label}</option>{/each}
+                    </select>
+                  </div>
+                  {#if createErr}<div style="color:var(--red);font-size:12px;margin-bottom:8px;">{createErr}</div>{/if}
+                  <div style="display:flex;gap:8px;">
+                    <button class="btn btn-ghost btn-sm" onclick={() => showConfirmPanel = false}>Annuler</button>
+                    <button class="btn btn-primary btn-sm" onclick={confirmAndCreate} disabled={creating}>
+                      {creating ? 'Création…' : '✓ Créer le projet'}
+                    </button>
+                  </div>
+                </div>
+              {/if}
             </div>
           {:else if selection.length > 0 && readOnly}
             <div class="validation-bar mt-16">
@@ -872,12 +833,10 @@
             </div>
           {/if}
         </div>
-      </div>
 
-      <!-- ── Col 3 : panel contextuel ── -->
-      {#if altTarget || gapTarget || overlapTarget}
-        <div class="col-panel">
-
+        <!-- panel contextuel (alt / gap / overlap) -->
+        {#if altTarget || gapTarget || overlapTarget}
+        <div class="p1-side-panel">
           {#if gapTarget}
             <div class="card mb-12">
               <div class="card-header mb-12">
@@ -890,16 +849,13 @@
               {:else if gapError}
                 <div class="api-error" style="font-size:11px">{gapError}</div>
               {:else if gapResult}
-                <div class="adapters-list mb-8">
-                  <AdapterCard adapter={gapResult} />
-                </div>
+                <div class="adapters-list mb-8"><AdapterCard adapter={gapResult} /></div>
                 <button class="btn-use w-full" onclick={applyGapAdapter}>+ Ajouter à la sélection</button>
               {:else}
                 <p class="hint">Cliquez sur une lacune pour générer un adapter.</p>
               {/if}
             </div>
           {/if}
-
           {#if overlapTarget}
             <div class="card mb-12">
               <div class="card-header mb-12">
@@ -907,12 +863,10 @@
                 <button class="icon-btn" onclick={() => { overlapTarget = null; overlapResolutions = []; overlapError = ''; }}>✕</button>
               </div>
               <div class="overlap-label mb-12">
-                <span class="mono">{overlapTarget[0]}</span>
-                <span style="color:var(--text-muted)"> ↔ </span>
-                <span class="mono">{overlapTarget[1]}</span>
+                <span class="mono">{overlapTarget[0]}</span><span style="color:var(--text-muted)"> ↔ </span><span class="mono">{overlapTarget[1]}</span>
               </div>
               {#if overlapLoading}
-                <div class="panel-loading"><span class="spinner"></span> Analyse du chevauchement…</div>
+                <div class="panel-loading"><span class="spinner"></span> Analyse…</div>
               {:else if overlapError}
                 <div class="api-error" style="font-size:11px">{overlapError}</div>
               {:else if overlapResolutions.length}
@@ -925,26 +879,22 @@
                       </div>
                       <p style="font-size:12px;color:var(--text-muted);margin:0;line-height:1.5">{res.explanation}</p>
                       {#if res.adapters?.length}
-                        <div class="adapters-list mt-8">
-                          {#each res.adapters as a}<AdapterCard adapter={a} />{/each}
-                        </div>
+                        <div class="adapters-list mt-8">{#each res.adapters as a}<AdapterCard adapter={a} />{/each}</div>
                       {/if}
                     </div>
                   {/each}
                 </div>
               {:else}
-                <p class="hint">Cliquez sur un chevauchement pour voir les résolutions proposées.</p>
+                <p class="hint">Cliquez sur un chevauchement pour voir les résolutions.</p>
               {/if}
             </div>
           {/if}
-
           {#if altTarget}
             <div class="card">
               <div class="card-header mb-12">
                 <div class="card-title">Alternatives — <span class="mono">{altTarget.name}</span></div>
                 <button class="icon-btn" onclick={() => { altTarget = null; alternatives = []; }}>✕</button>
               </div>
-
               {#if altLoading}
                 <div class="panel-loading"><span class="spinner"></span> Génération + scoring…</div>
               {:else if altError}
@@ -961,12 +911,179 @@
               {/if}
             </div>
           {/if}
-
         </div>
-      {/if}
+        {/if}
+      </div><!-- end p1-adapters-layout -->
+    </div><!-- end tab:adapters -->
     {/if}
 
-  </div>
+    <!-- ── Tab : Score & Lacunes ── -->
+    {#if p1ActiveTab === 'score'}
+    <div class="p1-tab-panel">
+      <div class="card-header mb-12">
+        <div class="card-title">Score équipe</div>
+        {#if evalLoading}
+          <span class="spinner spinner-sm"></span>
+        {:else if selectionDirty}
+          <button class="btn btn-ghost btn-sm" onclick={() => { selectionDirty = false; runEval(); }}>↺ Réévaluer</button>
+        {/if}
+      </div>
+      {#if selEval}
+        <div class="team-score-hero mb-12">
+          <span class="team-score-value" style="color:{scoreColor(selEval.overall)}">{selEval.overall.toFixed(1)}</span>
+          <span class="team-score-label">/20</span>
+        </div>
+        <div class="score-bars mb-16">
+          {#each [['Couverture', selEval.coverage], ['Cohésion', selEval.cohesion], ['Équilibre', selEval.balance], ['Orchestrabilité', selEval.orchestrability]] as [label, val]}
+            <div class="score-bar-row">
+              <span class="score-bar-label">{label}</span>
+              <div class="score-bar-track"><div class="score-bar-fill" style="{scoreBar(val as number)};background:{scoreColor(val as number)}"></div></div>
+              <span class="score-bar-val" style="color:{scoreColor(val as number)}">{val}</span>
+            </div>
+          {/each}
+        </div>
+        {@const visibleGaps = selEval.gaps.filter(g => !dismissedGaps.has(g))}
+        {@const isSufficient = selEval.overall >= 14}
+        {#if isSufficient && visibleGaps.length === 0}
+          <div class="sufficiency-banner"><span class="sufficiency-icon">✓</span><span>Sélection suffisante pour commencer l'entraînement</span></div>
+        {:else if !isSufficient && visibleGaps.length > 0}
+          {@const shownGaps = visibleGaps.slice(0, 3)}
+          {@const hiddenCount = visibleGaps.length - shownGaps.length}
+          <div class="eval-section mb-12">
+            <div class="eval-section-header mb-6">
+              <span class="meta-label">Lacunes ({visibleGaps.length})</span>
+              <button class="tag-fill-all" disabled={fillAllLoading} onclick={fillAllGaps}>
+                {#if fillAllLoading}<span class="spinner spinner-xs"></span>{/if} Tout couvrir
+              </button>
+            </div>
+            <div class="action-tags">
+              {#each shownGaps as g}
+                <div class="gap-row">
+                  <button class="tag tag-warn tag-action" class:tag-active={gapTarget === g} disabled={fillAllLoading} onclick={() => { openFillGap(g); p1ActiveTab = 'adapters'; }}>
+                    {#if gapLoading && gapTarget === g}<span class="spinner spinner-xs"></span>{:else}+{/if} {g}
+                  </button>
+                  <button class="gap-dismiss" onclick={() => dismissGap(g)}>✕</button>
+                </div>
+              {/each}
+              {#if hiddenCount > 0}<span class="gaps-hidden">+{hiddenCount} autre{hiddenCount > 1 ? 's' : ''}</span>{/if}
+            </div>
+            {#if fillAllResults.length > 0}
+              <div class="fill-all-results mt-10">
+                <div class="fill-all-header">
+                  <span class="meta-label" style="color:var(--green)">{fillAllResults.length} adapter{fillAllResults.length > 1 ? 's' : ''} générés</span>
+                  <button class="btn-use" onclick={applyAllGapAdapters}>+ Tous ajouter</button>
+                </div>
+                <div class="fill-all-list mt-6">
+                  {#each fillAllResults as r}
+                    <div class="fill-all-item">
+                      <span class="mono" style="font-size:11px;color:var(--accent)">{r.name}</span>
+                      <span style="font-size:11px;color:var(--text-muted)">{r.description}</span>
+                    </div>
+                  {/each}
+                </div>
+              </div>
+            {/if}
+          </div>
+        {/if}
+        {#if selEval.overlaps?.length}
+          <div class="eval-section mb-12">
+            <div class="eval-section-header mb-6">
+              <span class="meta-label">Chevauchements ({selEval.overlaps.length})</span>
+              <button class="tag-fill-all tag-fill-all-danger" disabled={resolveAllLoading} onclick={resolveAllOverlaps}>
+                {#if resolveAllLoading}<span class="spinner spinner-xs"></span>{/if} Tout résoudre
+              </button>
+            </div>
+            <div class="action-tags">
+              {#each selEval.overlaps as pair}
+                {@const pairKey = pair as [string, string]}
+                <button class="tag tag-danger tag-action"
+                  class:tag-active={overlapTarget?.[0] === pairKey[0] && overlapTarget?.[1] === pairKey[1]}
+                  disabled={resolveAllLoading} onclick={() => { openResolveOverlap(pairKey); p1ActiveTab = 'adapters'; }}>
+                  {#if overlapLoading && overlapTarget?.[0] === pairKey[0]}<span class="spinner spinner-xs"></span>{:else}⚡{/if}
+                  {pairKey.join(' ↔ ')}
+                </button>
+              {/each}
+            </div>
+            {#if resolveAllResults.length > 0}
+              <div class="fill-all-results mt-10" style="border-color:rgba(247,84,84,.2);background:rgba(247,84,84,.04)">
+                <div class="fill-all-header">
+                  <span class="meta-label" style="color:var(--red)">{resolveAllResults.length} résolution{resolveAllResults.length > 1 ? 's' : ''} prête{resolveAllResults.length > 1 ? 's' : ''}</span>
+                  <button class="btn-use" onclick={applyAllOverlapResolutions}>Tout appliquer</button>
+                </div>
+                <div class="fill-all-list mt-6">
+                  {#each resolveAllResults as { pair, resolution }}
+                    <div class="fill-all-item">
+                      <div style="display:flex;align-items:center;gap:6px">
+                        <span class="res-type res-type-{resolution.type}">{resolution.label}</span>
+                        <span class="mono" style="font-size:10px;color:var(--text-muted)">{pair.join(' ↔ ')}</span>
+                      </div>
+                      <span style="font-size:11px;color:var(--text-muted)">{resolution.explanation}</span>
+                    </div>
+                  {/each}
+                </div>
+              </div>
+            {/if}
+          </div>
+        {/if}
+        {#if selEval.recommendation}
+          <div class="eval-reco">{selEval.recommendation}</div>
+        {/if}
+      {:else if evalError}
+        <div class="api-error" style="font-size:11px">{evalError}</div>
+      {:else if !evalLoading}
+        <p class="hint">Sera calculé après l'analyse.</p>
+      {/if}
+    </div><!-- end tab:score -->
+    {/if}
+
+    <!-- ── Tab : Logiciels ── -->
+    {#if p1ActiveTab === 'software' && result.recommendation.software_components?.length}
+    <div class="p1-tab-panel">
+      <p class="hint mb-12">Ces composants doivent être implémentés en code déterministe — pas de fine-tuning nécessaire.</p>
+      <ul class="sw-accordion__list" style="border:1px solid rgba(251,146,60,.25);border-radius:var(--radius)">
+        {#each result.recommendation.software_components as comp}
+          {@const sep = comp.indexOf(' — ')}
+          {@const name = sep >= 0 ? comp.slice(0, sep) : comp}
+          {@const desc = sep >= 0 ? comp.slice(sep + 3) : ''}
+          <li class="sw-accordion__item">
+            <button class="sw-accordion__item-btn" onclick={() => swExpanded = swExpanded === comp ? null : comp}>
+              <span class="sw-accordion__item-name">{name}</span>
+              <span class="sw-accordion__item-chevron" class:open={swExpanded === comp}>▾</span>
+            </button>
+            {#if swExpanded === comp && desc}
+              <div class="sw-accordion__item-desc">{desc}</div>
+            {/if}
+          </li>
+        {/each}
+      </ul>
+    </div>
+    {/if}
+
+    <!-- ── Tab : Auto-critique ── -->
+    {#if p1ActiveTab === 'critique' && result.auto_critique?.length}
+    <div class="p1-tab-panel">
+      <p class="critique-intro mb-12">Le modèle a identifié ces points dans sa propre recommandation. Les items validés par le judge LLM seront mémorisés pour les prochains projets.</p>
+      <ul class="critique-list">
+        {#each result.auto_critique as item}
+        <li class="critique-item">
+          <div class="critique-item-header">
+            {#if item.adapter}<span class="critique-adapter">{item.adapter}</span>{/if}
+            <span class="critique-type">{item.type.replace(/_/g,' ')}</span>
+            <span class="critique-confidence">{Math.round(item.confidence * 100)}%</span>
+          </div>
+          <p class="critique-obs">{item.observation}</p>
+          {#if item.human_question}<p class="critique-question">→ {item.human_question}</p>{/if}
+        </li>
+        {/each}
+      </ul>
+      {#if result.critique_submitted !== undefined}
+      <p class="critique-footer">{result.critique_submitted} item{result.critique_submitted > 1 ? 's' : ''} soumis au judge LLM — résultats visibles dans <a href="/memory" style="color:var(--accent)">Mémoire</a>.</p>
+      {/if}
+    </div>
+    {/if}
+
+  </div><!-- end p1-tab-panels -->
+  {/if}<!-- end if result -->
   {/if}<!-- end Phase 1 -->
 
 </div>
@@ -978,21 +1095,53 @@
   .btn-back { background: none; border: 1px solid var(--border); border-radius: var(--radius); padding: 5px 12px; font-size: 12px; color: var(--text-muted); cursor: pointer; }
   .btn-back:hover { color: var(--text); border-color: var(--accent); }
 
-  /* Refine bar */
-  .refine-bar {
-    display: flex; align-items: center; gap: 8px;
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--radius); padding: 8px 14px;
-  }
+  /* Phase 1 topbar */
+  .p1-topbar { padding: 12px 16px; }
+  .p1-topbar-inner { display: flex; gap: 12px; align-items: flex-start; }
+  .p1-need-inline { flex: 1; resize: vertical; min-height: 72px; }
+  .p1-topbar-actions { display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; width: 220px; }
+  .p1-model-select { width: 100%; }
+
+  /* Refine bar inline */
+  .refine-bar-inline { display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--border); padding-top: 10px; }
   .refine-label { font-size: 12px; color: var(--text-muted); white-space: nowrap; flex-shrink: 0; }
   .refine-input {
     flex: 1; background: var(--surface-2); border: 1px solid var(--border);
     border-radius: var(--radius); padding: 5px 10px; font-size: 13px; color: var(--text);
-    font-family: var(--font-sans); outline: none;
-    transition: border-color 150ms;
+    font-family: var(--font-sans); outline: none; transition: border-color 150ms;
   }
   .refine-input:focus { border-color: var(--accent); }
   .refine-input:disabled { opacity: 0.5; }
+
+  /* Phase 1 tabs */
+  .p1-tabs-bar {
+    display: flex; gap: 2px; border-bottom: 2px solid var(--border);
+  }
+  .p1-tab {
+    background: none; border: none; padding: 8px 18px; font-size: 13px; font-weight: 500;
+    color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent;
+    margin-bottom: -2px; display: flex; align-items: center; gap: 6px;
+    transition: color 150ms, border-color 150ms;
+  }
+  .p1-tab:hover { color: var(--text); }
+  .p1-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .p1-tab-critique.active { color: #e8a600; border-bottom-color: #e8a600; }
+  .p1-tab-count { font-size: 11px; font-weight: 600; background: var(--surface-2); padding: 1px 7px; border-radius: 99px; }
+  .p1-tab-count-warn { background: rgba(232,166,0,.15); color: #e8a600; }
+  .p1-tab-score { font-size: 13px; font-weight: 700; }
+
+  /* Tab panels */
+  .p1-tab-panels { padding-top: 16px; }
+  .p1-tab-panel {
+    max-height: calc(100vh - 300px); overflow-y: auto;
+    padding-right: 4px;
+  }
+
+  /* Adapters tab layout */
+  .p1-adapters-layout { display: grid; grid-template-columns: 1fr; gap: 20px; }
+  .p1-adapters-layout.has-panel { grid-template-columns: 1fr 360px; }
+  .p1-adapters-main { min-width: 0; }
+  .p1-side-panel { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; max-height: calc(100vh - 320px); }
 
   .phase0-layout {
     display: grid;
@@ -1018,6 +1167,19 @@
   .summary-value { font-size:20px; font-weight:700; color:var(--accent); }
   .summary-label { font-size:11px; color:var(--text-muted); text-align:center; }
   .notes { font-size:12px; color:var(--text-muted); background:var(--surface-2); border-radius:var(--radius); padding:10px 14px; font-style:italic; line-height:1.5; }
+  /* Auto-critique */
+  .critique-card { border-left: 3px solid #e8a600; }
+  .critique-badge { font-size:11px; font-weight:600; background:rgba(232,166,0,.15); color:#e8a600; padding:2px 8px; border-radius:99px; }
+  .critique-intro { font-size:12px; color:var(--text-muted); margin-bottom:12px; }
+  .critique-list { list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:8px; }
+  .critique-item { background:var(--surface-2); border-radius:var(--radius); padding:10px 14px; }
+  .critique-item-header { display:flex; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap; }
+  .critique-adapter { font-size:11px; font-weight:600; font-family:monospace; background:var(--surface-3,#eee); padding:1px 6px; border-radius:4px; }
+  .critique-type { font-size:11px; color:var(--text-muted); }
+  .critique-confidence { font-size:11px; font-weight:600; margin-left:auto; color:#1baf7a; }
+  .critique-obs { font-size:13px; margin:0 0 4px; line-height:1.5; }
+  .critique-question { font-size:12px; color:#3987e5; margin:0; font-style:italic; }
+  .critique-footer { font-size:11px; color:var(--text-muted); margin-top:10px; text-align:right; }
   .sw-accordion { border:1px solid rgba(251,146,60,.25); border-radius:var(--radius); overflow:hidden; }
   .sw-accordion__header { width:100%; display:flex; align-items:center; gap:8px; background:rgba(251,146,60,.08); border:none; padding:8px 12px; cursor:pointer; text-align:left; }
   .sw-accordion__header:hover { background:rgba(251,146,60,.14); }
@@ -1113,6 +1275,8 @@
     border-radius:50%; animation:spin 0.7s linear infinite; vertical-align:middle;
   }
   .spinner-sm { width:12px; height:12px; border-width:2px; }
+  .suggest-params-row { display:flex; align-items:center; gap:8px; }
+  .suggest-error { font-size:12px; color:#e66767; }
   @keyframes spin { to { transform:rotate(360deg); } }
 
   .api-error {

@@ -14,10 +14,57 @@ import httpx
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+import json
+
 from api.config import get_project_config
 from api.db import execute, fetchall, fetchone
 
 router = APIRouter(prefix="/api/runs", tags=["runs"])
+
+
+def _check_data_gate(project_id: str, cfg: dict[str, Any]) -> dict[str, Any]:
+    """Return gate result: {passed, ftr_count, avg_quality, min_pairs, min_quality, reason}."""
+    thresholds = cfg.get("quality_thresholds", {})
+    min_pairs   = int(thresholds.get("min_pairs", 50))
+    min_quality = float(thresholds.get("min_avg_quality", 0.6))
+
+    ftr_dir = Path(f"datalake/projects/{project_id}/fine-tuning-ready")
+    ftr_count = 0
+    scores: list[float] = []
+
+    for split in ("train.jsonl", "valid.jsonl"):
+        p = ftr_dir / split
+        if not p.exists():
+            continue
+        for line in p.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            ftr_count += 1
+            try:
+                rec = json.loads(line)
+                q = rec.get("quality_score")
+                if q is not None:
+                    scores.append(float(q))
+            except Exception:
+                pass
+
+    avg_quality = round(sum(scores) / len(scores), 3) if scores else None
+
+    reasons: list[str] = []
+    if ftr_count < min_pairs:
+        reasons.append(f"{ftr_count} paires fine-tuning-ready (minimum requis : {min_pairs})")
+    if avg_quality is not None and avg_quality < min_quality:
+        reasons.append(f"qualité moyenne {avg_quality:.2f} < seuil {min_quality:.2f}")
+
+    return {
+        "passed": len(reasons) == 0,
+        "ftr_count": ftr_count,
+        "avg_quality": avg_quality,
+        "min_pairs": min_pairs,
+        "min_quality": min_quality,
+        "reasons": reasons,
+    }
 
 # Active subprocesses keyed by run_id
 _PROCS: dict[str, subprocess.Popen] = {}
@@ -35,6 +82,7 @@ class RunCreate(BaseModel):
     lora_layers: int = 16
     use_rag: bool = True
     resume: bool = False
+    bypass_gate: bool = False  # forcer le démarrage malgré un gate data insuffisant
 
 
 def _now() -> str:
@@ -148,6 +196,22 @@ def create_run(body: RunCreate):
     cfg = get_project_config(body.project_id)
     if not cfg:
         raise HTTPException(404, f"Project '{body.project_id}' not found")
+
+    if not body.bypass_gate:
+        gate = _check_data_gate(body.project_id, cfg)
+        if not gate["passed"]:
+            raise HTTPException(
+                422,
+                detail={
+                    "error": "data_quality_gate_failed",
+                    "message": "Le dataset ne satisfait pas les seuils de qualité requis pour le training.",
+                    "reasons": gate["reasons"],
+                    "ftr_count": gate["ftr_count"],
+                    "avg_quality": gate["avg_quality"],
+                    "min_pairs": gate["min_pairs"],
+                    "min_quality": gate["min_quality"],
+                },
+            )
 
     run_id = str(uuid.uuid4())[:8]
     experiment_name = body.experiment_name or f"{body.project_id}-lora"

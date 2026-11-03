@@ -1,8 +1,10 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { onMount } from 'svelte';
-  import { getProjects, getQualitySummary, getRejected, getSample, flagRecord, rescueRecord } from '$lib/api';
-  import type { Project, QualitySummary, RawRecord, AdapterDiagnostic } from '$lib/types';
+  import { getProjects, getQualitySummary, getRejected, getSample, flagRecord, rescueRecord,
+           getAiAudit, ignoreAiAuditFlag, autoCorrectAuditPair } from '$lib/api';
+  import type { Project, QualitySummary, RawRecord, AdapterDiagnostic, AiAuditResult, SuspiciousPair } from '$lib/types';
+  import { setCurrentProject } from '$lib/stores/currentProject.svelte';
 
   // ── State ──────────────────────────────────────────────────────────────────
   let projects: Project[] = $state([]);
@@ -48,7 +50,7 @@
 
   onMount(async () => {
     projects = await getProjects().catch(() => []);
-    const _qp = $page.url.searchParams.get('project'); if (projects.length > 0) { selectedProject = _qp && projects.find(p => p.id === _qp) ? _qp : projects[0].id; await loadSummary(); }
+    const _qp = $page.url.searchParams.get('project'); if (projects.length > 0) { selectedProject = _qp && projects.find(p => p.id === _qp) ? _qp : projects[0].id; await loadSummary(); await runAiAudit(false).catch(() => {}); }
   });
 
   async function loadSummary() {
@@ -56,6 +58,8 @@
     loading = true; error = '';
     try {
       summary = await getQualitySummary(selectedProject);
+      const proj = projects.find(p => p.id === selectedProject);
+      if (proj) setCurrentProject(proj);
     } catch (e) { error = (e as Error).message; }
     finally { loading = false; }
   }
@@ -101,6 +105,16 @@
       if (detailMode === 'flag') {
         await flagRecord(selectedProject, { index: detailGlobalIdx, action: 'flag', note: detailNote || undefined });
         sampleItems = sampleItems.filter((_, i) => i !== sampleItems.indexOf(detailRecord!));
+        // Shift audit indices: a train pair was removed at detailGlobalIdx
+        if (aiAudit) {
+          const removedIdx = detailGlobalIdx;
+          aiAudit = { ...aiAudit, suspicious: aiAudit.suspicious.map(s => {
+            if (s.source !== 'train') return s;
+            if (s.index === removedIdx) return { ...s, _ignored: true };
+            if (s.index > removedIdx) return { ...s, index: s.index - 1 };
+            return s;
+          })};
+        }
       } else {
         await rescueRecord(selectedProject, { index: detailGlobalIdx, action: 'rescue', corrections: Object.keys(detailCorrections).length ? detailCorrections : undefined, note: detailNote || undefined });
         rejectedItems = rejectedItems.filter((_, i) => i !== rejectedItems.indexOf(detailRecord!));
@@ -138,6 +152,89 @@
     }
     return String(r._rejected_step ?? '');
   }
+
+  // AI Audit
+  let aiAudit: AiAuditResult | null = $state(null);
+  let aiAuditLoading = $state(false);
+  let aiAuditError = $state('');
+  let correctingIndex = $state<string | null>(null); // "{source}-{index}"
+  let spotCheckOpen = $state(false);
+  let auditOpen = $state(false);
+
+  const visibleSuspicious = $derived(
+    (aiAudit?.suspicious ?? []).filter(s => !s._ignored)
+  );
+
+  async function runAiAudit(rerun = false) {
+    if (!selectedProject || aiAuditLoading) return;
+    aiAuditLoading = true;
+    aiAuditError = '';
+    try {
+      aiAudit = await getAiAudit(selectedProject, rerun);
+    } catch (e) {
+      aiAuditError = (e as Error).message;
+    } finally {
+      aiAuditLoading = false;
+    }
+  }
+
+  async function handleAuditFlag(item: SuspiciousPair) {
+    if (!selectedProject) return;
+    try {
+      await flagRecord(selectedProject, { index: item.index, action: 'flag', note: `[AI Audit] ${item.reason}: ${item.detail}` });
+      // Mark flagged item ignored + shift subsequent indices (pair was removed from train.jsonl)
+      if (aiAudit) {
+        aiAudit = { ...aiAudit, suspicious: aiAudit.suspicious.map(s => {
+          if (s.index === item.index && s.source === item.source) return { ...s, _ignored: true };
+          if (s.source === item.source && s.index > item.index) return { ...s, index: s.index - 1 };
+          return s;
+        })};
+      }
+      await loadSummary();
+    } catch (e) { aiAuditError = (e as Error).message; }
+  }
+
+  async function handleAutoCorrect(item: SuspiciousPair) {
+    if (!selectedProject || !item.recommendation) return;
+    const key = `${item.source}-${item.index}`;
+    correctingIndex = key;
+    try {
+      await autoCorrectAuditPair(selectedProject, {
+        index: item.index,
+        source: item.source,
+        reason: item.detail,
+        recommendation: item.recommendation,
+      });
+      if (aiAudit) {
+        aiAudit = { ...aiAudit, suspicious: aiAudit.suspicious.map(s =>
+          s.index === item.index && s.source === item.source
+            ? { ...s, _ignored: true, _auto_corrected: true } : s
+        )};
+      }
+    } catch (e) { aiAuditError = (e as Error).message; }
+    finally { correctingIndex = null; }
+  }
+
+  async function handleAuditIgnore(item: SuspiciousPair) {
+    if (!selectedProject) return;
+    try {
+      await ignoreAiAuditFlag(selectedProject, { index: item.index, source: item.source });
+      if (aiAudit) {
+        aiAudit = { ...aiAudit, suspicious: aiAudit.suspicious.map(s =>
+          s.index === item.index && s.source === item.source ? { ...s, _ignored: true } : s
+        )};
+      }
+    } catch (e) { aiAuditError = (e as Error).message; }
+  }
+
+  const REASON_LABELS: Record<string, string> = {
+    syntax_error: 'Erreur syntaxe',
+    empty_completion: 'Completion vide',
+    truncated: 'Tronquée',
+    missing_import: 'Import manquant',
+    unvalidated_high_score: 'Score non validé',
+    borderline_score: 'Score limite',
+  };
 
   $effect(() => { if (activeTab === 'rejected' && selectedProject) loadRejected(); });
   $effect(() => { if (activeTab === 'sample' && selectedProject) loadSample(); });
@@ -300,16 +397,134 @@
 
     <!-- ── Sample tab ────────────────────────────────────────────────────── -->
     {#if activeTab === 'sample'}
-      <div style="display:flex; gap:10px; align-items:center; margin-bottom:12px">
-        <span class="text-muted" style="font-size:12px">Taille de l'échantillon :</span>
-        <select bind:value={sampleN} onchange={loadSample} class="input" style="width:80px">
-          <option value={10}>10</option>
-          <option value={20}>20</option>
-          <option value={50}>50</option>
-        </select>
-        <button class="btn btn-ghost" style="font-size:12px" onclick={loadSample}>↻ Nouvel échantillon</button>
-        <span class="text-muted" style="font-size:12px">{sampleTotal} données qualifiées au total</span>
+      <!-- ── AI Audit (collapsible) ────────────────────────────────────────── -->
+      <div class="card" style="margin-bottom:16px; padding:0; overflow:hidden">
+        <button
+          style="width:100%; display:flex; align-items:center; justify-content:space-between; padding:14px 16px; background:none; border:none; cursor:pointer; text-align:left"
+          onclick={() => { auditOpen = !auditOpen; if (auditOpen && !aiAudit && !aiAuditLoading) runAiAudit(false); }}
+        >
+          <div style="display:flex; align-items:center; gap:10px">
+            <span class="card-title" style="margin:0">Audit IA</span>
+            {#if aiAuditLoading}
+              <span class="text-muted" style="font-size:12px">⟳ Analyse…</span>
+            {:else if visibleSuspicious.length > 0}
+              <span class="tab-badge red">{visibleSuspicious.length} suspecte{visibleSuspicious.length > 1 ? 's' : ''}</span>
+            {:else if aiAudit}
+              <span class="tab-badge green">Aucune anomalie</span>
+            {/if}
+          </div>
+          <span style="font-size:14px; color:var(--text-muted)">{auditOpen ? '▲' : '▼'}</span>
+        </button>
+
+        {#if auditOpen}
+          <div style="padding:0 16px 16px">
+            <div style="display:flex; justify-content:flex-end; gap:8px; margin-bottom:12px">
+              {#if aiAudit}
+                <button class="btn btn-ghost" style="font-size:12px" onclick={() => runAiAudit(true)} disabled={aiAuditLoading}>
+                  ↻ Relancer
+                </button>
+              {:else}
+                <button class="btn btn-primary" onclick={() => runAiAudit(false)} disabled={aiAuditLoading}>
+                  {aiAuditLoading ? '⟳ Analyse en cours…' : '▶ Lancer l\'audit IA'}
+                </button>
+              {/if}
+            </div>
+            {#if aiAuditError}
+              <div class="banner-error" style="margin-bottom:8px">{aiAuditError}</div>
+            {/if}
+            {#if aiAuditLoading}
+              <p class="text-muted" style="font-size:12px">⟳ Vérifications déterministes + appels Sonnet en parallèle…</p>
+            {/if}
+            {#if !aiAudit && !aiAuditLoading}
+              <p class="text-muted" style="font-size:12px">
+                Détecte automatiquement les paires suspectes (erreurs syntaxe, completions tronquées,
+                imports manquants) et propose une recommandation Sonnet pour chaque cas.
+              </p>
+            {/if}
+        {#if aiAudit && visibleSuspicious.length > 0}
+          <div style="display:flex; flex-direction:column; gap:10px">
+            {#each visibleSuspicious as item}
+              <div style="border:1px solid {item.severity === 'high' ? 'var(--red)' : 'var(--yellow)'}; border-radius:var(--radius); padding:12px; background:var(--surface-2)">
+                <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap">
+                  <span class="badge" style="background:{item.severity === 'high' ? 'var(--red)' : 'var(--yellow)'}; color:#fff; font-size:11px; padding:2px 6px; border-radius:4px">
+                    {item.severity === 'high' ? '⚠ HAUTE' : '◎ MOYENNE'}
+                  </span>
+                  <span class="badge" style="background:var(--surface-3); font-size:11px; padding:2px 6px; border-radius:4px">
+                    {REASON_LABELS[item.reason] ?? item.reason}
+                  </span>
+                  <span class="badge" style="background:var(--surface-3); font-size:11px; padding:2px 6px; border-radius:4px">
+                    {item.source} #{item.index}
+                  </span>
+                  <span class="text-muted" style="font-size:12px; margin-left:4px">{item.detail}</span>
+                </div>
+                {#if item.recommendation}
+                  <div style="font-size:12px; background:var(--surface-1); border-left:3px solid var(--accent); padding:8px 10px; border-radius:0 4px 4px 0; margin-bottom:8px">
+                    <strong style="font-size:11px; color:var(--accent)">RECOMMANDATION IA</strong><br/>
+                    {item.recommendation}
+                  </div>
+                {/if}
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px">
+                  <div>
+                    <div class="text-muted" style="font-size:11px; margin-bottom:3px">PROMPT</div>
+                    <pre style="font-size:11px; white-space:pre-wrap; background:var(--surface-1); padding:6px; border-radius:4px; margin:0; max-height:160px; overflow-y:auto">{item.prompt_snippet}</pre>
+                  </div>
+                  <div>
+                    <div class="text-muted" style="font-size:11px; margin-bottom:3px">COMPLETION</div>
+                    <pre style="font-size:11px; white-space:pre-wrap; background:var(--surface-1); padding:6px; border-radius:4px; margin:0; max-height:160px; overflow-y:auto">{item.completion_snippet}</pre>
+                  </div>
+                </div>
+                <div style="display:flex; gap:8px; flex-wrap:wrap">
+                  {#if item.recommendation && !item.recommendation.includes('SUPPRIMER')}
+                    {@const corrKey = `${item.source}-${item.index}`}
+                    <button class="btn btn-primary btn-sm"
+                            onclick={() => handleAutoCorrect(item)}
+                            disabled={correctingIndex === corrKey}>
+                      {correctingIndex === corrKey ? '⟳ Correction Haiku…' : '✎ Corriger automatiquement'}
+                    </button>
+                  {/if}
+                  <button class="btn btn-danger btn-sm" onclick={() => handleAuditFlag(item)}>
+                    ✗ Supprimer
+                  </button>
+                  <button class="btn btn-ghost btn-sm" onclick={() => handleAuditIgnore(item)}>
+                    Ignorer (faux positif)
+                  </button>
+                </div>
+              </div>
+            {/each}
+          </div>
+        {:else if aiAudit && visibleSuspicious.length === 0}
+          <p class="text-muted" style="font-size:12px; margin-top:8px">
+            ✓ Aucune anomalie détectée — dataset prêt pour le fine-tuning.
+          </p>
+        {/if}
+          </div>
+        {/if}
       </div>
+
+      <!-- ── Spot-check aléatoire (collapsible) ──────────────────────────── -->
+      <div class="card" style="margin-bottom:16px; padding:0; overflow:hidden">
+        <button
+          style="width:100%; display:flex; align-items:center; justify-content:space-between; padding:14px 16px; background:none; border:none; cursor:pointer; text-align:left"
+          onclick={() => { spotCheckOpen = !spotCheckOpen; if (spotCheckOpen && sampleItems.length === 0) loadSample(); }}
+        >
+          <div style="display:flex; align-items:center; gap:10px">
+            <span class="card-title" style="margin:0">Spot-check aléatoire</span>
+            <span class="text-muted" style="font-size:12px">{sampleTotal} données qualifiées</span>
+          </div>
+          <span style="font-size:14px; color:var(--text-muted)">{spotCheckOpen ? '▲' : '▼'}</span>
+        </button>
+
+        {#if spotCheckOpen}
+          <div style="padding:0 16px 16px">
+            <div style="display:flex; gap:10px; align-items:center; margin-bottom:12px">
+              <span class="text-muted" style="font-size:12px">Taille de l'échantillon :</span>
+              <select bind:value={sampleN} onchange={loadSample} class="input" style="width:80px">
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+              </select>
+              <button class="btn btn-ghost" style="font-size:12px" onclick={loadSample}>↻ Nouvel échantillon</button>
+            </div>
 
       {#if sampleLoading}
         <p class="text-muted">Chargement…</p>
@@ -362,6 +577,9 @@
           {/each}
         </div>
       {/if}
+          </div>
+        {/if}
+      </div>
     {/if}
   {/if}
 </div>
