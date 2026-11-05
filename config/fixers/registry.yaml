@@ -1,0 +1,133 @@
+# Fixer registry — single source of truth for all deterministic data-quality fixers.
+#
+# IMPORTANT: This file is human-reviewed before any fixer is activated.
+# New fixers are proposed automatically when a defect_cluster exceeds the threshold
+# (currently 3 occurrences). They are added here with enabled: false pending validation.
+#
+# Philosophy:
+#   - Every fixer is GENERIC — identified by the defect it corrects, never by project.
+#   - "missing_import" handles any language where an import can be auto-detected.
+#   - Fixers that are domain/lang-pair specific declare those constraints in their scope.
+#   - Deterministic fixers run BEFORE the LLM judge to minimize Bedrock cost.
+#   - A fixer that cannot be expressed deterministically → not a fixer → audit IA.
+#
+# Fields:
+#   reason        : matches the defect_clusters.reason key in SQLite
+#   description   : human-readable description of what this fixer corrects
+#   stage         : "raw" (before pair formation) | "pairs" (after pair formation)
+#   module        : Python module path implementing the Fixer interface
+#   class_name    : class name inside the module
+#   domains       : list of domains this fixer applies to (null = all domains)
+#   task_types    : list of task_types (null = all task types)
+#   lang_pairs    : list of lang pairs e.g. ["java-python"] (null = all lang pairs)
+#   cost_tier     : "free" (deterministic, no LLM) | "llm-haiku" | "llm-sonnet"
+#   enabled       : false = proposed but not yet human-validated
+#   notes         : rationale, known limitations, edge cases
+#
+# To activate: set enabled: true after reviewing scope and params.
+# The pipeline reads this file at runtime — no Python code change needed.
+
+fixers:
+
+  # ─── IMPORT MANAGEMENT ───────────────────────────────────────────────────────
+
+  missing_import:
+    reason: missing_import
+    description: >
+      Detects and injects missing standard library imports in Python completions.
+      Covers: numpy, pandas, pytest, os, sys, re, json, datetime, pathlib, dataclasses, typing.
+      Handles both "from pathlib import Path" and "import pathlib" (pathlib.Path usage).
+      Skips comment lines when checking for existing imports.
+    stage: raw
+    module: pipeline.fixers.missing_import
+    class_name: MissingImportFixer
+    domains: [code, migration]
+    task_types: [migration, refactoring, documentation, generation]
+    lang_pairs: null    # applies to any pair producing Python completions
+    cost_tier: free
+    enabled: true
+    notes: >
+      Promoted from defect_cluster after 3+ occurrences in migrator audit.
+      Also runs at pairs stage (clean.py) as a second pass after ruff.
+      False-positive fix: "import pathlib" now satisfies Path( usage check.
+      False-positive fix: comment lines (# ...) excluded from import existence check.
+
+  # ─── CODE QUALITY ────────────────────────────────────────────────────────────
+
+  ruff:
+    reason: syntax_error
+    description: >
+      Runs ruff check → fix → format on Python completions.
+      Fixes auto-fixable style and lint issues. Rejects only on E9xx (syntax errors
+      that ruff cannot fix). Strips markdown fences before processing.
+    stage: pairs
+    module: pipeline.fixers.ruff_fixer
+    class_name: RuffFixer
+    domains: [code, migration]
+    task_types: [migration, refactoring, generation, documentation]
+    lang_pairs: null    # applies to any pair with Python as target language
+    cost_tier: free
+    enabled: true
+    notes: >
+      ruff must be installed in the pipeline venv. Graceful degradation if absent (warning, skip).
+      Only completions where record.lang == "python" or lang_pair ends in "-python" are processed.
+      Strips ```python ... ``` fences before compile() to avoid false-positive SyntaxError.
+
+  # ─── SEMANTIC CORRECTNESS ─────────────────────────────────────────────────────
+
+  split_semantics:
+    reason: split_semantics
+    description: >
+      Detects Java split(sep, N) translated literally to Python split(sep, N).
+      In Java, N is the maximum number of PARTS. In Python, N is the maximum number of SPLITS.
+      The correct translation is split(sep, N-1).
+      Example: Java "str.split(",", 3)" → Python "str.split(',', 2)" (not 3).
+    stage: pairs
+    module: pipeline.fixers.split_semantics
+    class_name: SplitSemanticsFixer
+    domains: [code, migration]
+    task_types: [migration]
+    lang_pairs: [java-python]
+    cost_tier: free
+    enabled: true
+    notes: >
+      Promoted from defect_cluster after 2 confirmed occurrences in migrator audit (pairs #542, #583).
+      Only applies when prompt contains Java split() with a numeric limit argument.
+      Regex-based: finds split(sep_expr, N) where N >= 2 and decrements N.
+      Does NOT touch split(sep) (no limit) or split(sep, 1) (already correct — 1 part = 0 splits).
+
+  reverse_sort:
+    reason: reverse_sort
+    description: >
+      Detects Java reverse comparator (e.g. (s1, s2) -> s2.compareTo(s1) or Collections.reverseOrder())
+      in the prompt that was translated to a Python sort() without reverse=True in the completion.
+    stage: pairs
+    module: pipeline.fixers.reverse_sort
+    class_name: ReverseSortFixer
+    domains: [code, migration]
+    task_types: [migration]
+    lang_pairs: [java-python]
+    cost_tier: free
+    enabled: true
+    notes: >
+      Promoted from defect_cluster after 2 confirmed occurrences in migrator audit (pairs #23, #494).
+      Detects Java reverse comparator patterns: s2.compareTo(s1), Collections.reverseOrder(),
+      Comparator.reverseOrder(). Checks that Python completion has sorted(..., reverse=True)
+      or list.sort(reverse=True). If missing, injects reverse=True.
+
+  # ─── PROPOSED (pending first occurrences) ────────────────────────────────────
+
+  java_null_check:
+    reason: null_check_missing
+    description: >
+      Java null checks (if (x == null)) translated without Python None checks.
+    stage: pairs
+    module: pipeline.fixers.java_null_check
+    class_name: NullCheckFixer
+    domains: [code, migration]
+    task_types: [migration]
+    lang_pairs: [java-python]
+    cost_tier: free
+    enabled: false
+    notes: >
+      PROPOSED — not yet observed in production. Enable when defect_cluster count >= 3.

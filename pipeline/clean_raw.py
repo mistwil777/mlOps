@@ -702,6 +702,7 @@ def clean_adapter_records(
     dry_run: bool = False,
     domain: str = "code",
     adapter_cfg: dict[str, Any] | None = None,
+    task_type: str | None = None,
 ) -> dict[str, Any]:
     """Run the full clean_raw pipeline for one adapter. Returns report dict."""
     report: dict[str, Any] = {
@@ -781,17 +782,26 @@ def clean_adapter_records(
         records = augment_batch(records, target=target, coverage=coverage, domain=domain)
         report["steps"]["augmentation"] = len(records) - report["steps"]["volume_control"]["count"]
 
-    # 7. Missing import auto-fix (deterministic, no LLM)
-    if domain == "code" and not dry_run:
-        records, n_import_fixed = apply_missing_import_fixes(records)
-        if n_import_fixed:
-            report["steps"]["missing_import_fix"] = n_import_fixed
-            logger.info("[%s] Missing import fix: %d records patched", adapter_name, n_import_fixed)
-            try:
-                from pipeline.utils.memory_store import mark_cluster_promoted
-                mark_cluster_promoted("missing_import")
-            except Exception:
-                pass
+    # 7. Deterministic fixers — loaded from config/fixers/registry.yaml (stage=raw)
+    if not dry_run:
+        resolved_task_type = (adapter_cfg or {}).get("task_type") or task_type
+        lang_pair = (adapter_cfg or {}).get("lang_pair")
+        try:
+            from pipeline.fixers import apply_fixers
+            records, fixer_stats = apply_fixers(
+                records, stage="raw", domain=domain, task_type=resolved_task_type, lang_pair=lang_pair
+            )
+            if fixer_stats:
+                report["steps"]["fixers_raw"] = fixer_stats
+                for reason, count in fixer_stats.items():
+                    logger.info("[%s] Fixer '%s': %d records patched", adapter_name, reason, count)
+                    try:
+                        from pipeline.utils.memory_store import mark_cluster_promoted
+                        mark_cluster_promoted(reason)
+                    except Exception:
+                        pass
+        except Exception as e:
+            logger.warning("[%s] Fixer registry unavailable: %s", adapter_name, e)
 
     report["output_count"] = len(records)
     report["action"] = action

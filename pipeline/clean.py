@@ -513,8 +513,19 @@ def main() -> None:
     cleaner = DataCleaner(config)
     deduped = cleaner.deduplicate(raw)
     kept, _ = cleaner.filter_by_rules(deduped)
-    kept, ruff_rejected = cleaner.ruff_fix(kept)
-    logger.info("After ruff fix: %d pairs (%d rejected)", len(kept), len(ruff_rejected))
+
+    # Apply deterministic fixers from registry (stage=pairs) — before LLM judge
+    domain = config.get("domain", "code")
+    task_type = config.get("task_type")
+    lang_pair = config.get("adapters", [{}])[0].get("lang_pair") if config.get("adapters") else None
+    try:
+        from pipeline.fixers import apply_fixers
+        kept, fixer_stats = apply_fixers(kept, stage="pairs", domain=domain, task_type=task_type, lang_pair=lang_pair)
+        if fixer_stats:
+            logger.info("Pair fixers applied: %s", fixer_stats)
+    except Exception as e:
+        logger.warning("Fixer registry unavailable: %s", e)
+
     kept, syntax_rejected = cleaner.syntax_filter(kept)
     logger.info("After syntax filter: %d pairs", len(kept))
     scored = cleaner.score_pairs(kept, use_llm=args.score)

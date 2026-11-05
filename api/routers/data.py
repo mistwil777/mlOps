@@ -1088,12 +1088,33 @@ async def ai_audit(project_id: str, rerun: bool = False) -> dict[str, Any]:
                     "prompt_snippet": prompt[:1500], "completion_snippet": completion[:1500],
                     "recommendation": None}
 
-        # 4 — missing import (check on fence-stripped code)
+        # 4 — missing import (check on fence-stripped code, skip comment lines)
         clean_completion = _strip_fences(completion)
-        import_lines = {ln.strip() for ln in clean_completion.split("\n") if ln.strip().startswith("import ") or ln.strip().startswith("from ")}
+        import_lines = {
+            ln.strip()
+            for ln in clean_completion.split("\n")
+            if ln.strip().startswith(("import ", "from ")) and not ln.strip().startswith("#")
+        }
         import_text = " ".join(import_lines)
-        for module_name, pattern in _IMPORT_PATTERNS:
-            if re.search(pattern, clean_completion) and module_name.split("/")[0].split(" ")[0] not in import_text:
+        # Extended patterns: (display_name, usage_regex, list_of_satisfying_import_prefixes)
+        _IMPORT_CHECKS = [
+            ("pytest",    r'\bpytest\.',    ["import pytest"]),
+            ("np/numpy",  r'\bnp\.',        ["import numpy"]),
+            ("pd/pandas", r'\bpd\.',        ["import pandas"]),
+            ("os",        r'\bos\.',        ["import os"]),
+            ("sys",       r'\bsys\.',       ["import sys"]),
+            ("re",        r'\bre\.',        ["import re"]),
+            ("json",      r'\bjson\.',      ["import json"]),
+            ("datetime",  r'\bdatetime\.',  ["import datetime", "from datetime"]),
+            # Path( is satisfied by "from pathlib import Path" OR "import pathlib"
+            ("Path",      r'\bPath\(',      ["from pathlib", "import pathlib"]),
+            ("dataclass", r'@dataclass',    ["from dataclasses"]),
+        ]
+        for module_name, pattern, satisfiers in _IMPORT_CHECKS:
+            if not re.search(pattern, clean_completion):
+                continue
+            # Only flag if NONE of the satisfying imports are present
+            if not any(s in import_text for s in satisfiers):
                 return {"index": idx, "source": source, "reason": "missing_import",
                         "detail": f"Utilise `{module_name}` sans import déclaré", "severity": "medium",
                         "prompt_snippet": prompt[:1500], "completion_snippet": completion[:1500],
