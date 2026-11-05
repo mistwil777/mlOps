@@ -13,9 +13,7 @@
   const donneesTabs = [
     { href: '/advisor',       label: 'Cadrage' },
     { href: '/data/ingest',   label: 'Ingestion' },
-    { href: '/data/pipeline', label: 'Pipeline' },
     { href: '/data/review',   label: 'Révision' },
-    { href: '/data/search',   label: 'Audit' },
   ];
 
   // ── State ──────────────────────────────────────────────────────────────────

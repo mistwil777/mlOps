@@ -4,27 +4,25 @@
   import { getPipelineProgress, type PipelineStep } from '$lib/api';
   import { projectCtx } from '$lib/stores/currentProject.svelte';
 
-  // projectId from URL param OR from sessionStorage (projectCtx)
-  let projectId = $derived(
-    $page.url.searchParams.get('project') ?? projectCtx.project?.id ?? null
-  );
   let steps = $state<PipelineStep[]>([]);
+  let lastLoaded = $state<string | null>(null);
 
-  async function load() {
-    if (!projectId) return;
-    try {
-      const res = await getPipelineProgress(projectId);
-      steps = res.steps;
-    } catch {
-      // silent — progress bar is non-blocking
-    }
-  }
-
-  $effect(() => { if (projectId) load(); });
+  // Reactive: re-load whenever the project changes (URL param or sessionStorage)
+  $effect(() => {
+    const fromUrl = $page.url.searchParams.get('project');
+    const fromCtx = projectCtx.project?.id ?? null;
+    const pid = fromUrl ?? fromCtx;
+    if (!pid || pid === lastLoaded) return;
+    lastLoaded = pid;
+    getPipelineProgress(pid)
+      .then(res => { steps = res.steps; })
+      .catch(() => {});
+  });
 
   function handleClick(step: PipelineStep) {
     if (step.status === 'locked') return;
-    const href = projectId ? `${step.href}?project=${projectId}` : step.href;
+    const pid = $page.url.searchParams.get('project') ?? projectCtx.project?.id;
+    const href = pid ? `${step.href}?project=${pid}` : step.href;
     goto(href);
   }
 
@@ -44,11 +42,6 @@
         class:current={isCurrentPath(step.href)}
         disabled={step.status === 'locked'}
         onclick={() => handleClick(step)}
-        onmouseenter={(e) => {
-          tooltip = { label: step.label, hint: step.hint, count: step.count };
-          tooltipX = (e.currentTarget as HTMLElement).getBoundingClientRect().left;
-        }}
-        onmouseleave={() => tooltip = null}
         title={step.hint ?? step.label}
       >
         <span class="dot">
@@ -77,6 +70,7 @@
     border-bottom: 1px solid var(--border);
     gap: 0;
     overflow: hidden;
+    flex-shrink: 0;
   }
 
   .step {
@@ -106,23 +100,17 @@
     font-size: 9px;
     font-weight: 700;
     flex-shrink: 0;
-    transition: background 0.15s;
   }
 
-  .done .dot    { background: #22c55e; color: #fff; }
+  .done .dot     { background: #22c55e; color: #fff; }
   .available .dot { background: var(--accent); color: #fff; }
-  .locked .dot  { background: var(--border); color: var(--text-dim); }
+  .locked .dot   { background: var(--border); color: var(--text-dim); }
 
-  .step-label {
-    font-size: 12px;
-    font-weight: 500;
-  }
-
-  .done .step-label    { color: var(--text-muted); }
+  .step-label { font-size: 12px; font-weight: 500; }
+  .done .step-label     { color: var(--text-muted); }
   .available .step-label { color: var(--accent); font-weight: 600; }
-  .locked .step-label  { color: var(--text-dim); }
-
-  .current .step-label { text-decoration: underline; text-underline-offset: 3px; }
+  .locked .step-label   { color: var(--text-dim); }
+  .current .step-label  { text-decoration: underline; text-underline-offset: 3px; }
 
   .step-count {
     font-size: 10px;
@@ -138,7 +126,6 @@
     background: var(--border);
     min-width: 12px;
     max-width: 40px;
-    transition: background 0.15s;
   }
   .connector.filled { background: #22c55e; }
 </style>
