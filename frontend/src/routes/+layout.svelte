@@ -18,40 +18,32 @@
 <div class="layout">
   <SidebarNav />
 
-  <main class="main">
-    <div class="rainbow-bar"></div>
-    <PipelineProgress />
-    {@render children()}
-  </main>
+  <div class="content-col">
+    <header class="app-header">
+      <div class="rainbow-bar"></div>
+      <PipelineProgress />
+    </header>
+
+    <main class="main">
+      {@render children()}
+    </main>
+  </div>
 </div>
 
 <style>
-  .rainbow-bar {
-    height: 4px;
-    flex-shrink: 0;
-    background: linear-gradient(90deg, #2DD4BF, #22D3EE, #38BDF8 40%, #A855F7 62%, #EC4899 80%, #F59E0B);
-  }
-
-  .health-panel {
+  .content-col {
+    flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 5px;
+    overflow: hidden;
   }
 
-  .health-label {
-    font-size: var(--text-xs);
-    text-transform: uppercase;
-    letter-spacing: .08em;
-    color: var(--text-dim);
-    font-weight: 600;
-    margin-bottom: 2px;
+  .app-header {
+    flex-shrink: 0;
   }
 
-  .health-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: var(--text-sm);
-    color: var(--text-muted);
+  .rainbow-bar {
+    height: 4px;
+    background: linear-gradient(90deg, #2DD4BF, #22D3EE, #38BDF8 40%, #A855F7 62%, #EC4899 80%, #F59E0B);
   }
 </style>

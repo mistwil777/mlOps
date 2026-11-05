@@ -1,22 +1,38 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
+  import { onMount } from 'svelte';
   import { getPipelineProgress, type PipelineStep } from '$lib/api';
   import { projectCtx } from '$lib/stores/currentProject.svelte';
 
   let steps = $state<PipelineStep[]>([]);
   let lastLoaded = $state<string | null>(null);
 
-  // Reactive: re-load whenever the project changes (URL param or sessionStorage)
-  $effect(() => {
-    const fromUrl = $page.url.searchParams.get('project');
-    const fromCtx = projectCtx.project?.id ?? null;
-    const pid = fromUrl ?? fromCtx;
-    if (!pid || pid === lastLoaded) return;
+  function getProjectId(): string | null {
+    return $page.url.searchParams.get('project') ?? projectCtx.project?.id ?? null;
+  }
+
+  async function load(pid: string) {
+    if (pid === lastLoaded) return;
     lastLoaded = pid;
-    getPipelineProgress(pid)
-      .then(res => { steps = res.steps; })
-      .catch(() => {});
+    try {
+      const res = await getPipelineProgress(pid);
+      steps = res.steps;
+    } catch {
+      steps = [];
+    }
+  }
+
+  // Load on mount (captures sessionStorage-only case)
+  onMount(() => {
+    const pid = getProjectId();
+    if (pid) load(pid);
+  });
+
+  // Re-load when URL or projectCtx changes
+  $effect(() => {
+    const pid = $page.url.searchParams.get('project') ?? projectCtx.project?.id ?? null;
+    if (pid) load(pid);
   });
 
   function handleClick(step: PipelineStep) {
