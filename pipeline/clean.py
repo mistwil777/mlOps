@@ -23,6 +23,14 @@ _MLX_SERVER_URL = "http://localhost:8080"
 _PYTHON_LANGS = {"python", "py", ""}
 
 
+def _strip_markdown_fences(code: str) -> str:
+    """Remove markdown code fences (```python ... ```) before syntax checking."""
+    import re  # noqa: PLC0415
+    code = re.sub(r"^```[a-zA-Z]*\n?", "", code, flags=re.MULTILINE)
+    code = re.sub(r"^```\s*$", "", code, flags=re.MULTILINE)
+    return code.strip()
+
+
 def _syntax_check(code: str, lang: str) -> tuple[bool, str]:
     """Check syntax of a code snippet. Returns (valid, error_message)."""
     if not code.strip():
@@ -31,8 +39,9 @@ def _syntax_check(code: str, lang: str) -> tuple[bool, str]:
 
     if lang in _PYTHON_LANGS:
         import py_compile, tempfile, os  # noqa: PLC0415,E401
+        clean_code = _strip_markdown_fences(code)
         with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False, encoding="utf-8") as f:
-            f.write(code)
+            f.write(clean_code)
             tmp = f.name
         try:
             py_compile.compile(tmp, doraise=True)
@@ -322,6 +331,107 @@ class DataCleaner:
         except Exception:  # noqa: BLE001
             return 0.5
 
+    def ruff_fix(
+        self,
+        pairs: list[dict[str, Any]],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Run ruff check+fix+format on Python completions.
+
+        1. check  — detect issues
+        2. fix    — auto-apply safe fixes (imports, style)
+        3. format — normalize style (black-compatible)
+        Pairs with unfixable syntax errors are rejected.
+        Returns (kept, rejected).
+        """
+        import re, subprocess, tempfile, os  # noqa: PLC0415,E401
+
+        _PYTHON_LANGS_SET = {"python", "py", ""}
+        tgt_lang = self.config.get("transform", {}).get("params", {}).get("tgt_lang", "python")
+
+        if tgt_lang.lower() not in _PYTHON_LANGS_SET:
+            logger.info("ruff_fix: skipped (target language is %s, not Python)", tgt_lang)
+            return pairs, []
+
+        # Check ruff is available
+        try:
+            subprocess.run(["ruff", "--version"], capture_output=True, check=True)
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            logger.warning("ruff not found — skipping ruff_fix step (install with: pip install ruff)")
+            return pairs, []
+
+        kept: list[dict[str, Any]] = []
+        rejected: list[dict[str, Any]] = []
+        n_fixed = 0
+        n_formatted = 0
+
+        for p in pairs:
+            completion: str = p.get("completion", "") or ""
+            if not completion.strip():
+                kept.append(p)
+                continue
+
+            # Strip markdown fences before processing
+            clean = _strip_markdown_fences(completion)
+            had_fences = clean != completion.strip()
+
+            with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False,
+                                             encoding="utf-8") as f:
+                f.write(clean)
+                tmp = f.name
+
+            try:
+                # Step 1 — check
+                check = subprocess.run(
+                    ["ruff", "check", tmp],
+                    capture_output=True, text=True,
+                )
+
+                # Step 2 — fix (safe auto-fixes only)
+                fix = subprocess.run(
+                    ["ruff", "check", "--fix", "--unsafe-fixes=false", tmp],
+                    capture_output=True, text=True,
+                )
+
+                # Step 3 — format
+                subprocess.run(
+                    ["ruff", "format", tmp],
+                    capture_output=True, text=True,
+                )
+
+                fixed_code = Path(tmp).read_text(encoding="utf-8")
+
+                # If ruff check still fails after fix → unfixable syntax error → reject
+                recheck = subprocess.run(
+                    ["ruff", "check", tmp],
+                    capture_output=True, text=True,
+                )
+                # Only reject on E9xx (syntax errors), not style warnings
+                syntax_errors = [l for l in recheck.stdout.splitlines()
+                                 if re.search(r'\bE9\d\d\b', l)]
+                if syntax_errors:
+                    rejected.append({**p, "reject_reason": f"ruff_syntax: {syntax_errors[0]}"})
+                    continue
+
+                changed = fixed_code.strip() != clean.strip()
+                if changed:
+                    n_fixed += 1
+                    # Re-wrap in fences if original had them
+                    final = f"```python\n{fixed_code.strip()}\n```" if had_fences else fixed_code.strip()
+                    kept.append({**p, "completion": final, "_ruff_fixed": True})
+                else:
+                    kept.append(p)
+
+            finally:
+                os.unlink(tmp)
+
+        logger.info(
+            "ruff_fix: %d kept (%d auto-fixed), %d rejected (unfixable syntax)",
+            len(kept), n_fixed, len(rejected),
+        )
+        log_metric("ruff_fixed", n_fixed)
+        log_metric("ruff_rejected", len(rejected))
+        return kept, rejected
+
     def train_valid_split(
         self,
         pairs: list[dict[str, Any]],
@@ -403,6 +513,8 @@ def main() -> None:
     cleaner = DataCleaner(config)
     deduped = cleaner.deduplicate(raw)
     kept, _ = cleaner.filter_by_rules(deduped)
+    kept, ruff_rejected = cleaner.ruff_fix(kept)
+    logger.info("After ruff fix: %d pairs (%d rejected)", len(kept), len(ruff_rejected))
     kept, syntax_rejected = cleaner.syntax_filter(kept)
     logger.info("After syntax filter: %d pairs", len(kept))
     scored = cleaner.score_pairs(kept, use_llm=args.score)

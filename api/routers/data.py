@@ -1054,6 +1054,12 @@ async def ai_audit(project_id: str, rerun: bool = False) -> dict[str, Any]:
         ("dataclass", r'@dataclass'),
     ]
 
+    def _strip_fences(code: str) -> str:
+        import re as _re  # noqa: PLC0415
+        code = _re.sub(r"^```[a-zA-Z]*\n?", "", code, flags=_re.MULTILINE)
+        code = _re.sub(r"^```\s*$", "", code, flags=_re.MULTILINE)
+        return code.strip()
+
     def _check_pair(idx: int, pair: dict[str, Any], source: str) -> dict[str, Any] | None:
         completion: str = pair.get("completion", "") or ""
         prompt: str = pair.get("prompt", "") or ""
@@ -1065,9 +1071,9 @@ async def ai_audit(project_id: str, rerun: bool = False) -> dict[str, Any]:
                     "prompt_snippet": prompt[:1500], "completion_snippet": completion[:1500],
                     "recommendation": None}
 
-        # 2 — syntax error (Python)
+        # 2 — syntax error (Python) — strip markdown fences first to avoid false positives
         try:
-            compile(completion, "<string>", "exec")
+            compile(_strip_fences(completion), "<string>", "exec")
         except SyntaxError as e:
             return {"index": idx, "source": source, "reason": "syntax_error",
                     "detail": f"SyntaxError: {e.msg} (ligne {e.lineno})", "severity": "high",
@@ -1082,11 +1088,12 @@ async def ai_audit(project_id: str, rerun: bool = False) -> dict[str, Any]:
                     "prompt_snippet": prompt[:1500], "completion_snippet": completion[:1500],
                     "recommendation": None}
 
-        # 4 — missing import
-        import_lines = {ln.strip() for ln in completion.split("\n") if ln.strip().startswith("import ") or ln.strip().startswith("from ")}
+        # 4 — missing import (check on fence-stripped code)
+        clean_completion = _strip_fences(completion)
+        import_lines = {ln.strip() for ln in clean_completion.split("\n") if ln.strip().startswith("import ") or ln.strip().startswith("from ")}
         import_text = " ".join(import_lines)
         for module_name, pattern in _IMPORT_PATTERNS:
-            if re.search(pattern, completion) and module_name.split("/")[0].split(" ")[0] not in import_text:
+            if re.search(pattern, clean_completion) and module_name.split("/")[0].split(" ")[0] not in import_text:
                 return {"index": idx, "source": source, "reason": "missing_import",
                         "detail": f"Utilise `{module_name}` sans import déclaré", "severity": "medium",
                         "prompt_snippet": prompt[:1500], "completion_snippet": completion[:1500],
