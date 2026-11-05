@@ -7,7 +7,6 @@
     { href: '/data/ingest',   label: 'Ingestion' },
     { href: '/data/pipeline', label: 'Pipeline' },
     { href: '/data/review',   label: 'Révision' },
-    { href: '/data/search',   label: 'Audit' },
   ];
 
   const projectId = $derived($page.url.searchParams.get('project'));

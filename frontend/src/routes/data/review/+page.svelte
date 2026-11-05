@@ -14,7 +14,7 @@
   let error = $state('');
 
   // Tabs: 'rejected' | 'sample'
-  let activeTab = $state<'rejected' | 'sample'>('rejected');
+  let activeTab = $state<'rejected' | 'sample'>('sample');
 
   // Rejected panel
   let rejectedStep = $state<string>('all');
@@ -160,6 +160,7 @@
   let correctingIndex = $state<string | null>(null); // "{source}-{index}"
   let spotCheckOpen = $state(false);
   let auditOpen = $state(false);
+  let expandedAdapters = $state<Set<string>>(new Set());
 
   const visibleSuspicious = $derived(
     (aiAudit?.suspicious ?? []).filter(s => !s._ignored)
@@ -310,13 +311,13 @@
 
     <!-- ── Tabs ──────────────────────────────────────────────────────────── -->
     <div class="tab-bar" style="margin-bottom:16px">
-      <button class="tab-btn" class:active={activeTab === 'rejected'} onclick={() => activeTab = 'rejected'}>
-        ⚡ Diagnostic des rejets
-        {#if summary.auto_rejected > 0}<span class="tab-badge red">{summary.auto_rejected}</span>{/if}
-      </button>
       <button class="tab-btn" class:active={activeTab === 'sample'} onclick={() => activeTab = 'sample'}>
         ✓ Spot-check qualifiées
         <span class="tab-badge green">{summary.qualified}</span>
+      </button>
+      <button class="tab-btn" class:active={activeTab === 'rejected'} onclick={() => activeTab = 'rejected'}>
+        ⚡ Diagnostic des rejets
+        {#if summary.auto_rejected > 0}<span class="tab-badge red">{summary.auto_rejected}</span>{/if}
       </button>
     </div>
 
@@ -359,37 +360,51 @@
           {@const rejectPct = 100 - acceptPct}
           {@const severity = adapter.rejection_rate > 0.7 ? 'high' : adapter.rejection_rate > 0.4 ? 'medium' : 'low'}
           {@const sevColor = severity === 'high' ? 'var(--red)' : severity === 'medium' ? 'var(--yellow)' : 'var(--green)'}
-          <div class="diag-card card">
-            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:8px">
+          <div class="diag-card card" style="padding:0; overflow:hidden">
+            <!-- Header — always visible, click to expand -->
+            <button
+              style="width:100%; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:12px 14px; background:none; border:none; cursor:pointer; text-align:left"
+              onclick={() => {
+                const k = adapter.adapter_name;
+                const s = new Set(expandedAdapters);
+                s.has(k) ? s.delete(k) : s.add(k);
+                expandedAdapters = s;
+              }}
+            >
               <div style="font-size:13px; font-weight:600; color:var(--text)">{adapter.adapter_name.replace(/-/g, '​-')}</div>
-              <span class="sev-badge" style="background:{sevColor}20; color:{sevColor}">
-                {Math.round(adapter.rejection_rate * 100)}% rejeté
-              </span>
-            </div>
+              <div style="display:flex; align-items:center; gap:8px">
+                <span class="sev-badge" style="background:{sevColor}20; color:{sevColor}">
+                  {Math.round(adapter.rejection_rate * 100)}% rejeté
+                </span>
+                <span style="font-size:11px; color:var(--text-dim)">{expandedAdapters.has(adapter.adapter_name) ? '▲' : '▼'}</span>
+              </div>
+            </button>
 
-            <!-- Barre bicolore accepté/rejeté -->
-            <div class="bicolor-bar" title="{adapter.accepted} acceptées / {adapter.pairs_total - adapter.accepted} rejetées">
-              <div class="bicolor-accept" style="width:{acceptPct}%"></div>
-              <div class="bicolor-reject" style="width:{rejectPct}%"></div>
-            </div>
-            <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-dim); margin-top:3px">
-              <span style="color:var(--green)">✓ {adapter.accepted} acceptées</span>
-              <span style="color:var(--red)">✕ {adapter.pairs_total - adapter.accepted} rejetées</span>
-            </div>
-
-            {#if adapter.avg_llm_score !== null}
-              <div style="margin-top:8px; font-size:12px; color:var(--text-dim)">
-                Score LLM moyen :
-                <strong style="color:{adapter.avg_llm_score >= 0.75 ? 'var(--green)' : adapter.avg_llm_score >= 0.6 ? 'var(--yellow)' : 'var(--red)'}">
-                  {adapter.avg_llm_score.toFixed(2)}
-                </strong>
+            <!-- Detail — collapsed by default -->
+            {#if expandedAdapters.has(adapter.adapter_name)}
+              <div style="padding:0 14px 12px">
+                <div class="bicolor-bar" title="{adapter.accepted} acceptées / {adapter.pairs_total - adapter.accepted} rejetées">
+                  <div class="bicolor-accept" style="width:{acceptPct}%"></div>
+                  <div class="bicolor-reject" style="width:{rejectPct}%"></div>
+                </div>
+                <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-dim); margin-top:3px">
+                  <span style="color:var(--green)">✓ {adapter.accepted} acceptées</span>
+                  <span style="color:var(--red)">✕ {adapter.pairs_total - adapter.accepted} rejetées</span>
+                </div>
+                {#if adapter.avg_llm_score !== null}
+                  <div style="margin-top:8px; font-size:12px; color:var(--text-dim)">
+                    Score LLM moyen :
+                    <strong style="color:{adapter.avg_llm_score >= 0.75 ? 'var(--green)' : adapter.avg_llm_score >= 0.6 ? 'var(--yellow)' : 'var(--red)'}">
+                      {adapter.avg_llm_score.toFixed(2)}
+                    </strong>
+                  </div>
+                {/if}
+                <div class="rec-box" style="border-color:{sevColor}40; margin-top:10px">
+                  <span class="rec-icon">→</span>
+                  {adapter.recommendation}
+                </div>
               </div>
             {/if}
-
-            <div class="rec-box" style="border-color:{sevColor}40; margin-top:10px">
-              <span class="rec-icon">→</span>
-              {adapter.recommendation}
-            </div>
           </div>
         {/each}
       </div>
