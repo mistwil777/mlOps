@@ -36,9 +36,7 @@
       items: [
         { href: '/advisor',       icon: '◑', label: 'Cadrage' },
         { href: '/data/ingest',   icon: '⬇', label: 'Ingestion' },
-        { href: '/data/pipeline', icon: '⟳', label: 'Pipeline' },
         { href: '/data/review',   icon: '◈', label: 'Révision' },
-        { href: '/data/search',   icon: '⌕', label: 'Audit' },
       ],
     },
     {

@@ -2,11 +2,13 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { getPipelineProgress, type PipelineStep } from '$lib/api';
+  import { projectCtx } from '$lib/stores/currentProject.svelte';
 
-  let projectId = $derived($page.url.searchParams.get('project'));
+  // projectId from URL param OR from sessionStorage (projectCtx)
+  let projectId = $derived(
+    $page.url.searchParams.get('project') ?? projectCtx.project?.id ?? null
+  );
   let steps = $state<PipelineStep[]>([]);
-  let tooltip = $state<{ label: string; hint: string | null; count: number | null } | null>(null);
-  let tooltipX = $state(0);
 
   async function load() {
     if (!projectId) return;
