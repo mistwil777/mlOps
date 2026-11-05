@@ -402,4 +402,4 @@ export interface PipelineProgress {
 }
 
 export const getPipelineProgress = (projectId: string) =>
-  req<PipelineProgress>(`/progress/${projectId}`);
+  req<PipelineProgress>(`/data/progress/${projectId}`);

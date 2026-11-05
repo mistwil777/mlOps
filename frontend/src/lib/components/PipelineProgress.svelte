@@ -24,10 +24,19 @@
   }
 
   onMount(() => {
-    const pid = getProjectId();
+    // Direct sessionStorage read — bypasses SSR null-init of projectCtx
+    const urlPid = new URLSearchParams(window.location.search).get('project');
+    let pid = urlPid;
+    if (!pid) {
+      try {
+        const raw = sessionStorage.getItem('mlops_current_project');
+        if (raw) pid = JSON.parse(raw)?.id ?? null;
+      } catch {}
+    }
     if (pid) load(pid);
   });
 
+  // React to subsequent project changes (navigation, selector)
   $effect(() => {
     const pid = $page.url.searchParams.get('project') ?? projectCtx.project?.id ?? null;
     if (pid) load(pid);

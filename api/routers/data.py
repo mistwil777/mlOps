@@ -1718,6 +1718,8 @@ async def pipeline_progress(project_id: str) -> dict[str, Any]:
     train_count     = _file_count(base / "fine-tuning-ready" / "train.jsonl")
     staging_count   = sum(1 for _ in (base.parent.parent.parent / "models" / "staging" / project_id).glob("*")) if (base.parent.parent.parent / "models" / "staging" / project_id).exists() else 0
     prod_count      = sum(1 for _ in (base.parent.parent.parent / "models" / "production" / project_id).glob("*")) if (base.parent.parent.parent / "models" / "production" / project_id).exists() else 0
+    audit_done      = (base / "processed" / "ai_audit.json").exists()
+    flagged_count   = _file_count(base / "processed" / "flagged.jsonl")
 
     def _status(done: bool, available: bool) -> str:
         if done:      return "done"
@@ -1756,9 +1758,12 @@ async def pipeline_progress(project_id: str) -> dict[str, Any]:
             "key":   "revision",
             "label": "Révision",
             "href":  "/data/review",
-            "status": _status(False, train_count > 0),
+            "status": _status(audit_done, train_count > 0),
             "count": train_count if train_count > 0 else None,
-            "hint":  f"{train_count} paires à réviser" if train_count > 0 else "En attente du pipeline",
+            "hint":  (f"{flagged_count} paires signalées à traiter" if flagged_count > 0
+                      else f"Audit validé — {train_count} paires prêtes" if audit_done
+                      else f"{train_count} paires à réviser" if train_count > 0
+                      else "En attente du pipeline"),
         },
         {
             "key":   "entrainement",
