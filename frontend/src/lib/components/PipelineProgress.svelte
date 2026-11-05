@@ -23,13 +23,11 @@
     }
   }
 
-  // Load on mount (captures sessionStorage-only case)
   onMount(() => {
     const pid = getProjectId();
     if (pid) load(pid);
   });
 
-  // Re-load when URL or projectCtx changes
   $effect(() => {
     const pid = $page.url.searchParams.get('project') ?? projectCtx.project?.id ?? null;
     if (pid) load(pid);
@@ -37,7 +35,7 @@
 
   function handleClick(step: PipelineStep) {
     if (step.status === 'locked') return;
-    const pid = $page.url.searchParams.get('project') ?? projectCtx.project?.id;
+    const pid = getProjectId();
     const href = pid ? `${step.href}?project=${pid}` : step.href;
     goto(href);
   }
@@ -47,8 +45,10 @@
   }
 </script>
 
-{#if steps.length > 0}
-  <div class="progress-bar">
+<div class="progress-bar">
+  {#if steps.length === 0}
+    <span class="loading">—</span>
+  {:else}
     {#each steps as step, i}
       <button
         class="step"
@@ -68,13 +68,12 @@
           <span class="step-count">{step.count.toLocaleString('fr-FR')}</span>
         {/if}
       </button>
-
       {#if i < steps.length - 1}
         <div class="connector" class:filled={step.status === 'done'}></div>
       {/if}
     {/each}
-  </div>
-{/if}
+  {/if}
+</div>
 
 <style>
   .progress-bar {
@@ -85,8 +84,12 @@
     background: var(--surface-1);
     border-bottom: 1px solid var(--border);
     gap: 0;
-    overflow: hidden;
     flex-shrink: 0;
+  }
+
+  .loading {
+    font-size: 11px;
+    color: var(--text-dim);
   }
 
   .step {
