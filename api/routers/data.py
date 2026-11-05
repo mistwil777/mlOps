@@ -1687,6 +1687,101 @@ async def data_health(project_id: str) -> dict[str, Any]:
     }
 
 
+# ── Pipeline Progress ─────────────────────────────────────────────────────────
+
+@router.get("/progress/{project_id}")
+async def pipeline_progress(project_id: str) -> dict[str, Any]:
+    """Return pipeline step states for the progress bar.
+
+    Each step: status = 'done' | 'available' | 'locked', count = number of records.
+    """
+    _load_project_config(project_id)
+    base = Path(f"datalake/projects/{project_id}")
+
+    def _count_jsonl(directory: Path) -> int:
+        if not directory.exists():
+            return 0
+        return sum(
+            sum(1 for ln in f.open() if ln.strip())
+            for f in directory.glob("*.jsonl")
+            if f.is_file()
+        )
+
+    def _file_count(path: Path) -> int:
+        if not path.exists():
+            return 0
+        return sum(1 for ln in path.open() if ln.strip())
+
+    raw_count       = _count_jsonl(base / "raw")
+    clean_raw_count = _count_jsonl(base / "processed" / "clean_raw")
+    pairs_count     = _count_jsonl(base / "processed" / "pairs")
+    train_count     = _file_count(base / "fine-tuning-ready" / "train.jsonl")
+    staging_count   = sum(1 for _ in (base.parent.parent.parent / "models" / "staging" / project_id).glob("*")) if (base.parent.parent.parent / "models" / "staging" / project_id).exists() else 0
+    prod_count      = sum(1 for _ in (base.parent.parent.parent / "models" / "production" / project_id).glob("*")) if (base.parent.parent.parent / "models" / "production" / project_id).exists() else 0
+
+    def _status(done: bool, available: bool) -> str:
+        if done:      return "done"
+        if available: return "available"
+        return "locked"
+
+    steps = [
+        {
+            "key":   "cadrage",
+            "label": "Cadrage",
+            "href":  "/advisor",
+            "status": "done",   # always accessible
+            "count": None,
+            "hint":  None,
+        },
+        {
+            "key":   "ingestion",
+            "label": "Ingestion",
+            "href":  "/data/ingest",
+            "status": _status(raw_count > 0, True),
+            "count": raw_count if raw_count > 0 else None,
+            "hint":  f"{raw_count} records bruts" if raw_count > 0 else "Aucune donnée",
+        },
+        {
+            "key":   "pipeline",
+            "label": "Pipeline",
+            "href":  "/data/pipeline",
+            "status": _status(train_count > 0, raw_count > 0),
+            "count": train_count if train_count > 0 else (pairs_count if pairs_count > 0 else clean_raw_count if clean_raw_count > 0 else None),
+            "hint":  (f"{train_count} paires prêtes" if train_count > 0
+                      else f"{pairs_count} paires formées" if pairs_count > 0
+                      else f"{clean_raw_count} records nettoyés" if clean_raw_count > 0
+                      else "En attente de données"),
+        },
+        {
+            "key":   "revision",
+            "label": "Révision",
+            "href":  "/data/review",
+            "status": _status(False, train_count > 0),
+            "count": train_count if train_count > 0 else None,
+            "hint":  f"{train_count} paires à réviser" if train_count > 0 else "En attente du pipeline",
+        },
+        {
+            "key":   "entrainement",
+            "label": "Entraînement",
+            "href":  "/train",
+            "status": _status(staging_count > 0 or prod_count > 0, train_count > 0),
+            "count": None,
+            "hint":  "Modèle disponible" if staging_count > 0 or prod_count > 0 else "En attente de révision",
+        },
+        {
+            "key":   "deploiement",
+            "label": "Déploiement",
+            "href":  "/delivery",
+            "status": _status(prod_count > 0, staging_count > 0),
+            "count": None,
+            "hint":  "En production" if prod_count > 0 else "En attente d'entraînement",
+        },
+    ]
+
+    current = next((i for i, s in enumerate(steps) if s["status"] == "available"), len(steps) - 1)
+    return {"project_id": project_id, "steps": steps, "current_index": current}
+
+
 # ── Adapter Coverage ──────────────────────────────────────────────────────────
 
 @router.get("/adapter-coverage/{project_id}")

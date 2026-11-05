@@ -2,6 +2,7 @@
   import '../app.css';
   import { getHealth } from '$lib/api';
   import SidebarNav from '$lib/components/SidebarNav.svelte';
+  import PipelineProgress from '$lib/components/PipelineProgress.svelte';
   import type { Health } from '$lib/types';
 
   let { children } = $props();
@@ -19,6 +20,7 @@
 
   <main class="main">
     <div class="rainbow-bar"></div>
+    <PipelineProgress />
     {@render children()}
   </main>
 </div>

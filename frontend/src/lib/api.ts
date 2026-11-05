@@ -384,3 +384,22 @@ export const advisorCrossProjectMatches = (description: string, k = 10) =>
     method: 'POST',
     body: JSON.stringify({ description, k }),
   });
+
+
+export interface PipelineStep {
+  key: string;
+  label: string;
+  href: string;
+  status: 'done' | 'available' | 'locked';
+  count: number | null;
+  hint: string | null;
+}
+
+export interface PipelineProgress {
+  project_id: string;
+  steps: PipelineStep[];
+  current_index: number;
+}
+
+export const getPipelineProgress = (projectId: string) =>
+  req<PipelineProgress>(`/progress/${projectId}`);
