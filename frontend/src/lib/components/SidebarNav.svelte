@@ -35,6 +35,7 @@
       label: 'Données',
       items: [
         { href: '/advisor',       icon: '◑', label: 'Cadrage' },
+        { href: '/data/context',  icon: '◎', label: 'Contexte' },
         { href: '/data/ingest',   icon: '⬇', label: 'Ingestion' },
         { href: '/data/review',   icon: '◈', label: 'Révision' },
       ],

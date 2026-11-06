@@ -1721,6 +1721,17 @@ async def pipeline_progress(project_id: str) -> dict[str, Any]:
     audit_done      = (base / "processed" / "ai_audit.json").exists()
     flagged_count   = _file_count(base / "processed" / "flagged.jsonl")
 
+    # Semantic context readiness (RAG ingestion collection)
+    context_ready = False
+    context_chunks = 0
+    try:
+        from pipeline.rag_index import IngestionRagIndex  # noqa: PLC0415
+        rag = IngestionRagIndex(project_id)
+        context_chunks = rag.count
+        context_ready = context_chunks > 0
+    except Exception:  # noqa: BLE001
+        pass
+
     def _status(done: bool, available: bool) -> str:
         if done:      return "done"
         if available: return "available"
@@ -1731,17 +1742,28 @@ async def pipeline_progress(project_id: str) -> dict[str, Any]:
             "key":   "cadrage",
             "label": "Cadrage",
             "href":  "/advisor",
-            "status": "done",   # always accessible
+            "status": "done",
             "count": None,
             "hint":  None,
+        },
+        {
+            "key":   "contexte",
+            "label": "Contexte",
+            "href":  "/data/context",
+            "status": _status(context_ready, True),
+            "count": context_chunks if context_chunks > 0 else None,
+            "hint":  (f"{context_chunks} chunks indexés (RAG)" if context_ready
+                      else "Uploadez des normes ou logs métier avant d'ingérer"),
         },
         {
             "key":   "ingestion",
             "label": "Ingestion",
             "href":  "/data/ingest",
-            "status": _status(raw_count > 0, True),
+            "status": _status(raw_count > 0, context_ready),
             "count": raw_count if raw_count > 0 else None,
-            "hint":  f"{raw_count} records bruts" if raw_count > 0 else "Aucune donnée",
+            "hint":  (f"{raw_count} records bruts" if raw_count > 0
+                      else "Contexte requis avant ingestion" if not context_ready
+                      else "Prêt — déposez vos données"),
         },
         {
             "key":   "pipeline",
