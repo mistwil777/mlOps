@@ -2220,3 +2220,155 @@ async def browse_pairs(
 async def index_project_pairs(project_id: str, stage: str | None = None) -> dict[str, Any]:
     asyncio.create_task(_index_datalake_pairs(project_id, stage=stage))
     return {"ok": True, "project_id": project_id}
+
+
+# ── Ingestion context — RAG + KG per project ──────────────────────────────────
+
+@router.post("/ingestion-context/{project_id}/norm")
+async def ingest_norm_document(
+    project_id: str,
+    file: UploadFile = File(...),
+    source_description: str = "norm",
+) -> dict[str, Any]:
+    """Upload a norm/standard document into the project's ingestion RAG context + KG."""
+    config = _load_project_config(project_id)
+    content_bytes = await file.read()
+    if len(content_bytes) > 50 * 1024 * 1024:
+        raise HTTPException(413, "File too large (max 50 MB)")
+
+    # Extract text
+    tmp = Path(f"/tmp/_mlops_norm_{project_id}_{file.filename}")
+    tmp.write_bytes(content_bytes)
+    try:
+        from pair_forge.extractors import extract_content  # noqa: PLC0415
+        text, method = extract_content(tmp)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(400, f"Extraction failed: {exc}") from exc
+    finally:
+        tmp.unlink(missing_ok=True)
+
+    if not text.strip():
+        raise HTTPException(400, "No text could be extracted from this file")
+
+    domain = config.get("domain", "general")
+
+    # Ingest into RAG
+    try:
+        from pipeline.rag_index import IngestionRagIndex  # noqa: PLC0415
+        rag = IngestionRagIndex(project_id)
+        rag.ingest_norm(text, source=source_description, domain=domain)
+        rag_chunks = rag.count
+    except Exception as exc:  # noqa: BLE001
+        rag_chunks = 0
+        logger.warning("RAG ingest failed: %s", exc)
+
+    # Extract entities into KG
+    kg_entities = 0
+    try:
+        from pipeline.utils.knowledge_graph import ProjectKG  # noqa: PLC0415
+
+        def _llm_fn(prompt: str, cfg: dict, max_tokens: int = 1024) -> str | None:
+            import boto3  # noqa: PLC0415
+            from botocore.config import Config  # noqa: PLC0415
+            client = boto3.client(
+                "bedrock-runtime", region_name="us-east-1",
+                config=Config(connect_timeout=10, read_timeout=60),
+            )
+            resp = client.converse(
+                modelId="us.amazon.nova-pro-v1:0",
+                messages=[{"role": "user", "content": [{"text": prompt}]}],
+                inferenceConfig={"maxTokens": max_tokens, "temperature": 0.1},
+            )
+            return resp["output"]["message"]["content"][0]["text"].strip()
+
+        kg = ProjectKG(project_id)
+        kg.ingest_norm_document(text, domain=domain, llm_fn=_llm_fn)
+        kg_entities = 1  # success indicator
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("KG ingest failed: %s", exc)
+
+    return {
+        "project_id": project_id,
+        "source": source_description,
+        "method": method,
+        "text_length": len(text),
+        "rag_chunks_total": rag_chunks,
+        "kg_ingested": kg_entities > 0,
+    }
+
+
+@router.post("/ingestion-context/{project_id}/logs")
+async def ingest_feedback_logs(
+    project_id: str,
+    file: UploadFile = File(...),
+    source_description: str = "client_logs",
+) -> dict[str, Any]:
+    """Upload historical logs or feedback into the project's ingestion RAG context."""
+    _load_project_config(project_id)
+    content_bytes = await file.read()
+    if len(content_bytes) > 20 * 1024 * 1024:
+        raise HTTPException(413, "File too large (max 20 MB)")
+
+    text = content_bytes.decode("utf-8", errors="replace")
+    if not text.strip():
+        raise HTTPException(400, "Empty file")
+
+    try:
+        from pipeline.rag_index import IngestionRagIndex  # noqa: PLC0415
+        rag = IngestionRagIndex(project_id)
+        rag.ingest_log_feedback(text, source=source_description)
+        return {"project_id": project_id, "source": source_description,
+                "text_length": len(text), "rag_chunks_total": rag.count}
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(500, f"RAG ingest failed: {exc}") from exc
+
+
+@router.delete("/ingestion-context/{project_id}")
+async def clear_ingestion_context(project_id: str) -> dict[str, Any]:
+    """Clear and rebuild the ingestion RAG context for a project."""
+    _load_project_config(project_id)
+    try:
+        from pipeline.rag_index import IngestionRagIndex  # noqa: PLC0415
+        rag = IngestionRagIndex(project_id)
+        rag.clear()
+        return {"project_id": project_id, "cleared": True}
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(500, f"Clear failed: {exc}") from exc
+
+
+@router.get("/ingestion-context/{project_id}/stats")
+async def ingestion_context_stats(project_id: str) -> dict[str, Any]:
+    """Return stats on the ingestion context (RAG chunk count, KG entity count)."""
+    _load_project_config(project_id)
+    rag_count = 0
+    kg_entities = 0
+    kg_relations = 0
+
+    try:
+        from pipeline.rag_index import IngestionRagIndex  # noqa: PLC0415
+        rag_count = IngestionRagIndex(project_id).count
+    except Exception:  # noqa: BLE001
+        pass
+
+    try:
+        from pipeline.utils.knowledge_graph import ProjectKG  # noqa: PLC0415
+        kg = ProjectKG(project_id)
+        if kg._available:
+            with kg._session() as s:
+                r = s.run("MATCH (e:Entity {project_id: $pid}) RETURN count(e) AS n", pid=project_id)
+                kg_entities = r.single()["n"]
+                r2 = s.run(
+                    "MATCH (a:Entity {project_id: $pid})-[r]->(b:Entity {project_id: $pid}) "
+                    "RETURN count(r) AS n", pid=project_id
+                )
+                kg_relations = r2.single()["n"]
+    except Exception:  # noqa: BLE001
+        pass
+
+    return {
+        "project_id": project_id,
+        "rag_chunks": rag_count,
+        "kg_entities": kg_entities,
+        "kg_relations": kg_relations,
+        "ready": rag_count > 0 or kg_entities > 0,
+    }

@@ -283,3 +283,130 @@ def build_index(
 
     logger.info("RAG index '%s': %d patterns total", project, total)
     return idx
+
+
+# ── IngestionRagIndex — dedicated per-project semantic context for pair generation ──
+
+class IngestionRagIndex:
+    """Qdrant collection dedicated to ingestion-time semantic context.
+
+    Separate from RagIndex (patterns_{project}) — this one stores:
+      - Norm documents uploaded by the project owner
+      - Historical logs and feedback from client deployments
+      - Any domain-specific reference material
+
+    Collection name: ingestion_context_{project_id}
+    Purpose: queried by PairForgeAgent._generate_pairs() to anchor LLM generation
+             in verified domain knowledge rather than LLM priors.
+    """
+
+    def __init__(self, project_id: str, host: str = "localhost", port: int = 6333) -> None:
+        self.project_id  = project_id
+        self._collection = f"ingestion_context_{project_id}"
+        self._client     = _qdrant_client(host, port)
+        self._ensure_collection()
+
+    def _ensure_collection(self) -> None:
+        from qdrant_client.models import Distance, VectorParams, PayloadSchemaType  # noqa: PLC0415
+
+        existing = [c.name for c in self._client.get_collections().collections]
+        if self._collection not in existing:
+            self._client.create_collection(
+                self._collection,
+                vectors_config=VectorParams(size=_get_embed_dim(), distance=Distance.COSINE),
+            )
+            self._client.create_payload_index(
+                self._collection, "content", PayloadSchemaType.TEXT
+            )
+            self._client.create_payload_index(
+                self._collection, "source_type", PayloadSchemaType.KEYWORD
+            )
+            logger.info("Created Qdrant collection '%s'", self._collection)
+
+    def _upsert(self, text: str, source: str, source_type: str) -> None:
+        import uuid as _uuid  # noqa: PLC0415
+        from qdrant_client.models import PointStruct  # noqa: PLC0415
+
+        vecs = _embed([text])
+        if not vecs or not vecs[0]:
+            return
+        self._client.upsert(
+            self._collection,
+            points=[PointStruct(
+                id=str(_uuid.uuid5(_uuid.NAMESPACE_URL, f"{self.project_id}:{source}:{text[:100]}")),
+                vector=vecs[0],
+                payload={"content": text, "source": source, "source_type": source_type},
+            )],
+        )
+
+    def ingest_norm(self, text: str, source: str, domain: str) -> None:
+        """Ingest a norm/standard document, chunked into ~500-char paragraphs."""
+        chunks = _chunk_text(text, max_chars=500)
+        for i, chunk in enumerate(chunks):
+            self._upsert(chunk, source=f"{source}#chunk{i}", source_type="norm")
+        logger.info("Ingested norm '%s': %d chunks into %s", source, len(chunks), self._collection)
+
+    def ingest_log_feedback(self, text: str, source: str) -> None:
+        """Ingest historical log or feedback entry."""
+        chunks = _chunk_text(text, max_chars=500)
+        for i, chunk in enumerate(chunks):
+            self._upsert(chunk, source=f"{source}#chunk{i}", source_type="feedback")
+        logger.info("Ingested feedback '%s': %d chunks", source, len(chunks))
+
+    def search(self, query: str, k: int = 5) -> str:
+        """Return formatted context string ready for prompt injection."""
+        try:
+            vecs = _embed([query])
+            if not vecs or not vecs[0]:
+                return ""
+            hits = self._client.search(
+                self._collection,
+                query_vector=vecs[0],
+                limit=k,
+                with_payload=True,
+            )
+            if not hits:
+                return ""
+            lines = [
+                f"[{h.payload.get('source_type','?')} / {h.payload.get('source','?')}] "
+                f"{h.payload.get('content','')}"
+                for h in hits
+            ]
+            return "\n\n".join(lines)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("IngestionRagIndex.search failed: %s", exc)
+            return ""
+
+    def clear(self) -> None:
+        """Drop and recreate the collection (full rebuild)."""
+        self._client.delete_collection(self._collection)
+        logger.info("Cleared ingestion context collection: %s", self._collection)
+        self._ensure_collection()
+
+    @property
+    def count(self) -> int:
+        try:
+            return self._client.get_collection(self._collection).points_count or 0
+        except Exception:  # noqa: BLE001
+            return 0
+
+
+def _chunk_text(text: str, max_chars: int = 500) -> list[str]:
+    """Split text into chunks of ~max_chars, preferring paragraph boundaries."""
+    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+    chunks: list[str] = []
+    current = ""
+    for para in paragraphs:
+        if len(current) + len(para) + 2 <= max_chars:
+            current = (current + "\n\n" + para).strip()
+        else:
+            if current:
+                chunks.append(current)
+            # Para itself too long → hard split
+            while len(para) > max_chars:
+                chunks.append(para[:max_chars])
+                para = para[max_chars:]
+            current = para
+    if current:
+        chunks.append(current)
+    return chunks or [text[:max_chars]]
