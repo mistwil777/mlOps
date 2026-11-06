@@ -133,11 +133,15 @@ class PairForgeAgent:
         adapter = self._resolve_adapter(adapter_name)
         yield self._info(f"Starting: {file_path.name}")
 
-        # --- Init RAG + KG semantic context ---
-        self._init_semantic_context()
+        # --- Init RAG + KG semantic context (required — blocks if unavailable) ---
+        try:
+            self._init_semantic_context()
+        except RuntimeError as exc:
+            yield self._error(f"Semantic context required: {exc}")
+            return
         yield self._info(
-            f"Semantic context: RAG={self._rag_ctx_count()} chunks, "
-            f"KG={'available' if self._kg_available() else 'unavailable'}"
+            f"Semantic context ready: RAG={self._rag_ctx_count()} chunks, "
+            f"KG={self._kg_available()}"
         )
 
         # --- Dependency check ---
@@ -422,27 +426,49 @@ class PairForgeAgent:
     # ------------------------------------------------------------------
 
     def _init_semantic_context(self) -> None:
+        """Initialize RAG + KG. Raises RuntimeError if either is unavailable or empty."""
         host, port = self._parse_qdrant_url()
+
+        # RAG — must be reachable
         try:
             from pipeline.rag_index import IngestionRagIndex  # noqa: PLC0415
             self._rag_ctx = IngestionRagIndex(self.project_id, host=host, port=port)
         except Exception as exc:  # noqa: BLE001
-            self._log("warning", f"IngestionRagIndex unavailable: {exc}")
-            self._rag_ctx = None
+            raise RuntimeError(
+                f"Ingestion RAG unavailable (Qdrant unreachable?): {exc}. "
+                "Upload norm documents via POST /api/data/ingestion-context/{project}/norm before ingesting."
+            ) from exc
 
-        neo4j_uri = self.config.get("neo4j_uri", "bolt://localhost:7687")
-        neo4j_user = self.config.get("neo4j_user", "neo4j")
+        # RAG — must have content (norms/logs already uploaded)
+        if self._rag_ctx.count == 0:
+            raise RuntimeError(
+                "Ingestion RAG is empty — no semantic context for this project. "
+                "Upload at least one norm or reference document via "
+                "POST /api/data/ingestion-context/{project}/norm before ingesting data."
+            )
+
+        # KG — must be reachable
+        neo4j_uri      = self.config.get("neo4j_uri", "bolt://localhost:7687")
+        neo4j_user     = self.config.get("neo4j_user", "neo4j")
         neo4j_password = self.config.get("neo4j_password", "mlops")
         try:
             from pipeline.utils.knowledge_graph import ProjectKG  # noqa: PLC0415
             self._kg = ProjectKG(self.project_id, neo4j_uri, neo4j_user, neo4j_password)
-            # Load ontology from CDC if present
-            ontology = self.config.get("ontology")
-            if ontology:
-                self._kg.ingest_ontology(ontology)
         except Exception as exc:  # noqa: BLE001
-            self._log("warning", f"ProjectKG unavailable: {exc}")
-            self._kg = None
+            raise RuntimeError(
+                f"Knowledge Graph unavailable (Neo4j unreachable?): {exc}. "
+                "Start Neo4j via: docker compose up neo4j"
+            ) from exc
+
+        if not self._kg._available:
+            raise RuntimeError(
+                "Neo4j is not reachable. Start it with: docker compose up neo4j"
+            )
+
+        # Load ontology from CDC if declared
+        ontology = self.config.get("ontology")
+        if ontology:
+            self._kg.ingest_ontology(ontology)
 
     def _search_rag(self, query: str) -> str:
         try:
