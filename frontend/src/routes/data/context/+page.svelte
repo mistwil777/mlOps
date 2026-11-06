@@ -29,7 +29,15 @@
   let logsResult               = $state('');
 
   onMount(() => {
-    projectId = new URLSearchParams(window.location.search).get('project') ?? '';
+    const urlPid = new URLSearchParams(window.location.search).get('project');
+    if (urlPid) {
+      projectId = urlPid;
+    } else {
+      try {
+        const raw = sessionStorage.getItem('mlops_current_project');
+        if (raw) projectId = JSON.parse(raw)?.id ?? '';
+      } catch {}
+    }
     if (projectId) loadStats();
   });
 
