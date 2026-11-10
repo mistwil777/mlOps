@@ -1408,7 +1408,8 @@ async def stream_clean_raw(job_id: str) -> EventSourceResponse:
 
 class PipelineRequest(BaseModel):
     project_id: str
-    threshold: float = 0.7
+    threshold: float = 0.7          # kept for backward compat — ignored when quality_mode set
+    quality_mode: str = "balanced"  # strict | balanced | permissive
 
 
 @router.get("/clean-raw/estimate/{project_id}")
@@ -1456,7 +1457,7 @@ async def _run_pipeline(job_id: str, req: PipelineRequest) -> None:
         sys.executable, "-m", "pipeline.clean",
         "--project", req.project_id,
         "--score", "true",
-        "--threshold", str(req.threshold),
+        "--quality-mode", req.quality_mode,
     ]
 
     try:
@@ -1716,7 +1717,9 @@ async def pipeline_progress(project_id: str) -> dict[str, Any]:
     clean_raw_count = _count_jsonl(base / "processed" / "clean_raw")
     pairs_count     = _count_jsonl(base / "processed" / "pairs")
     train_count     = _file_count(base / "fine-tuning-ready" / "train.jsonl")
-    staging_count   = sum(1 for _ in (base.parent.parent.parent / "models" / "staging" / project_id).glob("*")) if (base.parent.parent.parent / "models" / "staging" / project_id).exists() else 0
+    staging_dir     = base.parent.parent.parent / "models" / "staging" / project_id
+    staging_count   = sum(1 for _ in staging_dir.glob("*")) if staging_dir.exists() else 0
+    eval_done       = (staging_dir / "eval_results.json").exists()
     prod_count      = sum(1 for _ in (base.parent.parent.parent / "models" / "production" / project_id).glob("*")) if (base.parent.parent.parent / "models" / "production" / project_id).exists() else 0
     audit_done      = (base / "processed" / "ai_audit.json").exists()
     flagged_count   = _file_count(base / "processed" / "flagged.jsonl")
@@ -1747,34 +1750,14 @@ async def pipeline_progress(project_id: str) -> dict[str, Any]:
             "hint":  None,
         },
         {
-            "key":   "contexte",
-            "label": "Contexte",
-            "href":  "/data/context",
-            "status": _status(context_ready, True),
-            "count": context_chunks if context_chunks > 0 else None,
-            "hint":  (f"{context_chunks} chunks indexés (RAG)" if context_ready
-                      else "Uploadez des normes ou logs métier avant d'ingérer"),
-        },
-        {
-            "key":   "ingestion",
-            "label": "Ingestion",
-            "href":  "/data/ingest",
-            "status": _status(raw_count > 0, context_ready),
-            "count": raw_count if raw_count > 0 else None,
-            "hint":  (f"{raw_count} records bruts" if raw_count > 0
-                      else "Contexte requis avant ingestion" if not context_ready
-                      else "Prêt — déposez vos données"),
-        },
-        {
-            "key":   "pipeline",
-            "label": "Pipeline",
-            "href":  "/data/pipeline",
-            "status": _status(train_count > 0, raw_count > 0),
-            "count": train_count if train_count > 0 else (pairs_count if pairs_count > 0 else clean_raw_count if clean_raw_count > 0 else None),
-            "hint":  (f"{train_count} paires prêtes" if train_count > 0
-                      else f"{pairs_count} paires formées" if pairs_count > 0
-                      else f"{clean_raw_count} records nettoyés" if clean_raw_count > 0
-                      else "En attente de données"),
+            "key":   "donnees",
+            "label": "Données",
+            "href":  "/data/donnees",
+            "status": _status(context_ready and raw_count > 0, True),
+            "count": raw_count if raw_count > 0 else (context_chunks if context_chunks > 0 else None),
+            "hint":  (f"{context_chunks} chunks RAG · {raw_count} documents terrain" if context_ready and raw_count > 0
+                      else f"{context_chunks} chunks RAG — ajoutez des données terrain" if context_ready
+                      else "Indexez au moins une norme avant d'ingérer des données"),
         },
         {
             "key":   "revision",
@@ -1796,12 +1779,24 @@ async def pipeline_progress(project_id: str) -> dict[str, Any]:
             "hint":  "Modèle disponible" if staging_count > 0 or prod_count > 0 else "En attente de révision",
         },
         {
+            "key":   "evaluation",
+            "label": "Évaluation",
+            "href":  "/eval",
+            "status": _status(eval_done, staging_count > 0),
+            "count": None,
+            "hint":  ("Évaluation validée — prêt pour déploiement" if eval_done
+                      else "Lancez /eval-model pour évaluer le modèle en staging" if staging_count > 0
+                      else "En attente d'entraînement"),
+        },
+        {
             "key":   "deploiement",
             "label": "Déploiement",
             "href":  "/delivery",
-            "status": _status(prod_count > 0, staging_count > 0),
+            "status": _status(prod_count > 0, eval_done),
             "count": None,
-            "hint":  "En production" if prod_count > 0 else "En attente d'entraînement",
+            "hint":  ("En production" if prod_count > 0
+                      else "Évaluation requise avant déploiement" if not eval_done
+                      else "Prêt à déployer"),
         },
     ]
 
@@ -2394,3 +2389,134 @@ async def ingestion_context_stats(project_id: str) -> dict[str, Any]:
         "kg_relations": kg_relations,
         "ready": rag_count > 0 or kg_entities > 0,
     }
+
+
+# ── Batch norm upload ─────────────────────────────────────────────────────────
+
+@router.post("/ingestion-context/{project_id}/norm/batch")
+async def ingest_norm_batch(
+    project_id: str,
+    files: list[UploadFile] = File(...),
+    source_description: str = "norm",
+) -> dict[str, Any]:
+    """Upload multiple norm/template documents at once → RAG + KG."""
+    config = _load_project_config(project_id)
+    domain = config.get("domain", "general")
+    results: list[dict[str, Any]] = []
+
+    from pair_forge.extractors import extract_content  # noqa: PLC0415
+    from pipeline.rag_index import IngestionRagIndex   # noqa: PLC0415
+
+    rag = IngestionRagIndex(project_id)
+
+    try:
+        from pipeline.utils.knowledge_graph import ProjectKG  # noqa: PLC0415
+        import boto3  # noqa: PLC0415
+        from botocore.config import Config as BotoConfig  # noqa: PLC0415
+
+        def _llm_fn(prompt: str, cfg: dict, max_tokens: int = 1024) -> str | None:
+            client = boto3.client(
+                "bedrock-runtime", region_name="us-east-1",
+                config=BotoConfig(connect_timeout=10, read_timeout=60),
+            )
+            resp = client.converse(
+                modelId="us.amazon.nova-pro-v1:0",
+                messages=[{"role": "user", "content": [{"text": prompt}]}],
+                inferenceConfig={"maxTokens": max_tokens, "temperature": 0.1},
+            )
+            return resp["output"]["message"]["content"][0]["text"].strip()
+
+        kg = ProjectKG(project_id)
+    except Exception:  # noqa: BLE001
+        kg = None
+        _llm_fn = None  # type: ignore[assignment]
+
+    for upload in files:
+        content_bytes = await upload.read()
+        if len(content_bytes) > 50 * 1024 * 1024:
+            results.append({"file": upload.filename, "error": "File too large (max 50 MB)"})
+            continue
+        tmp = Path(f"/tmp/_mlops_norm_{project_id}_{upload.filename}")
+        tmp.write_bytes(content_bytes)
+        try:
+            text, method = extract_content(tmp)
+        except Exception as exc:  # noqa: BLE001
+            results.append({"file": upload.filename, "error": f"Extraction failed: {exc}"})
+            tmp.unlink(missing_ok=True)
+            continue
+        finally:
+            tmp.unlink(missing_ok=True)
+
+        if not text.strip():
+            results.append({"file": upload.filename, "error": "No text extracted"})
+            continue
+
+        rag.ingest_norm(text, source=source_description, domain=domain)
+        kg_ok = False
+        if kg is not None and _llm_fn is not None:
+            try:
+                kg.ingest_norm_document(text, domain=domain, llm_fn=_llm_fn)
+                kg_ok = True
+            except Exception:  # noqa: BLE001
+                pass
+
+        results.append({
+            "file": upload.filename,
+            "method": method,
+            "text_length": len(text),
+            "kg_ingested": kg_ok,
+        })
+
+    return {
+        "project_id": project_id,
+        "files_processed": len(results),
+        "rag_chunks_total": rag.count,
+        "results": results,
+    }
+
+
+# ── Batch raw data upload (store only, no processing) ────────────────────────
+
+@router.post("/raw-files/{project_id}")
+async def upload_raw_files(
+    project_id: str,
+    files: list[UploadFile] = File(...),
+) -> dict[str, Any]:
+    """Store raw terrain files in datalake/raw/ — no processing, no pair generation."""
+    _load_project_config(project_id)
+    raw_dir = Path(f"datalake/projects/{project_id}/raw")
+    raw_dir.mkdir(parents=True, exist_ok=True)
+
+    saved: list[str] = []
+    errors: list[dict[str, str]] = []
+
+    for upload in files:
+        content = await upload.read()
+        if len(content) > 200 * 1024 * 1024:
+            errors.append({"file": upload.filename, "error": "File too large (max 200 MB)"})
+            continue
+        dest = raw_dir / upload.filename
+        dest.write_bytes(content)
+        saved.append(upload.filename)
+
+    return {
+        "project_id": project_id,
+        "saved": saved,
+        "errors": errors,
+        "raw_dir": str(raw_dir),
+        "total_files": len(list(raw_dir.iterdir())),
+    }
+
+
+@router.get("/raw-files/{project_id}")
+async def list_raw_files(project_id: str) -> dict[str, Any]:
+    """List files currently in datalake/raw/ for a project."""
+    _load_project_config(project_id)
+    raw_dir = Path(f"datalake/projects/{project_id}/raw")
+    if not raw_dir.exists():
+        return {"project_id": project_id, "files": [], "total": 0}
+    files = [
+        {"name": f.name, "size": f.stat().st_size, "modified": f.stat().st_mtime}
+        for f in sorted(raw_dir.iterdir()) if f.is_file()
+    ]
+    return {"project_id": project_id, "files": files, "total": len(files)}

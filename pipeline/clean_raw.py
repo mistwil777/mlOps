@@ -47,6 +47,16 @@ logger = get_logger("mlops.clean_raw")
 
 # ── Thresholds ────────────────────────────────────────────────────────────────
 
+# Semantic scoring weights (RAG similarity + KG entity overlap)
+_SEM_RAG_WEIGHT      = 0.65
+_SEM_KG_WEIGHT       = 0.35
+# CDC quality.mode → percentile cutoff
+_QUALITY_MODE_PERCENTILE: dict[str, float] = {
+    "strict":     80.0,
+    "balanced":   65.0,
+    "permissive": 50.0,
+}
+
 QUALITY_THRESHOLD    = 0.55   # min heuristic score to keep a record
 AUGMENT_THRESHOLD    = 0.65   # min score to be eligible for augmentation
 SEM_DEDUP_THRESHOLD  = 0.92   # cosine similarity above which a record is a near-duplicate
@@ -691,6 +701,163 @@ def augment_batch(
     return records + augmented
 
 
+# ── Semantic scoring (RAG + KG) ───────────────────────────────────────────────
+
+def _load_semantic_context(
+    project_id: str,
+) -> tuple[object | None, object | None]:
+    """Load IngestionRagIndex + ProjectKG for a project. Returns (rag, kg).
+
+    Both are optional — returns (None, None) on any failure.  Callers must
+    handle None gracefully (graceful degradation).
+    """
+    rag: object | None = None
+    kg: object | None = None
+    try:
+        from pipeline.rag_index import IngestionRagIndex  # noqa: PLC0415
+        rag = IngestionRagIndex(project_id)
+        if rag.count == 0:
+            logger.debug("Semantic context (RAG) empty for project '%s' — skipping semantic scoring", project_id)
+            rag = None
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("IngestionRagIndex unavailable: %s", exc)
+    try:
+        from pipeline.utils.knowledge_graph import ProjectKG  # noqa: PLC0415
+        kg = ProjectKG(project_id)
+        if not getattr(kg, "_available", False):
+            kg = None
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("ProjectKG unavailable: %s", exc)
+    return rag, kg
+
+
+def _rag_score_record(text: str, rag: object) -> float:
+    """Max cosine score from top-3 RAG chunk hits. Returns 0.0 if no context."""
+    try:
+        scores: list[float] = rag.search_scores(text[:500], k=3)  # type: ignore[union-attr]
+        return max(scores) if scores else 0.0
+    except Exception:  # noqa: BLE001
+        return 0.0
+
+
+def _kg_score_record(text: str, kg: object) -> float:
+    """Fraction of capitalised entity candidates found in KG. Returns 0.0 if no context."""
+    candidates = list(set(re.findall(r"\b[A-Z][a-zA-Z]{3,}\b", text)))[:15]
+    if not candidates:
+        return 0.0
+    try:
+        matched, total = kg.count_matching_entities(candidates)  # type: ignore[union-attr]
+        return matched / total if total else 0.0
+    except Exception:  # noqa: BLE001
+        return 0.0
+
+
+def score_semantic(
+    records: list[dict[str, Any]],
+    rag: object | None,
+    kg: object | None,
+) -> list[dict[str, Any]]:
+    """Add _semantic_score, _rag_score, _kg_score to each record.
+
+    If neither RAG nor KG is available, _semantic_score is set to None
+    so downstream can skip the semantic filter entirely.
+    """
+    if rag is None and kg is None:
+        logger.info("Semantic scoring skipped — no RAG/KG context available")
+        return [{**r, "_semantic_score": None} for r in records]
+
+    out: list[dict[str, Any]] = []
+    for r in records:
+        text = _record_text(r)
+        rag_s = _rag_score_record(text, rag) if rag is not None else 0.5
+        kg_s  = _kg_score_record(text, kg)   if kg  is not None else 0.5
+
+        if rag is None:
+            # Only KG available — use KG score exclusively
+            composite = kg_s
+        elif kg is None:
+            # Only RAG available — use RAG score exclusively
+            composite = rag_s
+        else:
+            composite = _SEM_RAG_WEIGHT * rag_s + _SEM_KG_WEIGHT * kg_s
+
+        out.append({
+            **r,
+            "_rag_score":      round(rag_s, 4),
+            "_kg_score":       round(kg_s, 4),
+            "_semantic_score": round(composite, 4),
+        })
+
+    scores = [r["_semantic_score"] for r in out if r["_semantic_score"] is not None]
+    if scores:
+        avg = sum(scores) / len(scores)
+        logger.info("Semantic scoring: %d records, avg=%.3f, min=%.3f, max=%.3f",
+                    len(out), avg, min(scores), max(scores))
+    return out
+
+
+def _percentile_threshold(scores: list[float], mode: str) -> float:
+    """Compute the score value at the percentile defined by quality.mode."""
+    p = _QUALITY_MODE_PERCENTILE.get(mode, _QUALITY_MODE_PERCENTILE["balanced"])
+    if not scores:
+        return 0.0
+    sorted_s = sorted(scores)
+    idx = int(len(sorted_s) * p / 100)
+    # Threshold = value AT that percentile — keep everything BELOW it, flag above
+    # We want to keep the BEST records, so threshold = keep if score >= p(100-p)
+    # Invert: reject if score < percentile(100 - p)
+    keep_p = 100.0 - p
+    keep_idx = max(0, int(len(sorted_s) * keep_p / 100))
+    return sorted_s[keep_idx]
+
+
+def filter_by_semantic_score(
+    records: list[dict[str, Any]],
+    mode: str,
+    flagged_path: Path,
+) -> list[dict[str, Any]]:
+    """Split records into kept and flagged based on adaptive percentile threshold.
+
+    Flagged records are appended to flagged_path (recovery queue) with their
+    rejection reason and scores.  Returns the kept records only.
+    """
+    scored = [r for r in records if r.get("_semantic_score") is not None]
+    unscored = [r for r in records if r.get("_semantic_score") is None]
+
+    if not scored:
+        return records  # nothing to filter
+
+    scores = [r["_semantic_score"] for r in scored]
+    threshold = _percentile_threshold(scores, mode)
+
+    kept:    list[dict[str, Any]] = []
+    flagged: list[dict[str, Any]] = []
+
+    for r in scored:
+        if r["_semantic_score"] >= threshold:
+            kept.append(r)
+        else:
+            flagged.append({
+                **r,
+                "_flagged_reason": "semantic_score_below_percentile",
+                "_flagged_threshold": round(threshold, 4),
+                "_flagged_quality_mode": mode,
+            })
+
+    if flagged:
+        flagged_path.parent.mkdir(parents=True, exist_ok=True)
+        with flagged_path.open("a", encoding="utf-8") as fh:
+            for rec in flagged:
+                fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        logger.info(
+            "Semantic filter (mode=%s, threshold=%.4f): kept=%d, flagged=%d → %s",
+            mode, threshold, len(kept), len(flagged), flagged_path,
+        )
+        log_metric("raw_semantic_flagged", len(flagged))
+
+    return kept + unscored
+
+
 # ── Main pipeline per adapter ─────────────────────────────────────────────────
 
 def clean_adapter_records(
@@ -703,6 +870,11 @@ def clean_adapter_records(
     domain: str = "code",
     adapter_cfg: dict[str, Any] | None = None,
     task_type: str | None = None,
+    project_id: str | None = None,
+    quality_mode: str = "balanced",
+    flagged_path: Path | None = None,
+    rag_ctx: object | None = None,
+    kg_ctx: object | None = None,
 ) -> dict[str, Any]:
     """Run the full clean_raw pipeline for one adapter. Returns report dict."""
     report: dict[str, Any] = {
@@ -763,6 +935,26 @@ def clean_adapter_records(
         records = records_filtered
         report["steps"]["relevance_filter"] = len(records)
         logger.info("[%s] Relevance filter: %d → %d", adapter_name, before, len(records))
+
+    # 4b. Semantic scoring (RAG + KG) — percentile-based, graceful degradation
+    if not dry_run and (rag_ctx is not None or kg_ctx is not None):
+        records = score_semantic(records, rag_ctx, kg_ctx)
+        if flagged_path is not None:
+            before_sem = len(records)
+            records = filter_by_semantic_score(records, quality_mode, flagged_path)
+            report["steps"]["semantic_filter"] = {
+                "mode":     quality_mode,
+                "input":    before_sem,
+                "kept":     len(records),
+                "flagged":  before_sem - len(records),
+            }
+        # Strip internal scoring fields from vecs alignment (vecs may have drifted if
+        # semantic filter removed records — rebuild vecs from surviving records)
+        if vecs:
+            # vecs was indexed by record position before semantic filter — realign
+            # by embedding surviving records (batch is small at this stage)
+            surviving_texts = [_record_text(r) for r in records]
+            vecs = _embed(surviving_texts) or vecs
 
     # 5. Coverage analysis
     coverage = None
@@ -884,7 +1076,24 @@ def main() -> None:
             logger.info("Cross-adapter reassignment complete")
 
     domain = cfg.get("domain", "code")
-    full_report: dict[str, Any] = {"project": args.project, "domain": domain, "adapters": {}}
+    quality_mode = cfg.get("quality", {}).get("mode", "balanced")
+    flagged_path = Path(f"datalake/projects/{args.project}/flagged.jsonl")
+
+    # Load shared semantic context once — reused for all adapters
+    rag_ctx, kg_ctx = _load_semantic_context(args.project)
+    if rag_ctx or kg_ctx:
+        logger.info("Semantic context loaded — RAG=%s, KG=%s",
+                    "ready" if rag_ctx else "unavailable",
+                    "ready" if kg_ctx else "unavailable")
+    else:
+        logger.info("No semantic context available — semantic scoring skipped")
+
+    full_report: dict[str, Any] = {
+        "project":      args.project,
+        "domain":       domain,
+        "quality_mode": quality_mode,
+        "adapters":     {},
+    }
 
     for adapter in adapters:
         name   = adapter["name"]
@@ -906,6 +1115,11 @@ def main() -> None:
             dry_run=args.dry_run,
             domain=domain,
             adapter_cfg=adapter,
+            project_id=args.project,
+            quality_mode=quality_mode,
+            flagged_path=flagged_path,
+            rag_ctx=rag_ctx,
+            kg_ctx=kg_ctx,
         )
         if isinstance(result, tuple):
             report, cleaned = result

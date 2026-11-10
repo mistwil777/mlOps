@@ -377,6 +377,23 @@ class IngestionRagIndex:
             logger.debug("IngestionRagIndex.search failed: %s", exc)
             return ""
 
+    def search_scores(self, query: str, k: int = 3) -> list[float]:
+        """Return raw cosine scores (0.0–1.0) for the top-k nearest chunks."""
+        try:
+            vecs = _embed([query])
+            if not vecs or not vecs[0]:
+                return []
+            hits = self._client.search(
+                self._collection,
+                query_vector=vecs[0],
+                limit=k,
+                with_payload=False,
+            )
+            return [float(h.score) for h in hits]
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("IngestionRagIndex.search_scores failed: %s", exc)
+            return []
+
     def clear(self) -> None:
         """Drop and recreate the collection (full rebuild)."""
         self._client.delete_collection(self._collection)

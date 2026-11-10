@@ -13,6 +13,13 @@ baseline:
   model_id: us.amazon.nova-pro-v1:0
   measured: false
   metrics: {}
+quality:
+  # mode controls percentile-based semantic filter in clean_raw:
+  #   strict     → keep top 20% (p80) — regulated/classified domains
+  #   balanced   → keep top 35% (p65) — default
+  #   permissive → keep top 50% (p50) — exploration / bootstrap phases
+  mode: balanced
+  min_pairs: 50
 quality_thresholds:
   min_pass_rate: 0.85
   min_rouge_l: 0.65

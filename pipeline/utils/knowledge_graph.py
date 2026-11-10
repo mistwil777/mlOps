@@ -21,7 +21,7 @@ logger = logging.getLogger("mlops.knowledge_graph")
 
 _DEFAULT_URI      = "bolt://localhost:7687"
 _DEFAULT_USER     = "neo4j"
-_DEFAULT_PASSWORD = "mlops"
+_DEFAULT_PASSWORD = "mlops-dev"
 
 
 class ProjectKG:
@@ -264,6 +264,31 @@ class ProjectKG:
         except Exception as exc:  # noqa: BLE001
             logger.debug("get_constraints failed: %s", exc)
             return []
+
+    def count_matching_entities(self, candidates: list[str]) -> tuple[int, int]:
+        """Return (matched, total) — how many candidates exist as KG entities.
+
+        Used for overlap-based scoring: matched / total gives a [0, 1] coverage ratio.
+        """
+        if not self._available or not candidates:
+            return 0, len(candidates)
+        try:
+            with self._session() as s:
+                result = s.run(
+                    """
+                    UNWIND $queries AS q
+                    OPTIONAL MATCH (a:Entity {project_id: $pid})
+                    WHERE toLower(a.name) CONTAINS toLower(q)
+                       OR toLower(a.label) CONTAINS toLower(q)
+                    RETURN q, count(a) AS hits
+                    """,
+                    pid=self.project_id, queries=candidates,
+                )
+                matched = sum(1 for row in result if row["hits"] > 0)
+                return matched, len(candidates)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("count_matching_entities failed: %s", exc)
+            return 0, len(candidates)
 
     def close(self) -> None:
         if self._driver:

@@ -483,7 +483,11 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--project", required=True)
     parser.add_argument("--score", type=lambda x: x.lower() == "true", default=True)
-    parser.add_argument("--threshold", type=float, default=0.7)
+    parser.add_argument("--threshold", type=float, default=None,
+                        help="Absolute quality threshold (legacy). Prefer --quality-mode.")
+    parser.add_argument("--quality-mode", default=None, dest="quality_mode",
+                        choices=["strict", "balanced", "permissive"],
+                        help="Percentile-based filter via CDC quality.mode")
     parser.add_argument("--input", default=None,
                         help="Override input path (default: merge all processed/pairs/<adapter>.jsonl)")
     args = parser.parse_args()
@@ -529,7 +533,34 @@ def main() -> None:
     kept, syntax_rejected = cleaner.syntax_filter(kept)
     logger.info("After syntax filter: %d pairs", len(kept))
     scored = cleaner.score_pairs(kept, use_llm=args.score)
-    accepted = [p for p in scored if p.get("quality_score", 1.0) >= args.threshold]
+
+    # Resolve threshold: quality_mode (percentile) takes precedence over absolute threshold
+    quality_mode_resolved = args.quality_mode or config.get("quality", {}).get("mode", "balanced")
+    if args.threshold is not None:
+        # Legacy absolute threshold path — still supported
+        accepted = [p for p in scored if p.get("quality_score", 1.0) >= args.threshold]
+        logger.info("Pair filter: absolute threshold=%.2f, kept=%d/%d", args.threshold, len(accepted), len(scored))
+    else:
+        from pipeline.clean_raw import _percentile_threshold  # noqa: PLC0415
+        scores = [p.get("quality_score", 1.0) for p in scored]
+        thr = _percentile_threshold(scores, quality_mode_resolved)
+        flagged_path = Path(f"datalake/projects/{args.project}/flagged_pairs.jsonl")
+        accepted = []
+        flagged_count = 0
+        for p in scored:
+            if p.get("quality_score", 1.0) >= thr:
+                accepted.append(p)
+            else:
+                flagged_count += 1
+                flagged_path.parent.mkdir(parents=True, exist_ok=True)
+                with flagged_path.open("a", encoding="utf-8") as fh:
+                    import json as _json  # noqa: PLC0415
+                    fh.write(_json.dumps({**p, "_flagged_reason": "quality_score_below_percentile",
+                                          "_flagged_quality_mode": quality_mode_resolved,
+                                          "_flagged_threshold": round(thr, 4)},
+                                         ensure_ascii=False) + "\n")
+        logger.info("Pair filter: mode=%s, threshold=%.4f, kept=%d/%d, flagged=%d",
+                    quality_mode_resolved, thr, len(accepted), len(scored), flagged_count)
 
     train, valid = cleaner.train_valid_split(accepted)
     write_jsonl(train_path, train)

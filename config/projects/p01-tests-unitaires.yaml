@@ -18,6 +18,9 @@ baseline:
   model_id: us.amazon.nova-pro-v1:0
   measured: false
   metrics: {}
+quality:
+  mode: balanced
+  min_pairs: 50
 quality_thresholds:
   min_pass_rate: 0.8
   min_rouge_l: 0.6
