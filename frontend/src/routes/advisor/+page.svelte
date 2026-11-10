@@ -8,13 +8,6 @@
   import AdapterCard from '$lib/components/AdapterCard.svelte';
   import Topbar from '$lib/components/Topbar.svelte';
   import SovereigntyBadge from '$lib/components/SovereigntyBadge.svelte';
-  import SectionTabs from '$lib/components/SectionTabs.svelte';
-
-  const donneesTabs = [
-    { href: '/advisor',       label: 'Cadrage' },
-    { href: '/data/ingest',   label: 'Ingestion' },
-    { href: '/data/review',   label: 'Révision' },
-  ];
 
   // ── State ──────────────────────────────────────────────────────────────────
   const projectId = $derived($page.url.searchParams.get('project'));
@@ -481,7 +474,6 @@
 
 </script>
 
-<SectionTabs tabs={donneesTabs} />
 <Topbar crumbs={readOnly
   ? [{ label: 'Projets', href: '/projects' }, { label: projectId ?? '', href: `/projects/${projectId}` }, { label: 'Analyse du besoin' }]
   : [{ label: '1 · Scoping' }, { label: 'Analyse du besoin' }]

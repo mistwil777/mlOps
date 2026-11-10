@@ -115,6 +115,7 @@
   }
 </script>
 
+
 <div class="topbar">
   <span class="topbar-title">Ingestion de données</span>
 </div>
@@ -134,10 +135,11 @@
   <!-- ── RAW MODE ───────────────────────────────────────────────── -->
   <div class="card" style="margin-bottom:20px">
     <div class="info-block text-muted" style="font-size:13px; margin-bottom:16px">
-      Déposez n'importe quel fichier : <span class="mono">.java</span>, <span class="mono">.py</span>,
-      <span class="mono">.pdf</span>, <span class="mono">.docx</span>, <span class="mono">.txt</span>,
-      <span class="mono">.zip</span>… L'agent extrait le contenu, génère des paires d'entraînement
-      et les valide automatiquement. Vous pouvez naviguer librement pendant le traitement.
+      Déposez les documents sources à transformer en paires d'entraînement — rapports, formulaires, cas réels —
+      dans n'importe quel format (<span class="mono">.pdf</span>, <span class="mono">.docx</span>,
+      <span class="mono">.xlsx</span>, <span class="mono">.txt</span>, <span class="mono">.zip</span>…).
+      L'agent extrait le contenu, génère des paires d'entraînement ancrées dans le contexte sémantique
+      et les valide automatiquement.
     </div>
 
     <div class="form-grid">

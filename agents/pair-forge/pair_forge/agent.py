@@ -439,8 +439,9 @@ class PairForgeAgent:
                 "Upload norm documents via POST /api/data/ingestion-context/{project}/norm before ingesting."
             ) from exc
 
-        # RAG — must have content (norms/logs already uploaded)
-        if self._rag_ctx.count == 0:
+        # RAG — must have content only if project requires norms (e.g. regulated domains)
+        normes_required = self.config.get("normes_required", False)
+        if normes_required and self._rag_ctx.count == 0:
             raise RuntimeError(
                 "Ingestion RAG is empty — no semantic context for this project. "
                 "Upload at least one norm or reference document via "
@@ -450,7 +451,7 @@ class PairForgeAgent:
         # KG — must be reachable
         neo4j_uri      = self.config.get("neo4j_uri", "bolt://localhost:7687")
         neo4j_user     = self.config.get("neo4j_user", "neo4j")
-        neo4j_password = self.config.get("neo4j_password", "mlops")
+        neo4j_password = self.config.get("neo4j_password", "mlops-dev")
         try:
             from pipeline.utils.knowledge_graph import ProjectKG  # noqa: PLC0415
             self._kg = ProjectKG(self.project_id, neo4j_uri, neo4j_user, neo4j_password)
@@ -460,7 +461,7 @@ class PairForgeAgent:
                 "Start Neo4j via: docker compose up neo4j"
             ) from exc
 
-        if not self._kg._available:
+        if not self._kg._available and normes_required:
             raise RuntimeError(
                 "Neo4j is not reachable. Start it with: docker compose up neo4j"
             )

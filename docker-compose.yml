@@ -77,7 +77,7 @@ services:
       - "7474:7474"   # Browser UI
       - "7687:7687"   # Bolt protocol
     environment:
-      NEO4J_AUTH: neo4j/mlops
+      NEO4J_AUTH: neo4j/mlops-dev
       NEO4J_PLUGINS: '["apoc"]'
       NEO4J_dbms_memory_heap_initial__size: 512m
       NEO4J_dbms_memory_heap_max__size: 1G

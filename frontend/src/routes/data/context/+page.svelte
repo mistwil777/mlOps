@@ -121,7 +121,7 @@
     <div>
       <h1>Contexte sémantique</h1>
       <p class="subtitle">
-        Ancrez la génération de paires dans la réalité de votre domaine.<br>
+        Normes, référentiels et procédures officielles du domaine — ce que le client <em>doit</em> respecter.<br>
         L'agent ne peut pas ingérer de données sans ce contexte.
       </p>
     </div>
@@ -165,7 +165,7 @@
         <span class="card-icon">📋</span>
         <div>
           <div class="card-name">Normes & standards</div>
-          <div class="card-desc">PDF, DOCX, XLSX — normes sectorielles, réglementations, référentiels métier</div>
+          <div class="card-desc">PDF, DOCX, XLSX — normes sectorielles, réglementations, procédures officielles</div>
         </div>
       </div>
 
@@ -184,7 +184,7 @@
           <span>Glissez un fichier ici ou</span>
           <label class="btn-browse">
             Parcourir
-            <input type="file" accept=".pdf,.docx,.xlsx,.txt" onchange={(e) => normFile = (e.target as HTMLInputElement).files?.[0] ?? null} />
+            <input type="file" accept=".pdf,.docx,.xlsx,.txt" onchange={(e) => { normFile = (e.target as HTMLInputElement).files?.[0] ?? null; }} />
           </label>
         {/if}
       </div>
@@ -206,7 +206,7 @@
         <span class="card-icon">📊</span>
         <div>
           <div class="card-name">Logs & retours terrain</div>
-          <div class="card-desc">Historique de feedback client, logs d'exploitation, cas d'usage réels</div>
+          <div class="card-desc">Historiques passés utilisés comme référence — pour ancrer le vocabulaire et les patterns du domaine</div>
         </div>
       </div>
 
@@ -225,7 +225,7 @@
           <span>Glissez un fichier ici ou</span>
           <label class="btn-browse">
             Parcourir
-            <input type="file" accept=".txt,.csv,.log,.jsonl" onchange={(e) => logsFile = (e.target as HTMLInputElement).files?.[0] ?? null} />
+            <input type="file" accept=".txt,.csv,.log,.jsonl" onchange={(e) => { logsFile = (e.target as HTMLInputElement).files?.[0] ?? null; }} />
           </label>
         {/if}
       </div>

@@ -89,9 +89,9 @@
     display: flex;
     align-items: center;
     padding: 0 24px;
-    height: 36px;
-    background: var(--surface-1);
-    border-bottom: 1px solid var(--border);
+    height: 48px;
+    background: #1e2330;
+    border-bottom: 1px solid #2d3347;
     gap: 0;
     flex-shrink: 0;
   }
@@ -135,23 +135,25 @@
   .locked .dot   { background: var(--border); color: var(--text-dim); }
 
   .step-label { font-size: 12px; font-weight: 500; }
-  .done .step-label     { color: var(--text-muted); }
-  .available .step-label { color: var(--accent); font-weight: 600; }
-  .locked .step-label   { color: var(--text-dim); }
-  .current .step-label  { text-decoration: underline; text-underline-offset: 3px; }
+  .done .step-label      { color: #a0aec0; }
+  .available .step-label { color: #60a5fa; font-weight: 600; }
+  .locked .step-label    { color: #4a5568; }
+  .current .step-label   { text-decoration: underline; text-underline-offset: 3px; }
 
   .step-count {
     font-size: 10px;
-    color: var(--text-dim);
-    background: var(--surface-2);
+    color: #718096;
+    background: #2d3347;
     padding: 1px 5px;
     border-radius: 999px;
   }
 
+  .loading { font-size: 11px; color: #4a5568; }
+
   .connector {
     flex: 1;
     height: 1px;
-    background: var(--border);
+    background: #2d3347;
     min-width: 12px;
     max-width: 40px;
   }
