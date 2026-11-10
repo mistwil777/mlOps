@@ -936,8 +936,10 @@ def clean_adapter_records(
         report["steps"]["relevance_filter"] = len(records)
         logger.info("[%s] Relevance filter: %d → %d", adapter_name, before, len(records))
 
-    # 4b. Semantic scoring (RAG + KG) — percentile-based, graceful degradation
-    if not dry_run and (rag_ctx is not None or kg_ctx is not None):
+    # 4b. Semantic scoring (RAG + KG) — percentile-based, graceful degradation.
+    # Skipped if records were already globally pre-filtered in main() (they carry _semantic_score).
+    _already_scored = any(r.get("_semantic_score") is not None for r in records[:5])
+    if not dry_run and not _already_scored and (rag_ctx is not None or kg_ctx is not None):
         records = score_semantic(records, rag_ctx, kg_ctx)
         if flagged_path is not None:
             before_sem = len(records)
@@ -1024,11 +1026,33 @@ def main() -> None:
     cleaned_dir = Path(f"datalake/projects/{args.project}/processed/clean_raw")
     cleaned_dir.mkdir(parents=True, exist_ok=True)
 
-    # Load all raw records once, split by adapter
+    domain = cfg.get("domain", "code")
+    quality_mode = cfg.get("quality", {}).get("mode", "balanced")
+    flagged_path = Path(f"datalake/projects/{args.project}/flagged.jsonl")
+
+    # Load shared semantic context FIRST — used both for pre-filter and per-adapter scoring
+    rag_ctx, kg_ctx = _load_semantic_context(args.project)
+    if rag_ctx or kg_ctx:
+        logger.info("Semantic context loaded — RAG=%s, KG=%s",
+                    "ready" if rag_ctx else "unavailable",
+                    "ready" if kg_ctx else "unavailable")
+    else:
+        logger.info("No semantic context available — semantic scoring skipped")
+
+    # Load all raw records once
     all_raw = []
     for f in raw_dir.glob("*.jsonl"):
         all_raw.extend(read_jsonl(f))
     logger.info("Loaded %d raw records total from %s", len(all_raw), raw_dir)
+
+    # Global semantic pre-filter — runs BEFORE routing so only quality records are routed.
+    # This ensures cross-adapter reassignment never sees semantically invalid records.
+    if not args.dry_run and (rag_ctx is not None or kg_ctx is not None):
+        all_raw = score_semantic(all_raw, rag_ctx, kg_ctx)
+        before_global = len(all_raw)
+        all_raw = filter_by_semantic_score(all_raw, quality_mode, flagged_path)
+        logger.info("Global semantic pre-filter: %d → %d records (%d flagged)",
+                    before_global, len(all_raw), before_global - len(all_raw))
 
     records_by_adapter: dict[str, list[dict[str, Any]]] = defaultdict(list)
     orphans: list[dict[str, Any]] = []
@@ -1054,7 +1078,7 @@ def main() -> None:
             for r in orphans:
                 records_by_adapter["__orphan__"].append({**r, "adapter_name": "__orphan__"})
 
-    # Cross-adapter reassignment (pass 1 — before per-adapter cleaning)
+    # Cross-adapter reassignment (pass 1 — after semantic pre-filter, before per-adapter cleaning)
     if len(adapters) > 1 and not args.dry_run:
         adapter_descriptions = {a["name"]: a.get("description", "") for a in adapters}
         # We need embeddings for cross-adapter reassignment — embed all at once
@@ -1074,19 +1098,6 @@ def main() -> None:
                 dict(records_by_adapter), vecs_by_adapter, adapter_descriptions
             ))
             logger.info("Cross-adapter reassignment complete")
-
-    domain = cfg.get("domain", "code")
-    quality_mode = cfg.get("quality", {}).get("mode", "balanced")
-    flagged_path = Path(f"datalake/projects/{args.project}/flagged.jsonl")
-
-    # Load shared semantic context once — reused for all adapters
-    rag_ctx, kg_ctx = _load_semantic_context(args.project)
-    if rag_ctx or kg_ctx:
-        logger.info("Semantic context loaded — RAG=%s, KG=%s",
-                    "ready" if rag_ctx else "unavailable",
-                    "ready" if kg_ctx else "unavailable")
-    else:
-        logger.info("No semantic context available — semantic scoring skipped")
 
     full_report: dict[str, Any] = {
         "project":      args.project,
