@@ -2520,3 +2520,134 @@ async def list_raw_files(project_id: str) -> dict[str, Any]:
         for f in sorted(raw_dir.iterdir()) if f.is_file()
     ]
     return {"project_id": project_id, "files": files, "total": len(files)}
+
+
+# ── Flagged pairs endpoints ────────────────────────────────────────────────────
+
+def _count_jsonl_lines(path: Path) -> int:
+    if not path.exists():
+        return 0
+    try:
+        return sum(1 for line in path.open(encoding="utf-8") if line.strip())
+    except Exception:
+        return 0
+
+
+@router.get("/flagged/{project_id}")
+async def get_flagged_counts(project_id: str) -> dict[str, int]:
+    """Return count of flagged records and pairs awaiting recovery."""
+    _load_project_config(project_id)
+    raw_flagged   = Path(f"datalake/projects/{project_id}/flagged.jsonl")
+    pairs_flagged = Path(f"datalake/projects/{project_id}/flagged_pairs.jsonl")
+    return {
+        "raw_count":   _count_jsonl_lines(raw_flagged),
+        "pairs_count": _count_jsonl_lines(pairs_flagged),
+    }
+
+
+class FlaggedRecoverRequest(BaseModel):
+    quality_mode: str = "permissive"
+
+
+@router.post("/flagged/{project_id}/recover")
+async def recover_flagged_pairs(project_id: str, req: FlaggedRecoverRequest) -> dict[str, int]:
+    """Re-evaluate flagged_pairs.jsonl with a lower percentile threshold.
+
+    Pairs that now pass are appended to fine-tuning-ready/train.jsonl.
+    Pairs that still fail stay in flagged_pairs.jsonl (file is rewritten).
+    """
+    _load_project_config(project_id)
+    flagged_path = Path(f"datalake/projects/{project_id}/flagged_pairs.jsonl")
+    train_path   = Path(f"datalake/projects/{project_id}/fine-tuning-ready/train.jsonl")
+
+    if not flagged_path.exists():
+        return {"recovered": 0, "remaining": 0}
+
+    flagged: list[dict[str, Any]] = []
+    try:
+        with flagged_path.open(encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if line:
+                    flagged.append(json.loads(line))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Could not read flagged pairs: {exc}") from exc
+
+    if not flagged:
+        return {"recovered": 0, "remaining": 0}
+
+    from pipeline.clean_raw import _percentile_threshold  # noqa: PLC0415
+
+    scores   = [p.get("quality_score", 1.0) for p in flagged]
+    threshold = _percentile_threshold(scores, req.quality_mode)
+
+    promoted: list[dict[str, Any]] = []
+    remaining: list[dict[str, Any]] = []
+    for p in flagged:
+        clean = {k: v for k, v in p.items() if not k.startswith("_flagged_")}
+        if p.get("quality_score", 1.0) >= threshold:
+            promoted.append(clean)
+        else:
+            remaining.append(p)
+
+    if promoted:
+        train_path.parent.mkdir(parents=True, exist_ok=True)
+        with train_path.open("a", encoding="utf-8") as fh:
+            for pair in promoted:
+                fh.write(json.dumps(pair, ensure_ascii=False) + "\n")
+
+    with flagged_path.open("w", encoding="utf-8") as fh:
+        for pair in remaining:
+            fh.write(json.dumps(pair, ensure_ascii=False) + "\n")
+
+    return {"recovered": len(promoted), "remaining": len(remaining)}
+
+
+@router.get("/score-distribution/{project_id}")
+async def get_score_distribution(project_id: str) -> dict[str, Any]:
+    """Return per-score-type histograms (10 buckets 0→1) for train.jsonl."""
+    _load_project_config(project_id)
+    train_path = Path(f"datalake/projects/{project_id}/fine-tuning-ready/train.jsonl")
+
+    if not train_path.exists():
+        return {"quality_score": [], "rag_score": [], "kg_score": [], "total": 0}
+
+    q_scores: list[float] = []
+    rag_scores: list[float] = []
+    kg_scores: list[float] = []
+
+    try:
+        with train_path.open(encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if (qs := rec.get("quality_score")) is not None:
+                    q_scores.append(float(qs))
+                if (rs := rec.get("_rag_score")) is not None:
+                    rag_scores.append(float(rs))
+                if (ks := rec.get("_kg_score")) is not None:
+                    kg_scores.append(float(ks))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Could not read train.jsonl: {exc}") from exc
+
+    def _histogram(scores: list[float], n_buckets: int = 10) -> list[dict[str, Any]]:
+        buckets: list[int] = [0] * n_buckets
+        for s in scores:
+            idx = min(n_buckets - 1, int(s * n_buckets))
+            buckets[idx] += 1
+        return [
+            {"range": f"{i/n_buckets:.1f}-{(i+1)/n_buckets:.1f}", "count": c}
+            for i, c in enumerate(buckets)
+        ]
+
+    return {
+        "quality_score": _histogram(q_scores),
+        "rag_score":     _histogram(rag_scores),
+        "kg_score":      _histogram(kg_scores),
+        "total":         len(q_scores),
+    }

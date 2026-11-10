@@ -60,6 +60,9 @@
       summary = await getQualitySummary(selectedProject);
       const proj = projects.find(p => p.id === selectedProject);
       if (proj) setCurrentProject(proj);
+      // Non-blocking — fire and forget
+      loadScoreDist();
+      loadFlaggedCounts();
     } catch (e) { error = (e as Error).message; }
     finally { loading = false; }
   }
@@ -151,6 +154,56 @@
       if (k.startsWith('_') && k.includes('reject') || k.includes('reason')) return String(r[k]);
     }
     return String(r._rejected_step ?? '');
+  }
+
+  // Rejected records collapsible panel
+  let rejectedOpen = $state(false);
+
+  // Score distribution histograms
+  type Bucket = { range: string; count: number };
+  type ScoreDist = { quality_score: Bucket[]; rag_score: Bucket[]; kg_score: Bucket[]; total: number };
+  let scoreDist: ScoreDist | null = $state(null);
+
+  // Flagged pairs recovery
+  let flaggedCounts: { raw_count: number; pairs_count: number } | null = $state(null);
+  let recoverBusy = $state(false);
+  let recoverToast: string | null = $state(null);
+
+  async function loadScoreDist() {
+    if (!selectedProject) return;
+    try {
+      const r = await fetch(`/api/data/score-distribution/${selectedProject}`);
+      if (r.ok) scoreDist = await r.json();
+    } catch { /* non-blocking */ }
+  }
+
+  async function loadFlaggedCounts() {
+    if (!selectedProject) return;
+    try {
+      const r = await fetch(`/api/data/flagged/${selectedProject}`);
+      if (r.ok) flaggedCounts = await r.json();
+    } catch { /* non-blocking */ }
+  }
+
+  async function recoverFlagged() {
+    if (!selectedProject || recoverBusy) return;
+    recoverBusy = true;
+    recoverToast = null;
+    try {
+      const r = await fetch(`/api/data/flagged/${selectedProject}/recover`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quality_mode: 'permissive' }),
+      });
+      if (!r.ok) throw new Error((await r.json()).detail ?? r.statusText);
+      const { recovered, remaining } = await r.json();
+      recoverToast = `${recovered} paire${recovered > 1 ? 's' : ''} récupérée${recovered > 1 ? 's' : ''}`;
+      flaggedCounts = flaggedCounts ? { ...flaggedCounts, pairs_count: remaining } : null;
+      await loadSummary();
+      await loadScoreDist();
+    } catch (e: any) {
+      recoverToast = `Erreur : ${e.message}`;
+    } finally { recoverBusy = false; setTimeout(() => { recoverToast = null; }, 4000); }
   }
 
   // AI Audit
@@ -292,6 +345,64 @@
       </div>
     </div>
 
+    <!-- ── Score distribution histograms ──────────────────────────────────── -->
+    {#if scoreDist && scoreDist.total > 0}
+      <div class="card" style="margin-bottom:16px; padding:16px">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:8px">
+          <div class="card-title" style="margin:0">Distribution des scores — {scoreDist.total} paires gold</div>
+          {#if flaggedCounts && flaggedCounts.pairs_count > 0}
+            <div style="display:flex; align-items:center; gap:8px">
+              {#if recoverToast}
+                <span class="recover-toast" class:toast-ok={!recoverToast.startsWith('Erreur')}>{recoverToast}</span>
+              {/if}
+              <button class="btn btn-secondary btn-sm" onclick={recoverFlagged} disabled={recoverBusy}>
+                {recoverBusy ? '⟳ Récupération…' : `↩ Récupérer ${flaggedCounts.pairs_count} paires flaggées`}
+              </button>
+            </div>
+          {:else if recoverToast}
+            <span class="recover-toast toast-ok">{recoverToast}</span>
+          {/if}
+        </div>
+        <div class="score-hist-grid">
+          {#each [
+            { key: 'quality_score', label: 'Score qualité' },
+            { key: 'rag_score',     label: 'Score RAG' },
+            { key: 'kg_score',      label: 'Score KG' },
+          ] as dim}
+            {@const buckets = (scoreDist as any)[dim.key] as Bucket[]}
+            {#if buckets && buckets.length > 0}
+              {@const maxC = Math.max(...buckets.map((b: Bucket) => b.count), 1)}
+              <div class="mini-hist-wrap">
+                <div class="mini-hist-label">{dim.label}</div>
+                <div class="mini-hist">
+                  {#each buckets as b}
+                    {@const h = Math.max(2, Math.round(b.count / maxC * 60))}
+                    <div class="mini-hist-col" title="{b.range}: {b.count}">
+                      <div class="mini-hist-bar" style="height:{h}px"></div>
+                      <div class="mini-hist-x">{b.range.split('-')[0]}</div>
+                    </div>
+                  {/each}
+                </div>
+              </div>
+            {/if}
+          {/each}
+        </div>
+      </div>
+    {:else if flaggedCounts && flaggedCounts.pairs_count > 0}
+      <!-- No train data yet but there are flagged pairs -->
+      <div class="card" style="margin-bottom:16px; padding:14px; display:flex; align-items:center; justify-content:space-between; gap:12px">
+        <span style="font-size:13px; color:var(--text-dim)">{flaggedCounts.pairs_count} paires dans la file de récupération</span>
+        <div style="display:flex; align-items:center; gap:8px">
+          {#if recoverToast}
+            <span class="recover-toast" class:toast-ok={!recoverToast.startsWith('Erreur')}>{recoverToast}</span>
+          {/if}
+          <button class="btn btn-secondary btn-sm" onclick={recoverFlagged} disabled={recoverBusy}>
+            {recoverBusy ? '⟳ Récupération…' : `↩ Récupérer ${flaggedCounts.pairs_count} paires flaggées`}
+          </button>
+        </div>
+      </div>
+    {/if}
+
     <!-- Rejection breakdown per step -->
     <div class="card" style="margin-bottom:20px; padding:16px">
       <div class="card-title" style="margin-bottom:12px">Détail rejets par étape</div>
@@ -408,6 +519,86 @@
           </div>
         {/each}
       </div>
+
+      <!-- ── Rejected records list (collapsible) ───────────────────────────── -->
+      {#if rejectedItems.length > 0 || rejectedTotal > 0}
+        <div class="card" style="margin-bottom:16px; padding:0; overflow:hidden">
+          <button
+            style="width:100%; display:flex; align-items:center; justify-content:space-between; padding:12px 16px; background:none; border:none; cursor:pointer; text-align:left"
+            onclick={() => { rejectedOpen = !rejectedOpen; if (rejectedOpen && rejectedItems.length === 0) loadRejected(); }}
+          >
+            <span class="card-title" style="margin:0">Enregistrements rejetés</span>
+            <div style="display:flex; align-items:center; gap:8px">
+              <span class="tab-badge red">{rejectedTotal}</span>
+              <span style="font-size:11px; color:var(--text-dim)">{rejectedOpen ? '▲' : '▼'}</span>
+            </div>
+          </button>
+          {#if rejectedOpen}
+            <div style="padding:0 16px 16px">
+              {#if rejectedLoading}
+                <p class="text-muted" style="font-size:12px">Chargement…</p>
+              {:else}
+                <div class="step-filter-row" style="margin-bottom:12px; display:flex; gap:6px; flex-wrap:wrap">
+                  {#each STEPS as step}
+                    <button class="step-filter-btn" class:active={rejectedStep === step}
+                      onclick={() => { rejectedStep = step; rejectedPage = 0; loadRejected(); }}>
+                      {STEP_LABELS[step]}
+                    </button>
+                  {/each}
+                </div>
+                <div class="record-list">
+                  {#each rejectedItems as item, i}
+                    {@const [lLabel, lVal, rLabel, rVal] = displayCols(item)}
+                    {@const reason = (item as any)._flagged_reason as string | undefined}
+                    <div class="record-card card">
+                      <div class="record-header">
+                        <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap">
+                          <span class="mono text-muted" style="font-size:11px">#{rejectedPage * PAGE_SIZE + i}</span>
+                          {#if item.adapter_name}<span class="schema-badge adapter-badge">{String(item.adapter_name).split('-')[0]}</span>{/if}
+                          {#if reason === 'semantic_score_below_percentile'}
+                            <span class="flag-badge flag-rag">Score RAG/KG</span>
+                          {:else if reason === 'quality_score_below_percentile'}
+                            <span class="flag-badge flag-quality">Score qualité</span>
+                          {:else if reason}
+                            <span class="flag-badge flag-other">{reason}</span>
+                          {:else}
+                            <span class="reject-reason">{rejectReason(item)}</span>
+                          {/if}
+                          {#if (item as any)._semantic_score != null}
+                            <span class="text-muted" style="font-size:10px">RAG {((item as any)._rag_score ?? 0).toFixed(2)} · KG {((item as any)._kg_score ?? 0).toFixed(2)}</span>
+                          {/if}
+                        </div>
+                      </div>
+                      <div class="record-cols">
+                        <div class="record-col">
+                          <div class="col-label">{lLabel}</div>
+                          <pre class="record-text">{lVal.slice(0, 300)}{lVal.length > 300 ? '…' : ''}</pre>
+                        </div>
+                        <div class="record-col">
+                          <div class="col-label">{rLabel}</div>
+                          <pre class="record-text">{rVal.slice(0, 300)}{rVal.length > 300 ? '…' : ''}</pre>
+                        </div>
+                      </div>
+                      <div class="record-actions">
+                        <button class="btn btn-ghost" style="font-size:12px" onclick={() => openDetail(item, rejectedPage * PAGE_SIZE + i, 'rescue')}>
+                          ↩ Rescaper
+                        </button>
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+                {#if rejectedTotal > PAGE_SIZE}
+                  <div class="pagination" style="margin-top:12px">
+                    <button class="btn btn-ghost" disabled={rejectedPage === 0} onclick={() => { rejectedPage--; loadRejected(); }}>← Précédent</button>
+                    <span class="text-muted" style="font-size:12px">Page {rejectedPage + 1}</span>
+                    <button class="btn btn-ghost" disabled={(rejectedPage + 1) * PAGE_SIZE >= rejectedTotal} onclick={() => { rejectedPage++; loadRejected(); }}>Suivant →</button>
+                  </div>
+                {/if}
+              {/if}
+            </div>
+          {/if}
+        </div>
+      {/if}
     {/if}
 
     <!-- ── Sample tab ────────────────────────────────────────────────────── -->
@@ -729,4 +920,27 @@
 
   /* Card types from global CSS */
   .card.info { border-left:3px solid var(--accent); }
+
+  /* Score distribution histograms */
+  .score-hist-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:16px; }
+  .mini-hist-wrap { display:flex; flex-direction:column; gap:6px; }
+  .mini-hist-label { font-size:11px; color:var(--text-muted); font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
+  .mini-hist { display:flex; align-items:flex-end; gap:2px; height:68px; background:#fff; border:1px solid #E2E8F0; border-radius:6px; padding:6px 6px 0; }
+  .mini-hist-col { display:flex; flex-direction:column; align-items:center; flex:1; gap:1px; height:100%; justify-content:flex-end; }
+  .mini-hist-bar { width:100%; background:#0284C7; border-radius:2px 2px 0 0; min-height:2px; }
+  .mini-hist-x { font-size:8px; color:#94A3B8; white-space:nowrap; }
+
+  /* Flagged reason badges */
+  .flag-badge { font-size:10px; font-weight:700; padding:2px 7px; border-radius:999px; }
+  .flag-rag     { background:rgba(234,88,12,.12); color:#EA580C; }
+  .flag-quality { background:rgba(220,38,38,.12); color:#DC2626; }
+  .flag-other   { background:rgba(100,116,139,.12); color:#64748B; }
+
+  /* Flagged recovery toast */
+  .recover-toast { font-size:12px; padding:4px 10px; border-radius:6px; background:#F0FDF4; color:#166534; border:1px solid #BBF7D0; }
+  .recover-toast:not(.toast-ok) { background:#FEF2F2; color:#991B1B; border-color:#FECACA; }
+
+  /* Btn secondary */
+  .btn-secondary { background:#F1F5F9; color:#0F172A; border:1px solid #E2E8F0; }
+  .btn-secondary:hover { background:#E2E8F0; }
 </style>
