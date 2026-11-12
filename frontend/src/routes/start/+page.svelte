@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
-  import { createProject, advisorRecommend, advisorAlternatives, advisorEvaluateSelection, advisorFillGap, advisorResolveOverlap, advisorExtractDoc, advisorAnalyzePairs, advisorCrossProjectMatches, startCollect, startPipeline } from '$lib/api';
+  import { createProject, advisorRecommend, advisorRecommendStream, advisorAlternatives, advisorEvaluateSelection, advisorFillGap, advisorResolveOverlap, advisorExtractDoc, advisorAnalyzePairs, advisorCrossProjectMatches, startCollect, startPipeline } from '$lib/api';
+  import type { AdvisorStreamStep } from '$lib/api';
   import type { PairAnalysisResult, CrossProjectMatch } from '$lib/api';
   import type { AdvisorRecommendation, AdvisorAdapter, SelectionEval, ReviewItem, OverlapResolution } from '$lib/types';
   import Topbar from '$lib/components/Topbar.svelte';
@@ -18,8 +19,9 @@
   // Étape 1 — besoin
   let need       = $state('');
   let aiModel    = $state('us.anthropic.claude-sonnet-4-6');
-  let analyzing  = $state(false);
-  let analyzeErr = $state('');
+  let analyzing     = $state(false);
+  let analyzeErr    = $state('');
+  let analyzeSteps  = $state<AdvisorStreamStep[]>([]);
   let recommendation: AdvisorRecommendation | null = $state(null);
 
   // Documents techniques (CdC fonctionnel / technique)
@@ -330,10 +332,21 @@
 
   const DOMAINS = ['code','legal','hr','finance','defense','healthcare','sales','compliance','other'];
   const BASE_MODELS = [
-    { id: 'qwen2.5-coder-7b-4bit', label: 'Qwen 2.5 Coder 7B (recommandé)' },
-    { id: 'mistral-7b-instruct-4bit', label: 'Mistral 7B Instruct' },
-    { id: 'qwen2.5-14b-instruct-4bit', label: 'Qwen 2.5 14B (plus lent)' },
+    { id: 'qwen2.5-coder-7b-4bit',      label: 'Qwen 2.5 Coder 7B',  domains: ['code'] },
+    { id: 'mistral-7b-instruct-4bit',   label: 'Mistral 7B Instruct', domains: ['legal', 'hr', 'finance', 'defense', 'healthcare', 'sales', 'compliance', 'other'] },
+    { id: 'qwen2.5-14b-instruct-4bit',  label: 'Qwen 2.5 14B',        domains: [] }, // jamais recommandé par défaut
   ];
+
+  function recommendedModel(domain: string): string {
+    const match = BASE_MODELS.find(m => m.domains.includes(domain));
+    return match?.id ?? 'mistral-7b-instruct-4bit';
+  }
+
+  function modelLabel(id: string, domain: string): string {
+    const m = BASE_MODELS.find(m => m.id === id);
+    if (!m) return id;
+    return id === recommendedModel(domain) ? `${m.label} (recommandé)` : m.label;
+  }
 
   const STEPS = [
     { num: 1, label: 'Besoin client' },
@@ -343,16 +356,15 @@
 
   // ── Actions ───────────────────────────────────────────────────────────────
   async function analyzeNeed() {
-    if (!need.trim()) return;
-    analyzing = true; analyzeErr = ''; recommendation = null; selEval = null;
+    if (!need.trim() && uploadedDocs.length === 0) return;
+    analyzing = true; analyzeErr = ''; recommendation = null; selEval = null; analyzeSteps = [];
     try {
-      recommendation = await advisorRecommend(need.trim(), aiModel, uploadedDocs.map(d => d.text));
+      const effectiveNeed = need.trim() || `Analyse le document ${uploadedDocs.map(d => d.filename).join(', ')} et propose une architecture d'adapters adaptée.`;
+      recommendation = await advisorRecommendStream(effectiveNeed, aiModel, uploadedDocs.map(d => d.text), (s) => { analyzeSteps = [...analyzeSteps, s]; });
       adapters     = [...recommendation.recommendation.adapters];
       orchestrator = { ...recommendation.recommendation.orchestrator };
-      const firstAdapter = adapters[0];
-      if (firstAdapter && !projName) {
-        projName = firstAdapter.name.split('-').slice(0, 2).join('-');
-      }
+      if (recommendation.recommendation.recommended_model)
+        baseModel = recommendation.recommendation.recommended_model;
       step = 2;
       runWizardEval();
       loadCrossMatches();
@@ -662,11 +674,10 @@
         advisor_need:         need.trim(),
         advisor_notes:        recommendation?.recommendation.notes ?? '',
         rag_global:           recommendation?.recommendation.rag_global ?? false,
-        software_components:  recommendation?.recommendation.software_components ?? [],
         transform:            _deriveTransform(),
       });
       projectId = (proj as { id: string }).id;
-      goto(`/projects/${projectId}`);
+      goto(`/data/donnees?project=${projectId}`);
     } catch (e) {
       const msg = (e as Error).message ?? '';
       // 409 = project already exists — derive its ID and proceed rather than blocking
@@ -674,7 +685,7 @@
         const derivedId = projName.trim().toLowerCase().replace(/ /g, '-').replace(/_/g, '-');
         projectId = derivedId;
         createErr = '';
-        goto(`/projects/${derivedId}`);
+        goto(`/data/donnees?project=${derivedId}`);
       } else {
         createErr = msg;
       }
@@ -882,7 +893,6 @@
       need         = wizardHandoff.need;
       adapters     = [...wizardHandoff.adapters];
       orchestrator = wizardHandoff.orchestrator ? { ...wizardHandoff.orchestrator } : null;
-      if (adapters[0] && !projName) projName = adapters[0].name.split('-').slice(0, 2).join('-');
       clearWizardHandoff();
       step = 3; // architecture déjà validée dans l'advisor → aller directement à la config projet
       runWizardEval();
@@ -898,6 +908,7 @@
     void generatedPairsStore;
     if (adapters.length > 0 || orchestrator) saveAnalysis();
   });
+
 </script>
 
 <Topbar crumbs={[{ label: 'Démarrer un projet' }]}>
@@ -1088,7 +1099,7 @@
         {/if}
         <button
           class="btn btn-primary"
-          disabled={analyzing || !need.trim()}
+          disabled={analyzing || (!need.trim() && uploadedDocs.length === 0)}
           onclick={analyzeNeed}
         >
           {#if analyzing}<span class="spinner"></span> Analyse en cours…{:else if adapters.length > 0}↺ Relancer l'analyse{:else}Analyser →{/if}
@@ -1097,6 +1108,22 @@
           Passer (projet sans analyse)
         </button>
       </div>
+      {#if analyzing && analyzeSteps.length > 0}
+        <div class="analyze-steps">
+          {#each analyzeSteps as s}
+            <div class="analyze-step done">
+              <span class="step-check">✓</span>
+              <span>{s.message}</span>
+            </div>
+          {/each}
+          {#if analyzeSteps.length < 5}
+            <div class="analyze-step active">
+              <span class="spinner spinner-sm"></span>
+              <span>En cours...</span>
+            </div>
+          {/if}
+        </div>
+      {/if}
     </div>
 
   <!-- Étape 2 : architecture + sources & collecte (vue à onglets) -->
@@ -1170,31 +1197,16 @@
           {/if}
         </div>
 
+        {#if selEval}
         <div class="card mb-16">
           <div class="card-header mb-12">
-            <div class="card-title">Score équipe</div>
+            <div class="card-title">Analyse de l'architecture</div>
             {#if evalLoading}
               <span class="spinner spinner-sm"></span>
             {:else}
               <button class="btn-reeval" onclick={triggerEval} title="Réévaluer la sélection actuelle">↺ Réévaluer</button>
             {/if}
           </div>
-          {#if selEval}
-            <div class="team-score-hero">
-              <span class="team-score-value" style="color:{scoreColor(selEval.overall)}">{selEval.overall.toFixed(1)}</span>
-              <span class="team-score-label">/20</span>
-            </div>
-            <div class="score-bars mt-12">
-              {#each [['Couverture', selEval.coverage], ['Cohésion', selEval.cohesion], ['Équilibre', selEval.balance], ['Orchestrabilité', selEval.orchestrability]] as [label, val]}
-                <div class="score-bar-row">
-                  <span class="score-bar-label">{label}</span>
-                  <div class="score-bar-track">
-                    <div class="score-bar-fill" style="{scoreBar(val as number)};background:{scoreColor(val as number)}"></div>
-                  </div>
-                  <span class="score-bar-val" style="color:{scoreColor(val as number)}">{val}</span>
-                </div>
-              {/each}
-            </div>
             {#if visibleGaps.length}
               <div class="eval-section mt-12">
                 <div class="eval-section-header">
@@ -1301,10 +1313,10 @@
             {#if selEval.recommendation}
               <div class="eval-reco mt-12">{selEval.recommendation}</div>
             {/if}
-          {:else if !evalLoading}
-            <p class="hint">Sera calculé après l'analyse.</p>
-          {/if}
         </div>
+        {:else if evalLoading}
+        <div class="card mb-16"><span class="spinner spinner-sm"></span></div>
+        {/if}
 
       </div>
 
@@ -1704,7 +1716,7 @@
       <div class="wc-body">
         <div class="form-group">
           <div class="form-label">Nom du projet</div>
-          <div class="mono" style="padding:10px 14px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);font-size:14px;color:var(--ink)">{projName}</div>
+          <input class="form-input" bind:value={projName} placeholder="ex: direction-juridique" disabled={creating} />
         </div>
         <div class="grid-2 mt-12">
           <div class="form-group">
@@ -1726,7 +1738,7 @@
         <div class="form-group mt-12">
           <label class="form-label" for="base-model">Modèle de base</label>
           <select id="base-model" class="form-select" bind:value={baseModel}>
-            {#each BASE_MODELS as m}<option value={m.id}>{m.label}</option>{/each}
+            {#each BASE_MODELS as m}<option value={m.id}>{modelLabel(m.id, projDomain)}</option>{/each}
           </select>
         </div>
         {#if createErr}<div class="api-error mt-8">{createErr}</div>{/if}
@@ -1998,6 +2010,10 @@
   }
 
   .skip-btn { margin-left: auto; font-size: var(--text-xs); opacity: .7; }
+  .analyze-steps { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; padding: 12px 16px; background: var(--surface-2, #f8f9fa); border-radius: 8px; border: 1px solid var(--border, #e2e8f0); }
+  .analyze-step { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2, #475569); }
+  .analyze-step.done .step-check { color: #1baf7a; font-size: 14px; }
+  .analyze-step.active { color: var(--ink, #0F172A); }
 
   /* Architecture */
   .arch-summary { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; }

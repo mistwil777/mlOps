@@ -150,7 +150,7 @@
       const res = await fetch('/api/data/clean-raw', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ project_id: projectId }),
+        body: JSON.stringify({ project_id: projectId, quality_mode: qualityMode }),
       });
       if (!res.ok) throw new Error((await res.json()).detail ?? res.statusText);
       const { job_id } = await res.json();

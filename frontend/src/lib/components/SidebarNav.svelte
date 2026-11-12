@@ -34,9 +34,9 @@
       num: 1,
       label: 'Données',
       items: [
-        { href: '/advisor',        icon: '◑', label: 'Cadrage' },
-        { href: '/data/donnees',   icon: '◎', label: 'Données' },
+        { href: '/data/donnees',    icon: '◎', label: 'Données' },
         { href: '/data/review',    icon: '◈', label: 'Révision' },
+        { href: '/advisor',        icon: '◑', label: 'Cadrage' },
       ],
     },
     {

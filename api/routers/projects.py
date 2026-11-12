@@ -48,7 +48,6 @@ class ProjectCreate(BaseModel):
     advisor_need: str = ""
     advisor_notes: str = ""
     rag_global: bool = False
-    software_components: list[str] = []
     transform: dict[str, Any] = {}
 
 
@@ -137,8 +136,6 @@ def create_project(body: ProjectCreate):
         cfg["advisor_notes"] = body.advisor_notes
     if body.rag_global:
         cfg["rag_global"] = body.rag_global
-    if body.software_components:
-        cfg["software_components"] = body.software_components
     if body.transform:
         cfg["transform"] = body.transform
     if body.classification in ("confidentiel", "secret"):

@@ -32,7 +32,7 @@
   let p0ReportLoading  = $state(false);
   let p0ReportDone     = $state(false);
 
-  let p1ActiveTab = $state<'adapters' | 'score' | 'software' | 'critique'>('adapters');
+  let p1ActiveTab = $state<'adapters' | 'critique'>('adapters');
 
   let need  = $state('');
   let model = $state('us.anthropic.claude-sonnet-4-6');
@@ -101,7 +101,6 @@
         advisor_need: need.trim(),
         advisor_notes: result?.recommendation.notes ?? '',
         rag_global: result?.recommendation.rag_global ?? false,
-        software_components: result?.recommendation.software_components ?? [],
       });
       const id = (proj as { id: string }).id;
       goto(`/projects/${id}`);
@@ -732,16 +731,6 @@
       Adapters
       <span class="p1-tab-count">{selection.length}</span>
     </button>
-    <button class="p1-tab" class:active={p1ActiveTab === 'score'} onclick={() => p1ActiveTab = 'score'}>
-      Score &amp; Lacunes
-      {#if selEval}<span class="p1-tab-score" style="color:{scoreColor(selEval.overall)}">{selEval.overall.toFixed(1)}</span>{/if}
-    </button>
-    {#if result.recommendation.software_components?.length}
-    <button class="p1-tab" class:active={p1ActiveTab === 'software'} onclick={() => p1ActiveTab = 'software'}>
-      Logiciels
-      <span class="p1-tab-count">{result.recommendation.software_components.length}</span>
-    </button>
-    {/if}
     {#if result.auto_critique?.length}
     <button class="p1-tab p1-tab-critique" class:active={p1ActiveTab === 'critique'} onclick={() => p1ActiveTab = 'critique'}>
       Auto-critique
@@ -907,147 +896,6 @@
     </div><!-- end tab:adapters -->
     {/if}
 
-    <!-- ── Tab : Score & Lacunes ── -->
-    {#if p1ActiveTab === 'score'}
-    <div class="p1-tab-panel">
-      <div class="card-header mb-12">
-        <div class="card-title">Score équipe</div>
-        {#if evalLoading}
-          <span class="spinner spinner-sm"></span>
-        {:else if selectionDirty}
-          <button class="btn btn-ghost btn-sm" onclick={() => { selectionDirty = false; runEval(); }}>↺ Réévaluer</button>
-        {/if}
-      </div>
-      {#if selEval}
-        <div class="team-score-hero mb-12">
-          <span class="team-score-value" style="color:{scoreColor(selEval.overall)}">{selEval.overall.toFixed(1)}</span>
-          <span class="team-score-label">/20</span>
-        </div>
-        <div class="score-bars mb-16">
-          {#each [['Couverture', selEval.coverage], ['Cohésion', selEval.cohesion], ['Équilibre', selEval.balance], ['Orchestrabilité', selEval.orchestrability]] as [label, val]}
-            <div class="score-bar-row">
-              <span class="score-bar-label">{label}</span>
-              <div class="score-bar-track"><div class="score-bar-fill" style="{scoreBar(val as number)};background:{scoreColor(val as number)}"></div></div>
-              <span class="score-bar-val" style="color:{scoreColor(val as number)}">{val}</span>
-            </div>
-          {/each}
-        </div>
-        {@const visibleGaps = selEval.gaps.filter(g => !dismissedGaps.has(g))}
-        {@const isSufficient = selEval.overall >= 14}
-        {#if isSufficient && visibleGaps.length === 0}
-          <div class="sufficiency-banner"><span class="sufficiency-icon">✓</span><span>Sélection suffisante pour commencer l'entraînement</span></div>
-        {:else if !isSufficient && visibleGaps.length > 0}
-          {@const shownGaps = visibleGaps.slice(0, 3)}
-          {@const hiddenCount = visibleGaps.length - shownGaps.length}
-          <div class="eval-section mb-12">
-            <div class="eval-section-header mb-6">
-              <span class="meta-label">Lacunes ({visibleGaps.length})</span>
-              <button class="tag-fill-all" disabled={fillAllLoading} onclick={fillAllGaps}>
-                {#if fillAllLoading}<span class="spinner spinner-xs"></span>{/if} Tout couvrir
-              </button>
-            </div>
-            <div class="action-tags">
-              {#each shownGaps as g}
-                <div class="gap-row">
-                  <button class="tag tag-warn tag-action" class:tag-active={gapTarget === g} disabled={fillAllLoading} onclick={() => { openFillGap(g); p1ActiveTab = 'adapters'; }}>
-                    {#if gapLoading && gapTarget === g}<span class="spinner spinner-xs"></span>{:else}+{/if} {g}
-                  </button>
-                  <button class="gap-dismiss" onclick={() => dismissGap(g)}>✕</button>
-                </div>
-              {/each}
-              {#if hiddenCount > 0}<span class="gaps-hidden">+{hiddenCount} autre{hiddenCount > 1 ? 's' : ''}</span>{/if}
-            </div>
-            {#if fillAllResults.length > 0}
-              <div class="fill-all-results mt-10">
-                <div class="fill-all-header">
-                  <span class="meta-label" style="color:var(--green)">{fillAllResults.length} adapter{fillAllResults.length > 1 ? 's' : ''} générés</span>
-                  <button class="btn-use" onclick={applyAllGapAdapters}>+ Tous ajouter</button>
-                </div>
-                <div class="fill-all-list mt-6">
-                  {#each fillAllResults as r}
-                    <div class="fill-all-item">
-                      <span class="mono" style="font-size:11px;color:var(--accent)">{r.name}</span>
-                      <span style="font-size:11px;color:var(--text-muted)">{r.description}</span>
-                    </div>
-                  {/each}
-                </div>
-              </div>
-            {/if}
-          </div>
-        {/if}
-        {#if selEval.overlaps?.length}
-          <div class="eval-section mb-12">
-            <div class="eval-section-header mb-6">
-              <span class="meta-label">Chevauchements ({selEval.overlaps.length})</span>
-              <button class="tag-fill-all tag-fill-all-danger" disabled={resolveAllLoading} onclick={resolveAllOverlaps}>
-                {#if resolveAllLoading}<span class="spinner spinner-xs"></span>{/if} Tout résoudre
-              </button>
-            </div>
-            <div class="action-tags">
-              {#each selEval.overlaps as pair}
-                {@const pairKey = pair as [string, string]}
-                <button class="tag tag-danger tag-action"
-                  class:tag-active={overlapTarget?.[0] === pairKey[0] && overlapTarget?.[1] === pairKey[1]}
-                  disabled={resolveAllLoading} onclick={() => { openResolveOverlap(pairKey); p1ActiveTab = 'adapters'; }}>
-                  {#if overlapLoading && overlapTarget?.[0] === pairKey[0]}<span class="spinner spinner-xs"></span>{:else}⚡{/if}
-                  {pairKey.join(' ↔ ')}
-                </button>
-              {/each}
-            </div>
-            {#if resolveAllResults.length > 0}
-              <div class="fill-all-results mt-10" style="border-color:rgba(247,84,84,.2);background:rgba(247,84,84,.04)">
-                <div class="fill-all-header">
-                  <span class="meta-label" style="color:var(--red)">{resolveAllResults.length} résolution{resolveAllResults.length > 1 ? 's' : ''} prête{resolveAllResults.length > 1 ? 's' : ''}</span>
-                  <button class="btn-use" onclick={applyAllOverlapResolutions}>Tout appliquer</button>
-                </div>
-                <div class="fill-all-list mt-6">
-                  {#each resolveAllResults as { pair, resolution }}
-                    <div class="fill-all-item">
-                      <div style="display:flex;align-items:center;gap:6px">
-                        <span class="res-type res-type-{resolution.type}">{resolution.label}</span>
-                        <span class="mono" style="font-size:10px;color:var(--text-muted)">{pair.join(' ↔ ')}</span>
-                      </div>
-                      <span style="font-size:11px;color:var(--text-muted)">{resolution.explanation}</span>
-                    </div>
-                  {/each}
-                </div>
-              </div>
-            {/if}
-          </div>
-        {/if}
-        {#if selEval.recommendation}
-          <div class="eval-reco">{selEval.recommendation}</div>
-        {/if}
-      {:else if evalError}
-        <div class="api-error" style="font-size:11px">{evalError}</div>
-      {:else if !evalLoading}
-        <p class="hint">Sera calculé après l'analyse.</p>
-      {/if}
-    </div><!-- end tab:score -->
-    {/if}
-
-    <!-- ── Tab : Logiciels ── -->
-    {#if p1ActiveTab === 'software' && result.recommendation.software_components?.length}
-    <div class="p1-tab-panel">
-      <p class="hint mb-12">Ces composants doivent être implémentés en code déterministe — pas de fine-tuning nécessaire.</p>
-      <ul class="sw-accordion__list" style="border:1px solid rgba(251,146,60,.25);border-radius:var(--radius)">
-        {#each result.recommendation.software_components as comp}
-          {@const sep = comp.indexOf(' — ')}
-          {@const name = sep >= 0 ? comp.slice(0, sep) : comp}
-          {@const desc = sep >= 0 ? comp.slice(sep + 3) : ''}
-          <li class="sw-accordion__item">
-            <button class="sw-accordion__item-btn" onclick={() => swExpanded = swExpanded === comp ? null : comp}>
-              <span class="sw-accordion__item-name">{name}</span>
-              <span class="sw-accordion__item-chevron" class:open={swExpanded === comp}>▾</span>
-            </button>
-            {#if swExpanded === comp && desc}
-              <div class="sw-accordion__item-desc">{desc}</div>
-            {/if}
-          </li>
-        {/each}
-      </ul>
-    </div>
-    {/if}
 
     <!-- ── Tab : Auto-critique ── -->
     {#if p1ActiveTab === 'critique' && result.auto_critique?.length}

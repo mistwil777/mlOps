@@ -14,18 +14,16 @@
   let expanded = $state(false);
   let showDepth = $state(false);
 
-  function scoreColor(s: number): string {
-    if (s >= 15) return 'var(--green)';
-    if (s >= 10) return 'var(--accent)';
-    return 'var(--red)';
-  }
-
-  function scoreBarWidth(s: number): string {
-    return `width:${(s / 20) * 100}%`;
-  }
-
   const isOrchestrator = $derived(adapter.role === 'orchestrator');
   const hasScores      = $derived(adapter.score !== undefined);
+
+  type Priority = { label: string; cls: string };
+  function getPriority(score: number): Priority {
+    if (score >= 15) return { label: 'Critique',   cls: 'priority-critical' };
+    if (score >= 10) return { label: 'Standard',   cls: 'priority-standard' };
+    return              { label: 'Optionnel',  cls: 'priority-optional' };
+  }
+  const priority = $derived(hasScores ? getPriority(adapter.score!) : null);
 </script>
 
 <div
@@ -44,13 +42,8 @@
     </div>
     <div class="l1-right" onclick={e => e.stopPropagation()} role="presentation">
       <span class="pairs-count">~{adapter.estimated_pairs}</span>
-      {#if hasScores}
-        <span class="mini-score" style="color:{scoreColor(adapter.score!)}">
-          ◉ {adapter.score}/20
-        </span>
-        <span class="mini-score" style="color:{scoreColor(adapter.team_score!)}" title="Score équipe">
-          ⬡ {adapter.team_score}/20
-        </span>
+      {#if priority}
+        <span class="priority-badge {priority.cls}">{priority.label}</span>
       {/if}
       {#if onAlternatives}
         <button class="icon-btn" title="Alternatives" onclick={() => onAlternatives!(adapter)}>⟳</button>
@@ -71,20 +64,8 @@
       {/if}
 
       {#if hasScores}
-        <div class="scores-row mt-10">
-          <div class="score-item">
-            <span class="score-label">Solo</span>
-            <div class="score-track"><div class="score-fill" style="{scoreBarWidth(adapter.score!)};background:{scoreColor(adapter.score!)}"></div></div>
-            <span class="score-val" style="color:{scoreColor(adapter.score!)}">{adapter.score}/20</span>
-          </div>
-          <div class="score-item">
-            <span class="score-label">Équipe</span>
-            <div class="score-track"><div class="score-fill" style="{scoreBarWidth(adapter.team_score!)};background:{scoreColor(adapter.team_score!)}"></div></div>
-            <span class="score-val" style="color:{scoreColor(adapter.team_score!)}">{adapter.team_score}/20</span>
-          </div>
-        </div>
         {#if adapter.team_note}
-          <p class="team-note mt-6">{adapter.team_note}</p>
+          <p class="team-note mt-10">{adapter.team_note}</p>
         {/if}
         {#if adapter.pros?.length || adapter.cons?.length}
           <div class="pros-cons mt-10">
@@ -150,7 +131,11 @@
   .chevron      { font-size: 11px; color: var(--text-muted); width: 12px; }
   .adapter-name { font-weight: 600; font-family: var(--font-mono); font-size: 13px; }
   .pairs-count  { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); }
-  .mini-score   { font-size: 11px; font-weight: 600; font-family: var(--font-mono); }
+
+  .priority-badge { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 999px; letter-spacing: 0.03em; }
+  .priority-critical { background: rgba(27, 175, 122, 0.12); color: var(--green); border: 1px solid rgba(27, 175, 122, 0.3); }
+  .priority-standard { background: rgba(2, 132, 199, 0.10); color: var(--accent); border: 1px solid rgba(2, 132, 199, 0.25); }
+  .priority-optional { background: var(--surface-2); color: var(--text-muted); border: 1px solid var(--border); }
   .ml-6 { margin-left: 6px; }
   .ml-4 { margin-left: 4px; }
 
@@ -161,12 +146,6 @@
   }
   .adapter-desc { font-size: 12px; color: var(--text-muted); margin: 10px 0 0; line-height: 1.5; }
 
-  .scores-row { display: flex; flex-direction: column; gap: 5px; }
-  .score-item { display: flex; align-items: center; gap: 8px; }
-  .score-label { font-size: 11px; color: var(--text-muted); width: 44px; flex-shrink: 0; }
-  .score-track { flex: 1; height: 5px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
-  .score-fill  { height: 100%; border-radius: 3px; transition: width 300ms ease; }
-  .score-val   { font-size: 11px; font-weight: 600; width: 36px; text-align: right; flex-shrink: 0; }
   .team-note   { font-size: 11px; color: var(--text-muted); font-style: italic; line-height: 1.4; margin: 0; }
   .rag-note      { font-size: 11px; color: var(--accent); margin: 0; }
   .no-score-hint { font-size: 11px; color: var(--text-muted); font-style: italic; margin: 0; }

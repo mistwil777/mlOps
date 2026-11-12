@@ -12,6 +12,7 @@ from typing import Any, Optional
 import anthropic
 import yaml
 from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/advisor", tags=["advisor"])
@@ -181,9 +182,8 @@ with local fine-tuned models, nothing else.
 
 MODE B — Greenfield (no existing system, only a business need):
 Reason through the full solution: which sub-tasks require LLM generation → become \
-adapters; which sub-tasks are better served by deterministic software → list them in \
-the "software_components" field of your JSON output so the engineering team builds \
-them as code. Be explicit about the boundary.
+adapters. Focus exclusively on the generative tasks — deterministic components belong \
+to the application layer, not to the fine-tuning scope.
 
 Other rules:
 - Each adapter covers a precise sub-domain (not a broad domain)
@@ -195,7 +195,7 @@ Other rules:
 - Estimated pairs must be realistic for LoRA fine-tuning (200-2000 per adapter)
 - Output ONLY valid JSON, no markdown, no explanation outside the JSON structure
 - All text fields (description, pros, cons, team_note, notes, data_types, \
-  data_sources, software_components) MUST be written in French
+  data_sources) MUST be written in French
 """
 
 _USER_TEMPLATE = """\
@@ -207,7 +207,7 @@ Step 1 — Determine the mode:
   Deterministic components already implemented must NOT become adapters.
 - If no existing system is described (greenfield): apply MODE B. \
   Reason through the full solution. For each sub-task, decide: LLM needed → adapter; \
-  deterministic code sufficient → add to "software_components" list.
+  deterministic code sufficient → out of scope, ignore it.
 
 Step 2 — For each adapter score it:
 - score (0-20): standalone quality
@@ -273,12 +273,9 @@ Return ONLY a raw JSON object (no markdown, no prose, start immediately with {{)
   }},
   "rag_global": false,
   "domain": "code",
+  "recommended_model": "qwen2.5-coder-7b-4bit",
   "task_type": "generation",
   "notes": "deployment notes",
-  "software_components": [
-    "composant déterministe 1 — description courte",
-    "composant déterministe 2 — description courte"
-  ],
   "auto_critique": [
     {{
       "adapter": "nom-adapter-ou-null",
@@ -300,6 +297,7 @@ If no issues found, return an empty array. Be honest — this self-critique feed
 
 The "domain" field MUST be one of: code, legal, hr, finance, defense, healthcare, sales, compliance, customer-support, other.
 The "task_type" field MUST be one of: migration, summarization, classification, qa, generation, review, extraction, translation, refactoring, documentation.
+The "recommended_model" field MUST be one of: "qwen2.5-coder-7b-4bit" (code/migration tasks only), "mistral-7b-instruct-4bit" (all other domains — legal, hr, finance, etc.), "qwen2.5-14b-instruct-4bit" (only if the task requires deep reasoning AND latency is not critical).
 Choose the values that best match the client need — they drive the data pipeline scoring strategy.
 """
 
@@ -609,17 +607,17 @@ def _update_project_config(project: str, recommendation: dict[str, Any], need: s
     cfg["multi_adapter"] = True
     cfg["adapters"] = adapter_entries
 
-    # domain and task_type are pipeline-critical — always update when advisor provides them
+    # domain, task_type and recommended_model are pipeline-critical — always update when advisor provides them
     if recommendation.get("domain"):
         cfg["domain"] = recommendation["domain"]
     if recommendation.get("task_type"):
         cfg["task_type"] = recommendation["task_type"]
+    if recommendation.get("recommended_model"):
+        cfg["recommended_model"] = recommendation["recommended_model"]
 
     # Persist top-level recommendation context
     if recommendation.get("notes"):
         cfg["advisor_notes"] = recommendation["notes"]
-    if recommendation.get("software_components"):
-        cfg["software_components"] = recommendation["software_components"]
     if recommendation.get("rag_global") is not None:
         cfg["rag_global"] = recommendation["rag_global"]
     if need:
@@ -1352,7 +1350,7 @@ def get_recommendation(project_id: str) -> dict[str, Any]:
             "orchestrator":        orchestrator,
             "rag_global":          cfg.get("rag_global", False),
             "notes":               cfg.get("advisor_notes") or cfg.get("description", ""),
-            "software_components": cfg.get("software_components", []),
+            "recommended_model":   cfg.get("recommended_model", ""),
         },
     }
 
@@ -1424,6 +1422,119 @@ def recommend(body: AdvisorRequest) -> dict[str, Any]:
         "auto_critique": critique_items,
         "critique_submitted": len(submitted_ids),
     }
+
+
+@router.post("/recommend/stream")
+async def recommend_stream(body: AdvisorRequest) -> StreamingResponse:
+    """Like /recommend but streams SSE progress events while the LLM runs."""
+
+    _STEPS = [
+        "Lecture du document...",
+        "Identification des cas d'usage...",
+        "Proposition d'adapters en cours...",
+        "Validation de l'architecture...",
+        "Finalisation...",
+    ]
+
+    async def _generate():
+        def _sse(obj: dict) -> str:
+            return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n"
+
+        # Step 1 immediately
+        yield _sse({"type": "step", "message": _STEPS[0], "step": 1, "total": 5})
+
+        # Launch LLM call in background thread (sync function)
+        loop = asyncio.get_event_loop()
+        llm_task = loop.run_in_executor(
+            None,
+            lambda: _call_claude(body.model, body.need, body.doc_contexts or []),
+        )
+
+        # Emit steps 2-4 while LLM runs
+        for i, msg in enumerate(_STEPS[1:4], start=2):
+            await asyncio.sleep(2)
+            if not llm_task.done():
+                yield _sse({"type": "step", "message": msg, "step": i, "total": 5})
+
+        # Await LLM result
+        try:
+            raw = await llm_task
+        except anthropic.AuthenticationError:
+            yield _sse({"type": "error", "message": "Invalid Anthropic API key"})
+            return
+        except anthropic.APIError as exc:
+            yield _sse({"type": "error", "message": f"Anthropic API error: {exc}"})
+            return
+
+        yield _sse({"type": "step", "message": _STEPS[4], "step": 5, "total": 5})
+
+        try:
+            recommendation = _parse_recommendation(raw)
+        except (json.JSONDecodeError, KeyError) as exc:
+            yield _sse({"type": "error", "message": f"Model returned invalid JSON: {exc}"})
+            return
+
+        config_updated = None
+        if body.project:
+            try:
+                _update_project_config(body.project, recommendation, need=body.need)
+                config_updated = f"config/projects/{body.project}.yaml"
+            except FileNotFoundError:
+                pass
+
+        n_specialists = len(recommendation.get("adapters", []))
+        total_pairs = sum(a.get("estimated_pairs", 0) for a in recommendation.get("adapters", []))
+        total_pairs += recommendation.get("orchestrator", {}).get("estimated_pairs", 0)
+
+        critique_items = recommendation.pop("auto_critique", []) or []
+        submitted_ids: list[str] = []
+        if critique_items:
+            try:
+                from pipeline.utils.memory_store import MemoryStore
+                from pipeline.utils.llm_judge import run_judge_pipeline
+                store = MemoryStore()
+                for item in critique_items:
+                    if not item.get("observation"):
+                        continue
+                    adapter_tag = f"[{item['adapter']}] " if item.get("adapter") else ""
+                    cid = store.submit_correction(
+                        phase="adapter-recommendation",
+                        description=f"{adapter_tag}{item.get('human_question') or item.get('observation', '')}",
+                        observed_value=item.get("observation", ""),
+                        expected_value="",
+                        rationale=f"Self-critique ({item.get('type','other')}) — confidence {item.get('confidence', 0.0)}",
+                        context_need=body.need[:200] if body.need else None,
+                        reported_by="self_critique",
+                        confidence=float(item.get("confidence", 0.7)),
+                        source="llm_consensus",
+                    )
+                    submitted_ids.append(cid)
+                    import threading
+                    threading.Thread(target=run_judge_pipeline, args=(cid,), daemon=True).start()
+            except Exception:
+                pass
+
+        result = {
+            "project": body.project,
+            "n_specialists": n_specialists,
+            "total_estimated_pairs": total_pairs,
+            "recommendation": recommendation,
+            "config_updated": config_updated,
+            "auto_critique": critique_items,
+            "critique_submitted": len(submitted_ids),
+        }
+        yield _sse({"type": "result", "data": result})
+        yield _sse({"type": "done"})
+
+    return StreamingResponse(
+        _generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
 
 
 # ── Suggest Phase 0 params ────────────────────────────────────────────────────

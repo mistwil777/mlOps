@@ -80,6 +80,43 @@ export const advisorRecommend = (need: string, model?: string, docContexts?: str
     body: JSON.stringify({ need, model: model ?? 'us.anthropic.claude-sonnet-4-6', doc_contexts: docContexts ?? [] }),
   });
 
+export interface AdvisorStreamStep { message: string; step: number; total: number; }
+
+export async function advisorRecommendStream(
+  need: string,
+  model: string | undefined,
+  docContexts: string[] | undefined,
+  onStep: (s: AdvisorStreamStep) => void,
+): Promise<AdvisorRecommendation> {
+  const r = await fetch(`${BASE}/advisor/recommend/stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ need, model: model ?? 'us.anthropic.claude-sonnet-4-6', doc_contexts: docContexts ?? [] }),
+  });
+  if (!r.ok || !r.body) throw new Error(`${r.status} ${r.statusText}`);
+
+  const reader = r.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const parts = buf.split('\n\n');
+    buf = parts.pop() ?? '';
+    for (const part of parts) {
+      const line = part.trim();
+      if (!line.startsWith('data:')) continue;
+      const payload = JSON.parse(line.slice(5).trim());
+      if (payload.type === 'step') onStep(payload as AdvisorStreamStep);
+      else if (payload.type === 'error') throw new Error(payload.message);
+      else if (payload.type === 'result') return payload.data as AdvisorRecommendation;
+    }
+  }
+  throw new Error('Stream ended without result');
+}
+
 export const advisorAlternatives = (need: string, adapter_name: string, adapter_desc: string, current_selection: AdvisorAdapter[], model?: string) =>
   req<AdvisorAdapter[]>('/advisor/alternatives', {
     method: 'POST',
