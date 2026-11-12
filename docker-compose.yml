@@ -1,10 +1,52 @@
-# Dev services — Qdrant + MLflow
+# Dev services — Qdrant + MLflow + Redis + Celery
 # MLflow logging is internal only (never in client bundle).
 # Inference uses Bedrock (advisor) or Ollama (local train-time generation).
 
 version: "3.9"
 
 services:
+
+  # ── Redis — Celery broker + result backend ──────────────────────────────
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── Celery worker ───────────────────────────────────────────────────────
+  celery-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    command: celery -A api.celery_app worker --loglevel=info --concurrency=4 -Q default
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+      - PYTHONPATH=/app
+    volumes:
+      - .:/app
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── Flower — Celery monitoring dashboard ───────────────────────────────
+  flower:
+    image: mher/flower:2.0
+    command: celery --broker=redis://redis:6379/0 flower --port=5555
+    ports:
+      - "5555:5555"
+    depends_on:
+      - redis
+      - celery-worker
+    restart: unless-stopped
 
   # ── MLflow tracking server ──────────────────────────────────────────────
   mlflow:
@@ -88,3 +130,4 @@ services:
 volumes:
   qdrant_data:
   neo4j_data:
+  redis_data:

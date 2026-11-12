@@ -1328,15 +1328,10 @@ def _find_running_job(project_id: str, job_type: str) -> str | None:
 
 @router.post("/clean-raw")
 async def run_clean_raw(req: CleanRawRequest) -> dict[str, str]:
+    from api.tasks.pipeline import clean_raw as _clean_raw_task  # noqa: PLC0415
     _load_project_config(req.project_id)
-    # 409 if a clean_raw job is already running for this project
-    existing = _find_running_job(req.project_id, "clean_raw")
-    if existing:
-        raise HTTPException(409, f"Un clean_raw est déjà en cours pour ce projet (job_id={existing}). Attendez sa fin ou annulez-le.")
-    job_id = str(uuid.uuid4())[:8]
-    _JOBS[job_id] = {"status": "running", "lines": [], "project_id": req.project_id, "job_type": "clean_raw"}
-    asyncio.create_task(_run_clean_raw(job_id, req))
-    return {"job_id": job_id}
+    task = _clean_raw_task.delay(req.project_id, req.adapter, req.dry_run)
+    return {"job_id": task.id, "task_id": task.id}
 
 
 @router.delete("/clean-raw/{job_id}")
@@ -1401,7 +1396,9 @@ async def _run_clean_raw(job_id: str, req: CleanRawRequest) -> None:
 
 @router.get("/clean-raw/{job_id}/stream")
 async def stream_clean_raw(job_id: str) -> EventSourceResponse:
-    return await stream_collect(job_id)  # reuse same SSE streaming logic
+    # Redirect to unified task SSE endpoint (Celery task_id == job_id)
+    from api.routers.tasks import stream_task  # noqa: PLC0415
+    return await stream_task(job_id)
 
 
 # ── Cleaning Pipeline ─────────────────────────────────────────────────────────
@@ -1522,14 +1519,10 @@ async def generate_pairs_estimate(project_id: str) -> dict[str, Any]:
 @router.post("/generate-pairs")
 async def start_generate_pairs(req: GenerateRequest) -> dict[str, str]:
     """Generate missing pairs for all adapters in one pass."""
+    from api.tasks.pipeline import generate_pairs as _gen_pairs_task  # noqa: PLC0415
     _load_project_config(req.project_id)
-    existing = _find_running_job(req.project_id, "generate_pairs")
-    if existing:
-        raise HTTPException(409, f"Une génération est déjà en cours (job_id={existing})")
-    job_id = str(uuid.uuid4())[:8]
-    _JOBS[job_id] = {"status": "running", "lines": [], "project_id": req.project_id, "job_type": "generate_pairs"}
-    asyncio.create_task(_run_generate_pairs(job_id, req))
-    return {"job_id": job_id}
+    task = _gen_pairs_task.delay(req.project_id, req.dry_run)
+    return {"job_id": task.id, "task_id": task.id}
 
 
 async def _run_generate_pairs(job_id: str, req: GenerateRequest) -> None:
@@ -1560,24 +1553,9 @@ async def _run_generate_pairs(job_id: str, req: GenerateRequest) -> None:
 
 
 @router.get("/pipeline/{job_id}/stream")
-async def stream_pipeline(job_id: str):
-    if job_id not in _JOBS:
-        raise HTTPException(404, "Job not found")
-
-    async def generator():
-        sent = 0
-        while True:
-            job = _JOBS[job_id]
-            lines = job["lines"]
-            while sent < len(lines):
-                yield {"event": "log", "data": json.dumps({"line": lines[sent]})}
-                sent += 1
-            if job["status"] != "running":
-                yield {"event": "done", "data": json.dumps({"status": job["status"]})}
-                return
-            await asyncio.sleep(0.5)
-
-    return EventSourceResponse(generator())
+async def stream_pipeline(job_id: str) -> EventSourceResponse:
+    from api.routers.tasks import stream_task  # noqa: PLC0415
+    return await stream_task(job_id)
 
 
 # ── Data Health ───────────────────────────────────────────────────────────────
@@ -2391,7 +2369,7 @@ async def ingestion_context_stats(project_id: str) -> dict[str, Any]:
     }
 
 
-# ── Batch norm upload ─────────────────────────────────────────────────────────
+# ── Batch norm upload (async via Celery) ─────────────────────────────────────
 
 @router.post("/ingestion-context/{project_id}/norm/batch")
 async def ingest_norm_batch(
@@ -2399,95 +2377,41 @@ async def ingest_norm_batch(
     files: list[UploadFile] = File(...),
     source_description: str = "norm",
 ) -> dict[str, Any]:
-    """Upload multiple norm/template documents at once → RAG + KG."""
+    """Save uploaded files to /tmp then dispatch Celery task — returns task_id immediately."""
+    from api.tasks.indexation import index_norms  # noqa: PLC0415
+
     config = _load_project_config(project_id)
     domain = config.get("domain", "general")
-    results: list[dict[str, Any]] = []
 
-    from pair_forge.extractors import extract_content  # noqa: PLC0415
-    from pipeline.rag_index import IngestionRagIndex   # noqa: PLC0415
-
-    rag = IngestionRagIndex(project_id)
-
-    try:
-        from pipeline.utils.knowledge_graph import ProjectKG  # noqa: PLC0415
-        import boto3  # noqa: PLC0415
-        from botocore.config import Config as BotoConfig  # noqa: PLC0415
-
-        def _llm_fn(prompt: str, cfg: dict, max_tokens: int = 1024) -> str | None:
-            client = boto3.client(
-                "bedrock-runtime", region_name="us-east-1",
-                config=BotoConfig(connect_timeout=10, read_timeout=60),
-            )
-            resp = client.converse(
-                modelId="us.amazon.nova-pro-v1:0",
-                messages=[{"role": "user", "content": [{"text": prompt}]}],
-                inferenceConfig={"maxTokens": max_tokens, "temperature": 0.1},
-            )
-            return resp["output"]["message"]["content"][0]["text"].strip()
-
-        kg = ProjectKG(project_id)
-    except Exception:  # noqa: BLE001
-        kg = None
-        _llm_fn = None  # type: ignore[assignment]
-
+    file_paths: list[str] = []
     for upload in files:
         content_bytes = await upload.read()
         if len(content_bytes) > 50 * 1024 * 1024:
-            results.append({"file": upload.filename, "error": "File too large (max 50 MB)"})
             continue
         tmp = Path(f"/tmp/_mlops_norm_{project_id}_{upload.filename}")
         tmp.write_bytes(content_bytes)
-        try:
-            text, method = extract_content(tmp)
-        except Exception as exc:  # noqa: BLE001
-            results.append({"file": upload.filename, "error": f"Extraction failed: {exc}"})
-            tmp.unlink(missing_ok=True)
-            continue
-        finally:
-            tmp.unlink(missing_ok=True)
+        file_paths.append(str(tmp))
 
-        if not text.strip():
-            results.append({"file": upload.filename, "error": "No text extracted"})
-            continue
+    if not file_paths:
+        raise HTTPException(400, "Aucun fichier valide (max 50 MB par fichier)")
 
-        rag.ingest_norm(text, source=source_description, domain=domain)
-        kg_ok = False
-        if kg is not None and _llm_fn is not None:
-            try:
-                kg.ingest_norm_document(text, domain=domain, llm_fn=_llm_fn)
-                kg_ok = True
-            except Exception:  # noqa: BLE001
-                pass
-
-        results.append({
-            "file": upload.filename,
-            "method": method,
-            "text_length": len(text),
-            "kg_ingested": kg_ok,
-        })
-
-    return {
-        "project_id": project_id,
-        "files_processed": len(results),
-        "rag_chunks_total": rag.count,
-        "results": results,
-    }
+    task = index_norms.delay(project_id, file_paths, domain, source_description)
+    return {"task_id": task.id, "files_queued": len(file_paths)}
 
 
-# ── Batch raw data upload (store only, no processing) ────────────────────────
+# ── Batch raw data upload (async via Celery) ─────────────────────────────────
 
 @router.post("/raw-files/{project_id}")
 async def upload_raw_files(
     project_id: str,
     files: list[UploadFile] = File(...),
 ) -> dict[str, Any]:
-    """Store raw terrain files in datalake/raw/ — no processing, no pair generation."""
-    _load_project_config(project_id)
-    raw_dir = Path(f"datalake/projects/{project_id}/raw")
-    raw_dir.mkdir(parents=True, exist_ok=True)
+    """Save uploaded files to /tmp then dispatch Celery task — returns task_id immediately."""
+    from api.tasks.indexation import store_raw_files  # noqa: PLC0415
 
-    saved: list[str] = []
+    _load_project_config(project_id)
+
+    file_paths: list[str] = []
     errors: list[dict[str, str]] = []
 
     for upload in files:
@@ -2495,17 +2419,15 @@ async def upload_raw_files(
         if len(content) > 200 * 1024 * 1024:
             errors.append({"file": upload.filename, "error": "File too large (max 200 MB)"})
             continue
-        dest = raw_dir / upload.filename
-        dest.write_bytes(content)
-        saved.append(upload.filename)
+        tmp = Path(f"/tmp/_mlops_raw_{project_id}_{upload.filename}")
+        tmp.write_bytes(content)
+        file_paths.append(str(tmp))
 
-    return {
-        "project_id": project_id,
-        "saved": saved,
-        "errors": errors,
-        "raw_dir": str(raw_dir),
-        "total_files": len(list(raw_dir.iterdir())),
-    }
+    if not file_paths:
+        raise HTTPException(400, "Aucun fichier valide")
+
+    task = store_raw_files.delay(project_id, file_paths)
+    return {"task_id": task.id, "files_queued": len(file_paths), "errors": errors}
 
 
 @router.get("/raw-files/{project_id}")

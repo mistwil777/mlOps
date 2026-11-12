@@ -108,12 +108,15 @@
     try {
       const res = await fetch(`/api/data/ingestion-context/${projectId}/norm/batch`, { method: 'POST', body: fd });
       if (!res.ok) throw new Error((await res.json()).detail ?? res.statusText);
-      const data = await res.json();
-      const ok = data.results.filter((r: any) => !r.error).length;
-      const err = data.results.filter((r: any) => r.error).length;
-      normLog = `✓ ${ok} fichier(s) indexé(s) — ${data.rag_chunks_total} chunks RAG${err ? ` · ${err} erreur(s)` : ''}`;
+      const { task_id, files_queued } = await res.json();
+      normLog = `↑ ${files_queued} fichier(s) en cours d'indexation…`;
       normFiles = null;
-      await loadAll();
+      await streamTask(task_id, (msg) => { normLog = msg; }, async (result) => {
+        const ok = (result?.results ?? []).filter((r: any) => !r.error).length;
+        const err = (result?.results ?? []).filter((r: any) => r.error).length;
+        normLog = `✓ ${ok} fichier(s) indexé(s) — ${result?.rag_chunks_total ?? '?'} chunks RAG${err ? ` · ${err} erreur(s)` : ''}`;
+        await loadAll();
+      });
     } catch (e: any) {
       normLog = `Erreur : ${e.message}`;
     } finally { normBusy = false; }
@@ -133,10 +136,13 @@
     try {
       const res = await fetch(`/api/data/raw-files/${projectId}`, { method: 'POST', body: fd });
       if (!res.ok) throw new Error((await res.json()).detail ?? res.statusText);
-      const data = await res.json();
-      terrainLog = `✓ ${data.saved.length} fichier(s) stocké(s) dans datalake/raw/`;
+      const { task_id, files_queued } = await res.json();
+      terrainLog = `↑ ${files_queued} fichier(s) en cours de stockage…`;
       terrainFiles = null;
-      await loadAll();
+      await streamTask(task_id, (msg) => { terrainLog = msg; }, async (result) => {
+        terrainLog = `✓ ${result?.saved?.length ?? files_queued} fichier(s) stocké(s) dans datalake/raw/`;
+        await loadAll();
+      });
     } catch (e: any) {
       terrainLog = `Erreur : ${e.message}`;
     } finally { terrainBusy = false; }
@@ -153,8 +159,8 @@
         body: JSON.stringify({ project_id: projectId, quality_mode: qualityMode }),
       });
       if (!res.ok) throw new Error((await res.json()).detail ?? res.statusText);
-      const { job_id } = await res.json();
-      await streamJob(`/api/data/clean-raw/${job_id}/stream`, cleanLines, (lines) => { cleanLines = lines; });
+      const { task_id } = await res.json();
+      await streamJob(task_id, cleanLines, (lines) => { cleanLines = lines; });
       await loadAll();
       cleanDone = true;
     } catch (e: any) {
@@ -173,8 +179,8 @@
         body: JSON.stringify({ project_id: projectId }),
       });
       if (!res.ok) throw new Error((await res.json()).detail ?? res.statusText);
-      const { job_id } = await res.json();
-      await streamJob(`/api/data/pipeline/${job_id}/stream`, pairsLines, (lines) => { pairsLines = lines; });
+      const { task_id } = await res.json();
+      await streamJob(task_id, pairsLines, (lines) => { pairsLines = lines; });
       await loadAll();
       pairsDone = true;
     } catch (e: any) {
@@ -193,8 +199,8 @@
         body: JSON.stringify({ project_id: projectId, quality_mode: qualityMode }),
       });
       if (!res.ok) throw new Error((await res.json()).detail ?? res.statusText);
-      const { job_id } = await res.json();
-      await streamJob(`/api/data/pipeline/${job_id}/stream`, cleanPairsLines, (lines) => { cleanPairsLines = lines; });
+      const { task_id } = await res.json();
+      await streamJob(task_id, cleanPairsLines, (lines) => { cleanPairsLines = lines; });
       await loadAll();
       cleanPairsDone = true;
     } catch (e: any) {
@@ -202,15 +208,45 @@
     } finally { cleanPairsBusy = false; }
   }
 
-  // ── SSE helper ────────────────────────────────────────────────────
-  function streamJob(url: string, lines: string[], setLines: (l: string[]) => void): Promise<void> {
+  // ── Task SSE helpers (Celery) ─────────────────────────────────────
+  function streamTask(
+    taskId: string,
+    onProgress: (msg: string) => void,
+    onDone: (result: any) => Promise<void>,
+  ): Promise<void> {
     return new Promise((resolve) => {
-      const es = new EventSource(url);
-      es.onmessage = (e) => {
-        const line = e.data as string;
-        if (line.startsWith('[DONE]') || line.startsWith('[SUMMARY]')) { es.close(); resolve(); }
-        else { setLines([...lines, line]); lines = [...lines, line]; }
-      };
+      const es = new EventSource(`/api/tasks/${taskId}/stream`);
+      es.addEventListener('status', (e) => {
+        try {
+          const info = JSON.parse((e as MessageEvent).data);
+          if (info.message) onProgress(info.message);
+        } catch {}
+      });
+      es.addEventListener('line', (e) => {
+        // ignore raw lines for A/B — they don't produce subprocess output
+      });
+      es.addEventListener('done', async () => {
+        es.close();
+        try {
+          const r = await fetch(`/api/tasks/${taskId}`);
+          const info = await r.json();
+          await onDone(info.result ?? null);
+        } catch {}
+        resolve();
+      });
+      es.onerror = () => { es.close(); resolve(); };
+    });
+  }
+
+  function streamJob(taskId: string, lines: string[], setLines: (l: string[]) => void): Promise<void> {
+    return new Promise((resolve) => {
+      const es = new EventSource(`/api/tasks/${taskId}/stream`);
+      es.addEventListener('line', (e) => {
+        const line = (e as MessageEvent).data as string;
+        lines = [...lines, line];
+        setLines(lines);
+      });
+      es.addEventListener('done', () => { es.close(); resolve(); });
       es.onerror = () => { es.close(); resolve(); };
     });
   }

@@ -1,0 +1,18 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential curl git \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements-api.txt requirements.txt ./
+RUN pip install --no-cache-dir -r requirements-api.txt -r requirements.txt
+
+COPY . .
+
+ENV PYTHONPATH=/app
+ENV CELERY_BROKER_URL=redis://redis:6379/0
+ENV CELERY_RESULT_BACKEND=redis://redis:6379/1
+
+CMD ["celery", "-A", "api.celery_app", "worker", "--loglevel=info", "--concurrency=4", "-Q", "default"]
