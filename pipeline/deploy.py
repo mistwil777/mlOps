@@ -32,23 +32,17 @@ def _save_project_config(project: str, config: dict[str, Any]) -> None:
         yaml.dump(config, fh, default_flow_style=False, allow_unicode=True)
 
 
-def _sanity_prompts(domain: str, task_type: str) -> list[str]:
-    """Return a small set of generic sanity prompts for this domain/task_type."""
+def _sanity_prompts(domain: str, task_type: str, configured: list[str] | None = None) -> list[str]:
+    """Return sanity prompts: the project's own `sanity_prompts` first, else generic ones by task_type."""
+    if configured:
+        return configured
     prompts: dict[str, list[str]] = {
-        "migration": [
-            "Migrate this Python function to Java:\n\ndef add(a, b):\n    return a + b",
-            "Migrate this Python function to Java:\n\ndef is_empty(lst):\n    return len(lst) == 0",
-        ],
         "summarization": [
             "Summarize the following paragraph in one sentence:\n\n"
             "Machine learning is a branch of artificial intelligence that enables systems "
             "to learn from data and improve over time without explicit programming.",
             "Summarize in 2 sentences:\n\nThe Eiffel Tower was built in 1889 as the entrance arch "
             "for the World's Fair held in Paris. It stands 330 meters tall.",
-        ],
-        "documentation": [
-            "Write a docstring for:\n\ndef multiply(a: int, b: int) -> int:\n    return a * b",
-            "Write a docstring for:\n\ndef filter_even(lst: list[int]) -> list[int]:\n    return [x for x in lst if x % 2 == 0]",
         ],
         "qa": [
             "Answer the question based on the context.\nContext: Paris is the capital of France.\nQuestion: What is the capital of France?",
@@ -114,9 +108,9 @@ class ModelDeployer:
         import httpx  # noqa: PLC0415
         from pipeline.utils.metrics import rouge_l_score  # noqa: PLC0415
 
-        domain    = self.config.get("domain", "code")
+        domain    = self.config.get("domain", "general")
         task_type = self.config.get("task_type", "generation")
-        prompts   = _sanity_prompts(domain, task_type)
+        prompts   = _sanity_prompts(domain, task_type, self.config.get("sanity_prompts"))
 
         port = self.config.get("serving_port", 8080)
         results = []

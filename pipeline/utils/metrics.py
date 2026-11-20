@@ -1,10 +1,10 @@
-"""Evaluation metrics: compilation checks, ROUGE-L, CodeBLEU, dataset statistics."""
+"""Domain-agnostic evaluation metrics: ROUGE-L, dataset statistics.
+
+Domain-specific metrics live in evals/metrics/ and are declared in evals/domains/<domain>.yaml.
+"""
 
 from __future__ import annotations
 
-import subprocess
-import tempfile
-import textwrap
 from pathlib import Path
 from typing import Any
 
@@ -12,34 +12,6 @@ from pipeline.utils.jsonl import read_jsonl, count_tokens
 from pipeline.utils.logger import get_logger
 
 logger = get_logger("mlops.metrics")
-
-
-def compile_java(code: str, timeout: int = 10) -> tuple[bool, str]:
-    """Compile a Java snippet in a temp directory. Returns (success, error_message)."""
-    if "class " not in code:
-        code = textwrap.dedent(f"""
-            public class Snippet {{
-                public static void main(String[] args) {{
-                    {textwrap.indent(code, '        ')}
-                }}
-            }}
-        """)
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        src_file = Path(tmpdir) / "Snippet.java"
-        src_file.write_text(code, encoding="utf-8")
-
-        result = subprocess.run(
-            ["javac", str(src_file)],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            cwd=tmpdir,
-        )
-
-        if result.returncode == 0:
-            return True, ""
-        return False, result.stderr.strip()
 
 
 def rouge_l_score(hypothesis: str, reference: str) -> float:
@@ -71,34 +43,6 @@ def rouge_l_score(hypothesis: str, reference: str) -> float:
     if precision + recall == 0:
         return 0.0
     return round(2 * precision * recall / (precision + recall), 4)
-
-
-def codebLEU_score(hypothesis: str, reference: str, lang: str = "java") -> float:
-    """Compute CodeBLEU score between hypothesis and reference code.
-
-    Falls back to ROUGE-L if codebleu/sacrebleu are not installed.
-    """
-    try:
-        from codebleu import calc_codebleu  # noqa: PLC0415
-
-        result = calc_codebleu(
-            [reference],
-            [hypothesis],
-            lang=lang,
-            weights=(0.25, 0.25, 0.25, 0.25),
-        )
-        return float(result["codebleu"])
-    except ImportError:
-        logger.warning("codebleu not installed, falling back to sacrebleu BLEU")
-        try:
-            from sacrebleu.metrics import BLEU  # noqa: PLC0415
-
-            bleu = BLEU(effective_order=True)
-            score = bleu.sentence_score(hypothesis, [reference])
-            return score.score / 100.0
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("sacrebleu failed (%s), using ROUGE-L", exc)
-            return rouge_l_score(hypothesis, reference)
 
 
 def token_length_stats(jsonl_path: Path | str) -> dict[str, float]:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -37,6 +38,11 @@ for r in (
 @app.on_event("startup")
 async def _startup() -> None:
     from api.watchdog import watchdog_loop  # noqa: PLC0415
+    from pipeline.utils.run_ledger import get_ledger  # noqa: PLC0415
+    # Jobs started by a previous API process cannot still be running: mark them interrupted.
+    interrupted = get_ledger().interrupt_orphans("api")
+    if interrupted:
+        logging.getLogger("mlops.api").warning("%d job(s) interrupted by the restart", interrupted)
     asyncio.create_task(watchdog_loop(interval_seconds=60))
 
 

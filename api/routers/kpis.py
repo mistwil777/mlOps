@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from api.db import execute, fetchall, fetchone
+from pipeline.utils.run_ledger import get_ledger as _ledger
 from pipeline.utils.kpi_store import (
     KpiStore,
     RunRecord,
@@ -26,7 +27,6 @@ from pipeline.utils.kpi_store import (
 router = APIRouter(prefix="/api/kpis", tags=["kpis"])
 _store = KpiStore()
 
-_ACTIVE_JOBS: dict[str, str] = {}  # job_id → status
 
 
 def _now() -> str:
@@ -168,7 +168,7 @@ async def launch_robustness_eval(run_id: str, body: RobustnessEvalRequest) -> di
         raise HTTPException(400, "Run must be completed before running robustness eval")
 
     job_id = str(uuid.uuid4())
-    _ACTIVE_JOBS[job_id] = "pending"
+    _ledger().create_job(job_id, run["project_id"], "robustness-eval", status="pending")
 
     asyncio.create_task(_run_robustness_eval(job_id, run_id, dict(run), body))
     return {"job_id": job_id, "status": "pending"}
@@ -181,7 +181,7 @@ async def launch_security_eval(run_id: str, body: SecurityEvalRequest) -> dict[s
         raise HTTPException(404, f"Run {run_id!r} not found")
 
     job_id = str(uuid.uuid4())
-    _ACTIVE_JOBS[job_id] = "pending"
+    _ledger().create_job(job_id, run["project_id"], "security-eval", status="pending")
     asyncio.create_task(_run_security_eval(job_id, run_id, dict(run), body))
     return {"job_id": job_id, "status": "pending"}
 
@@ -193,16 +193,19 @@ async def launch_compliance_eval(run_id: str, body: ComplianceEvalRequest) -> di
         raise HTTPException(404, f"Run {run_id!r} not found")
 
     job_id = str(uuid.uuid4())
-    _ACTIVE_JOBS[job_id] = "pending"
+    _ledger().create_job(job_id, run["project_id"], "compliance-eval", status="pending")
     asyncio.create_task(_run_compliance_eval(job_id, run_id, dict(run), body))
     return {"job_id": job_id, "status": "pending"}
 
 
 @router.get("/jobs/{job_id}")
 async def get_job_status(job_id: str) -> dict[str, str]:
-    status = _ACTIVE_JOBS.get(job_id)
-    if status is None:
+    job = _ledger().get_job(job_id)
+    if job is None:
         raise HTTPException(404, f"Job {job_id!r} not found")
+    status = job["status"]
+    if status == "failed" and job["n_lines"]:
+        status = f"failed: {_ledger().lines(job_id)[-1].removeprefix('ERROR: ')}"  # response format unchanged
     return {"job_id": job_id, "status": status}
 
 
@@ -229,7 +232,7 @@ async def _get_or_create_eval_id(run_id: str) -> str:
 async def _run_robustness_eval(
     job_id: str, run_id: str, run: dict[str, Any], body: RobustnessEvalRequest
 ) -> None:
-    _ACTIVE_JOBS[job_id] = "running"
+    _ledger().set_status(job_id, "running")
     try:
         from pipeline.evaluate_robustness import RobustnessEvaluator  # noqa: PLC0415
 
@@ -245,15 +248,16 @@ async def _run_robustness_eval(
             eval_id, run_id, run["project_id"],
             RobustnessMetrics(**{k: metrics.get(k) for k in RobustnessMetrics.__dataclass_fields__}),
         )
-        _ACTIVE_JOBS[job_id] = "completed"
+        _ledger().set_status(job_id, "completed")
     except Exception as exc:  # noqa: BLE001
-        _ACTIVE_JOBS[job_id] = f"failed: {exc}"
+        _ledger().log(job_id, f"ERROR: {exc}", level="error")
+        _ledger().set_status(job_id, "failed")
 
 
 async def _run_security_eval(
     job_id: str, run_id: str, run: dict[str, Any], body: SecurityEvalRequest
 ) -> None:
-    _ACTIVE_JOBS[job_id] = "running"
+    _ledger().set_status(job_id, "running")
     try:
         from pipeline.evaluate_security import SecurityEvaluator  # noqa: PLC0415
 
@@ -268,15 +272,16 @@ async def _run_security_eval(
             eval_id, run_id, run["project_id"],
             SecurityMetrics(**{k: metrics.get(k) for k in SecurityMetrics.__dataclass_fields__}),
         )
-        _ACTIVE_JOBS[job_id] = "completed"
+        _ledger().set_status(job_id, "completed")
     except Exception as exc:  # noqa: BLE001
-        _ACTIVE_JOBS[job_id] = f"failed: {exc}"
+        _ledger().log(job_id, f"ERROR: {exc}", level="error")
+        _ledger().set_status(job_id, "failed")
 
 
 async def _run_compliance_eval(
     job_id: str, run_id: str, run: dict[str, Any], body: ComplianceEvalRequest
 ) -> None:
-    _ACTIVE_JOBS[job_id] = "running"
+    _ledger().set_status(job_id, "running")
     try:
         from pipeline.evaluate_compliance import ComplianceEvaluator  # noqa: PLC0415
 
@@ -287,6 +292,7 @@ async def _run_compliance_eval(
             eval_id, run_id, run["project_id"],
             ComplianceMetrics(**{k: metrics.get(k) for k in ComplianceMetrics.__dataclass_fields__}),
         )
-        _ACTIVE_JOBS[job_id] = "completed"
+        _ledger().set_status(job_id, "completed")
     except Exception as exc:  # noqa: BLE001
-        _ACTIVE_JOBS[job_id] = f"failed: {exc}"
+        _ledger().log(job_id, f"ERROR: {exc}", level="error")
+        _ledger().set_status(job_id, "failed")

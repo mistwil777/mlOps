@@ -2,16 +2,16 @@
 # Read by CC at every session startup in this folder.
 
 ## Project Context
-MLOps infrastructure for producing fine-tuned local models.
-Goal: complete AI sovereignty — 100% local inference, zero cloud calls in production.
-Current scope: Migrator (Java→Python migration). Future: HR, Legal, Sales, Defense.
+MLOps infrastructure: a domain-agnostic SLM factory.
+Goal: fine-tune small language models from a client spec (CDC) and client data, processed through one generic pipeline.
+Constraint: complete AI sovereignty — 100% local inference, zero cloud calls in production.
+Domains (code, HR, legal, defense, …) are configuration, never code: see config/ and evals/domains/.
 
 Company: Capgemini — ~50% of clients in Defense sector (sovereignty constraints, classified data).
 
 ## Paths
 - This repo: ~/Documents/GitHub/mlOps/
-- Migrator source: ~/migrator/ (read-only — do not modify)
-- Target migration: ~/Documents/GitHub/migrator/ (after move — see MIGRATION.md)
+- Client source data: path declared per project in config/projects/<id>.yaml (read-only — do not modify)
 
 ## Machine
 MacBook Pro M4 Pro · 48 GB RAM · macOS Tahoe 26.4
@@ -44,12 +44,10 @@ Adapters are Capgemini IP — multiple per project, called dynamically by task t
 Base model is NOT our IP — included in bundle as-is from HuggingFace.
 MLflow is NEVER in the client bundle — internal tool only.
 
-## Active Projects
-- migrator: Python→Java migration · Base model: Mistral 7B Instruct 4-bit
-  Source data: ~/migrator/ (read-only)
-  Dataset: datalake/projects/migrator/
-  Deployed model: models/mistral-migration-java/ (if exists)
-  AWS Bedrock baseline: Nova Pro (us.amazon.nova-pro-v1:0, us-east-1)
+## Projects
+Projects are declared in config/projects/<id>.yaml (domain, task type, base model, eval_domain, sanity prompts, lang pair if any).
+Never name a project, a language or a domain in pipeline/, agents/, api/, scripts/ — read it from the project config.
+AWS Bedrock baseline: Nova Pro (us.amazon.nova-pro-v1:0, us-east-1)
 
 ## Absolute Rules
 1. Zero client/classified data in CC prompts
@@ -62,6 +60,9 @@ MLflow is NEVER in the client bundle — internal tool only.
 8. Green IT: reuse configurations, avoid redundancy, no cloud calls in production
 9. models/staging/ → never served directly — promote via scripts/deploy_gate.py gate+promote
 10. Modify a skill → atomic commit tagged skill/<name>/vX.Y + update SKILLS.md
+11. Zero hardcoded domain: no project name, language, metric or persona in executable code — config only. Enforced by tests/test_no_domain_hardcoding.py (ratchet: tests/domain_hardcoding_baseline.json may only shrink via `python tests/test_no_domain_hardcoding.py --shrink`, never edited upward) and by the Stop hook scripts/hooks/guard_stop.py
+12. Job state lives in the durable ledger (pipeline/utils/run_ledger.py, SQLite): no in-memory job dict in api/. Enforced by tests/test_no_in_memory_job_state.py
+13. A task is done only with evidence (command output), never with a claim. If an instruction was only partly applied, say so.
 
 ## Available Commands (skills)
 /new-project      : initialize a new fine-tuning project

@@ -21,20 +21,9 @@ from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from api.db import execute, fetchall
+from pipeline.utils.run_ledger import TERMINAL_STATUSES, get_ledger as _ledger
 
 router = APIRouter(prefix="/api/data", tags=["data"])
-
-_JOBS: dict[str, dict[str, Any]] = {}  # in-memory job tracker
-_JOB_TTL_S = 3600  # purge completed jobs after 1 hour
-
-
-def _purge_old_jobs() -> None:
-    now = datetime.now(timezone.utc).timestamp()
-    to_del = [jid for jid, j in _JOBS.items()
-              if j["status"] != "running" and now - j.get("finished_at", now) > _JOB_TTL_S]
-    for jid in to_del:
-        del _JOBS[jid]
-
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -44,6 +33,20 @@ def _load_project_config(project_id: str) -> dict[str, Any]:
         raise HTTPException(404, f"Project config not found: {project_id}")
     with p.open() as fh:
         return yaml.safe_load(fh)
+
+
+def _domain_persona(project_id: str) -> str:
+    """System persona built from the project config (domain + description), never hardcoded."""
+    try:
+        cfg = _load_project_config(project_id)
+    except HTTPException:
+        cfg = {}
+    domain = cfg.get("domain")
+    description = cfg.get("description")
+    if not domain:
+        return "Tu es un expert en qualité de données d'entraînement. "
+    detail = f" ({description})" if description else ""
+    return f"Tu es un expert du domaine « {domain} »{detail}. "
 
 
 def _list_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -145,240 +148,25 @@ def _ensure_pairs_raw(project_id: str, stage: str = "raw") -> Path:
     return _ensure_raw_consolidated(project_id, stage)
 
 
-# ── AWA Collect ───────────────────────────────────────────────────────────────
-
-_COLLECTOR_REGISTRY: dict[str, Any] | None = None
-
-
-def _load_collector_registry() -> dict[str, Any]:
-    global _COLLECTOR_REGISTRY
-    if _COLLECTOR_REGISTRY is None:
-        path = Path("config/collectors/registry.yaml")
-        if not path.exists():
-            raise HTTPException(500, "config/collectors/registry.yaml not found")
-        with path.open() as fh:
-            data = yaml.safe_load(fh) or {}
-        _COLLECTOR_REGISTRY = data.get("collectors", {})
-    return _COLLECTOR_REGISTRY
-
-
-class CollectRequest(BaseModel):
-    project_id: str
-    topic: Optional[str] = None
-    max_pairs: int = 50
-    domain: Optional[str] = None
-    task_type: Optional[str] = None
-    collector_type: str = "web_crawl"   # must match an entry in config/collectors/registry.yaml
-    source_value: Optional[str] = None  # collector-specific param (e.g. seed URL or topic)
-    adapter_name: Optional[str] = None  # which adapter these pairs belong to
-    langs: Optional[list[str]] = None   # for multilang_wiki: e.g. ["Python", "Java"]
-    lang: Optional[str] = None          # for doc_crawl: "python" | "java" | …
-    custom_tags: Optional[list[str]] = None  # for doc_crawl: custom HTML tags
-    max_depth: Optional[int] = None     # for doc_crawl: crawl depth override
-    use_playwright: bool = False         # for doc_crawl: headless browser (bypasses JS/Cloudflare)
-
-
-@router.post("/collect")
-async def start_collect(req: CollectRequest) -> dict[str, str]:
-    registry = _load_collector_registry()
-    if req.collector_type not in registry:
-        known = sorted(registry.keys())
-        raise HTTPException(
-            400,
-            f"Unknown collector_type '{req.collector_type}'. "
-            f"Known types: {known}. Add a new entry in config/collectors/registry.yaml."
-        )
-
-    try:
-        config = _load_project_config(req.project_id)
-    except HTTPException:
-        config = {}
-    if req.domain:
-        config.setdefault("domain", req.domain)
-    if req.task_type:
-        config.setdefault("task_type", req.task_type)
-
-    job_id = str(uuid.uuid4())[:8]
-    _JOBS[job_id] = {
-        "status":     "running",
-        "lines":      [],
-        "project_id": req.project_id,
-    }
-
-    asyncio.create_task(_run_collect(
-        job_id, req.project_id, req.topic, req.max_pairs, config,
-        req.collector_type, req.source_value, req.adapter_name,
-        req.langs, req.lang, req.custom_tags, req.max_depth,
-        req.use_playwright,
-    ))
-    return {"job_id": job_id}
-
-
-_COLLECT_TIMEOUT_S = 1800  # 30 min — doc crawls can visit 400+ pages at ~1s each
-
-
-async def _run_collect(
-    job_id: str,
-    project_id: str,
-    topic: str | None,
-    max_pairs: int,
-    config: dict[str, Any],
-    collector_type: str = "web_crawl",
-    source_value: str | None = None,
-    adapter_name: str | None = None,
-    langs: list[str] | None = None,
-    lang: str | None = None,
-    custom_tags: list[str] | None = None,
-    max_depth: int | None = None,
-    use_playwright: bool = False,
-) -> None:
-    registry  = _load_collector_registry()
-    collector = registry[collector_type]
-    module    = collector.get("module")
-
-    # Output path: timestamped per-collector file — never overwrite a previous run
-    raw_dir = Path(f"datalake/projects/{project_id}/raw")
-    raw_dir.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
-    output = raw_dir / f"{collector_type}_{ts}.jsonl"
-
-    adapter_args = ["--adapter-name", adapter_name] if adapter_name else []
-
-    # Build args from CLI mapping + request values
-    cli_map: dict[str, str] = collector.get("cli_mapping", {})
-    extra_args: list[str] = []
-
-    # Auto-derive langs for multilang_wiki if not explicitly provided
-    effective_langs = langs
-    if effective_langs is None and collector_type == "multilang_wiki":
-        transform = config.get("transform", {})
-        params = transform.get("params", {})
-        src = params.get("src_lang") or params.get("source_lang")
-        tgt = params.get("tgt_lang") or params.get("target_lang")
-        if src and tgt:
-            effective_langs = [src, tgt]
-        else:
-            # Fallback 1: fusible doc_crawl lang_hints across all adapters
-            hints: list[str] = []
-            for adapter_cfg in config.get("adapters", []):
-                for sc in adapter_cfg.get("source_configs", []):
-                    if sc.get("fusible") and sc.get("lang_hint"):
-                        h = sc["lang_hint"]
-                        if h not in hints:
-                            hints.append(h)
-            # Fallback 2: any lang_hint across source_configs if no fusible found
-            if not hints:
-                for adapter_cfg in config.get("adapters", []):
-                    for sc in adapter_cfg.get("source_configs", []):
-                        h = sc.get("lang_hint", "")
-                        if h and h not in hints:
-                            hints.append(h)
-            if hints:
-                effective_langs = hints
-
-    # Map known request fields to their CLI arg names
-    field_values: dict[str, Any] = {
-        "topic":          source_value or topic or None,
-        "url":            source_value or topic or None,
-        "max_tasks":      max_pairs,
-        "max_pages":      max_pairs,
-        "max_depth":      max_depth,
-        "lang":           lang or topic or None,
-        "langs":          effective_langs,
-        "custom_tags":    custom_tags,
-        "domain":         config.get("domain", "code"),
-        "task_type":      config.get("task_type", "generation"),
-        "project":        project_id,
-        "use_playwright": use_playwright,
-    }
-
-    for field, cli_arg in cli_map.items():
-        if field == "adapter_name":
-            continue  # handled via adapter_args
-        val = field_values.get(field)
-        if val is None:
-            continue
-        if isinstance(val, bool):
-            # Boolean fields map to bare flags — only append when True
-            if val:
-                extra_args.append(cli_arg)
-        elif isinstance(val, list):
-            if val:
-                extra_args += [cli_arg] + [str(v) for v in val]
-        else:
-            extra_args += [cli_arg, str(val)]
-
-    if module is None:
-        # manual collector — no subprocess, nothing to launch
-        _JOBS[job_id]["status"] = "completed"
-        _JOBS[job_id]["lines"].append("Manual collector: no subprocess launched.")
-        _JOBS[job_id]["finished_at"] = datetime.now(timezone.utc).timestamp()
-        return
-
-    # Synthetic collector needs adapter description as context — inject from project config
-    if collector_type == "synthetic" and adapter_name:
-        adapter_desc = next(
-            (a.get("description", "") for a in config.get("adapters", []) if a["name"] == adapter_name),
-            "",
-        )
-        if adapter_desc:
-            extra_args += ["--adapter-desc", adapter_desc[:500]]
-
-    cmd = [sys.executable, "-m", module, "--output", str(output), *extra_args, *adapter_args]
-
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-        )
-
-        async def _read_stdout() -> None:
-            async for raw in proc.stdout:
-                line = raw.decode(errors="replace").rstrip()
-                _JOBS[job_id]["lines"].append(line)
-            await proc.wait()
-
-        await asyncio.wait_for(_read_stdout(), timeout=_COLLECT_TIMEOUT_S)
-        status = "completed" if proc.returncode == 0 else "failed"
-        _JOBS[job_id]["status"] = status
-        _JOBS[job_id]["returncode"] = proc.returncode
-        if status == "completed":
-            asyncio.create_task(_index_datalake_pairs(project_id, job_id=job_id, stage="raw"))
-            _ensure_lineage_table()
-            _track_lineage(project_id, {
-                "source_url":    source_value or topic or "",
-                "adapter_name":  adapter_name,
-                "collected_at":  datetime.now(timezone.utc).isoformat(),
-            }, collector_type)
-    except asyncio.TimeoutError:
-        _JOBS[job_id]["status"] = "failed"
-        _JOBS[job_id]["lines"].append(f"ERROR: collect timed out after {_COLLECT_TIMEOUT_S}s")
-        proc.kill()
-        await proc.wait()
-    except Exception as exc:
-        _JOBS[job_id]["status"] = "failed"
-        _JOBS[job_id]["lines"].append(f"ERROR: {exc}")
-    finally:
-        _JOBS[job_id]["finished_at"] = datetime.now(timezone.utc).timestamp()
-        _purge_old_jobs()
-
+# ── Job logs (generic stream/status shared by fuse, semantic-match and generate jobs) ──
 
 @router.get("/collect/{job_id}/stream")
 async def stream_collect(job_id: str):
-    if job_id not in _JOBS:
+    if not _ledger().exists(job_id):
         raise HTTPException(404, "Job not found")
 
     async def generator():
-        sent = 0
+        last_seq = 0
         while True:
-            job = _JOBS[job_id]
-            lines = job["lines"]
-            while sent < len(lines):
-                yield {"event": "log", "data": json.dumps({"line": lines[sent]})}
-                sent += 1
-            if job["status"] != "running":
-                yield {"event": "done", "data": json.dumps({"status": job["status"]})}
+            for seq, line in _ledger().events_since(job_id, last_seq):
+                yield {"event": "log", "data": json.dumps({"line": line})}
+                last_seq = seq
+            status = _ledger().get_job(job_id)["status"]
+            if status in TERMINAL_STATUSES:
+                for seq, line in _ledger().events_since(job_id, last_seq):  # final drain
+                    yield {"event": "log", "data": json.dumps({"line": line})}
+                    last_seq = seq
+                yield {"event": "done", "data": json.dumps({"status": status})}
                 return
             await asyncio.sleep(0.5)
 
@@ -387,32 +175,10 @@ async def stream_collect(job_id: str):
 
 @router.get("/collect/{job_id}/status")
 async def collect_status(job_id: str) -> dict[str, Any]:
-    if job_id not in _JOBS:
+    job = _ledger().get_job(job_id)
+    if job is None:
         raise HTTPException(404, "Job not found")
-    j = _JOBS[job_id]
-    return {"status": j["status"], "lines": len(j["lines"])}
-
-
-@router.get("/discover-sources/{job_id}/results")
-async def discover_sources_results(job_id: str) -> dict[str, Any]:
-    """Return discovered sources from a completed discover-sources job."""
-    if job_id not in _JOBS:
-        raise HTTPException(404, "Job not found")
-    j = _JOBS[job_id]
-    if j["status"] != "completed":
-        return {"status": j["status"], "sources": []}
-
-    output_file = j.get("output_file")
-    if not output_file or not Path(output_file).exists():
-        return {"status": "completed", "sources": []}
-
-    try:
-        import yaml as _yaml  # noqa: PLC0415
-        data = _yaml.safe_load(Path(output_file).read_text()) or {}
-        sources = data.get("discovered_sources", [])
-        return {"status": "completed", "sources": sources}
-    except Exception as exc:
-        return {"status": "completed", "sources": [], "error": str(exc)}
+    return {"status": job["status"], "lines": job["n_lines"]}
 
 
 # ── Pair Fusion ───────────────────────────────────────────────────────────────
@@ -428,62 +194,9 @@ class FuseRequest(BaseModel):
 async def start_fuse(req: FuseRequest) -> dict[str, str]:
     _load_project_config(req.project_id)
     job_id = str(uuid.uuid4())[:8]
-    _JOBS[job_id] = {"status": "running", "lines": [], "project_id": req.project_id}
+    _ledger().create_job(job_id, req.project_id, "fuse")
     asyncio.create_task(_run_fuse(job_id, req))
     return {"job_id": job_id}
-
-
-# ── Source Discovery ──────────────────────────────────────────────────────────
-
-class DiscoverRequest(BaseModel):
-    project_id: str
-    lang_pair:  str                   # key from config/languages.yaml, e.g. "java-python"
-    adapter_name: Optional[str] = None
-    max_sources: int = 5
-
-
-@router.post("/discover-sources")
-async def start_discover_sources(req: DiscoverRequest) -> dict[str, str]:
-    _load_project_config(req.project_id)
-    job_id = str(uuid.uuid4())[:8]
-    _JOBS[job_id] = {"status": "running", "lines": [], "project_id": req.project_id}
-    asyncio.create_task(_run_discover_sources(job_id, req))
-    return {"job_id": job_id}
-
-
-async def _run_discover_sources(job_id: str, req: DiscoverRequest) -> None:
-    output = Path(f"datalake/projects/{req.project_id}/processed/_discovered_{req.adapter_name or 'all'}.yaml")
-    output.parent.mkdir(parents=True, exist_ok=True)
-
-    cmd = [
-        sys.executable, "-m", "agents.source_discoverer",
-        "--pair",        req.lang_pair,
-        "--project",     req.project_id,
-        "--max-sources", str(req.max_sources),
-        "--output",      str(output),
-        *(["--adapter", req.adapter_name] if req.adapter_name else []),
-    ]
-
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-        )
-        async for raw in proc.stdout:
-            _JOBS[job_id]["lines"].append(raw.decode(errors="replace").rstrip())
-        await proc.wait()
-        _JOBS[job_id]["status"] = "completed" if proc.returncode == 0 else "failed"
-        _JOBS[job_id]["returncode"] = proc.returncode
-        # Attach output file path so frontend can fetch results
-        if proc.returncode == 0 and output.exists():
-            _JOBS[job_id]["output_file"] = str(output)
-    except Exception as exc:
-        _JOBS[job_id]["status"] = "failed"
-        _JOBS[job_id]["lines"].append(f"ERROR: {exc}")
-    finally:
-        _JOBS[job_id]["finished_at"] = datetime.now(timezone.utc).timestamp()
-        _purge_old_jobs()
 
 
 async def _run_fuse(job_id: str, req: FuseRequest) -> None:
@@ -495,12 +208,12 @@ async def _run_fuse(job_id: str, req: FuseRequest) -> None:
             langs_cfg = _yaml.safe_load(fh) or {}
         pcfg = langs_cfg.get("pairs", {}).get(req.lang_pair)
         if not pcfg:
-            _JOBS[job_id]["status"] = "failed"
-            _JOBS[job_id]["lines"].append(f"ERROR: unknown lang_pair '{req.lang_pair}'")
+            _ledger().log(job_id, f"ERROR: unknown lang_pair '{req.lang_pair}'", level="error")
+            _ledger().set_status(job_id, "failed")
             return
     except Exception as exc:
-        _JOBS[job_id]["status"] = "failed"
-        _JOBS[job_id]["lines"].append(f"ERROR loading languages.yaml: {exc}")
+        _ledger().log(job_id, f"ERROR loading languages.yaml: {exc}", level="error")
+        _ledger().set_status(job_id, "failed")
         return
 
     source_lang = pcfg["source_lang"]
@@ -531,7 +244,7 @@ async def _run_fuse(job_id: str, req: FuseRequest) -> None:
     src_records = [r for r in all_clean if r.get("lang", "").lower() == source_lang.lower()]
     tgt_records = [r for r in all_clean if r.get("lang", "").lower() == target_lang.lower()]
 
-    _JOBS[job_id]["lines"].append(
+    _ledger().log(job_id,
         f"Loaded {len(src_records)} {source_lang} + {len(tgt_records)} {target_lang} records from clean_raw"
     )
 
@@ -564,27 +277,25 @@ async def _run_fuse(job_id: str, req: FuseRequest) -> None:
 
         async def _read() -> None:
             async for raw in proc.stdout:
-                _JOBS[job_id]["lines"].append(raw.decode(errors="replace").rstrip())
+                _ledger().log(job_id, raw.decode(errors="replace").rstrip())
             await proc.wait()
 
         await asyncio.wait_for(_read(), timeout=1800)  # 30 min max
-        _JOBS[job_id]["status"] = "completed" if proc.returncode == 0 else "failed"
+        _ledger().set_status(job_id, "completed" if proc.returncode == 0 else "failed")
     except asyncio.TimeoutError:
-        _JOBS[job_id]["status"] = "failed"
-        _JOBS[job_id]["lines"].append("ERROR: fuse timed out after 30 min")
+        _ledger().log(job_id, "ERROR: fuse timed out after 30 min", level="error")
+        _ledger().set_status(job_id, "failed")
         proc.kill()
         await proc.wait()
     except Exception as exc:
-        _JOBS[job_id]["status"] = "failed"
-        _JOBS[job_id]["lines"].append(f"ERROR: {exc}")
+        _ledger().log(job_id, f"ERROR: {exc}", level="error")
+        _ledger().set_status(job_id, "failed")
     finally:
         for tmp in (source_jsonl, target_jsonl):
             try:
                 tmp.unlink(missing_ok=True)
             except Exception:
                 pass
-        _JOBS[job_id]["finished_at"] = datetime.now(timezone.utc).timestamp()
-        _purge_old_jobs()
 
 
 # ── Semantic Pair Matching ────────────────────────────────────────────────────
@@ -601,7 +312,7 @@ class SemanticMatchRequest(BaseModel):
 async def start_semantic_match(req: SemanticMatchRequest) -> dict[str, str]:
     _load_project_config(req.project_id)
     job_id = str(uuid.uuid4())[:8]
-    _JOBS[job_id] = {"status": "running", "lines": [], "project_id": req.project_id}
+    _ledger().create_job(job_id, req.project_id, "semantic-match")
     asyncio.create_task(_run_semantic_match(job_id, req))
     return {"job_id": job_id}
 
@@ -615,12 +326,12 @@ async def _run_semantic_match(job_id: str, req: SemanticMatchRequest) -> None:
             langs_cfg = _yaml.safe_load(fh) or {}
         pcfg = langs_cfg.get("pairs", {}).get(req.lang_pair)
         if not pcfg:
-            _JOBS[job_id]["status"] = "failed"
-            _JOBS[job_id]["lines"].append(f"ERROR: unknown lang_pair '{req.lang_pair}'")
+            _ledger().log(job_id, f"ERROR: unknown lang_pair '{req.lang_pair}'", level="error")
+            _ledger().set_status(job_id, "failed")
             return
     except Exception as exc:
-        _JOBS[job_id]["status"] = "failed"
-        _JOBS[job_id]["lines"].append(f"ERROR loading languages.yaml: {exc}")
+        _ledger().log(job_id, f"ERROR loading languages.yaml: {exc}", level="error")
+        _ledger().set_status(job_id, "failed")
         return
 
     # Source JSONL: adapter-specific clean_raw file or full project clean_raw
@@ -656,7 +367,7 @@ async def _run_semantic_match(job_id: str, req: SemanticMatchRequest) -> None:
         *(["--adapter-name", req.adapter_name] if req.adapter_name else []),
     ]
 
-    _JOBS[job_id]["lines"].append(
+    _ledger().log(job_id,
         f"Semantic matching {pcfg['source_lang']}→{pcfg['target_lang']} "
         f"from {source_jsonl.name}"
     )
@@ -670,27 +381,25 @@ async def _run_semantic_match(job_id: str, req: SemanticMatchRequest) -> None:
 
         async def _read() -> None:
             async for raw in proc.stdout:
-                _JOBS[job_id]["lines"].append(raw.decode(errors="replace").rstrip())
+                _ledger().log(job_id, raw.decode(errors="replace").rstrip())
             await proc.wait()
 
         await asyncio.wait_for(_read(), timeout=1800)
-        _JOBS[job_id]["status"] = "completed" if proc.returncode == 0 else "failed"
+        _ledger().set_status(job_id, "completed" if proc.returncode == 0 else "failed")
     except asyncio.TimeoutError:
-        _JOBS[job_id]["status"] = "failed"
-        _JOBS[job_id]["lines"].append("ERROR: semantic-match timed out after 30 min")
+        _ledger().log(job_id, "ERROR: semantic-match timed out after 30 min", level="error")
+        _ledger().set_status(job_id, "failed")
         proc.kill()
         await proc.wait()
     except Exception as exc:
-        _JOBS[job_id]["status"] = "failed"
-        _JOBS[job_id]["lines"].append(f"ERROR: {exc}")
+        _ledger().log(job_id, f"ERROR: {exc}", level="error")
+        _ledger().set_status(job_id, "failed")
     finally:
         if req.adapter_name is None:
             try:
                 source_jsonl.unlink(missing_ok=True)
             except Exception:
                 pass
-        _JOBS[job_id]["finished_at"] = datetime.now(timezone.utc).timestamp()
-        _purge_old_jobs()
 
 
 # ── Human Review ──────────────────────────────────────────────────────────────
@@ -1144,8 +853,8 @@ async def ai_audit(project_id: str, rerun: bool = False) -> dict[str, Any]:
     # LLM recommendations (Sonnet, parallel, max 5 workers)
     def _get_recommendation(item: dict[str, Any]) -> str:
         prompt = (
-            "Tu es un expert en migration Java→Python. "
-            f"Cette paire d'entraînement a été détectée comme suspecte (raison: {item['reason']}, détail: {item['detail']}).\n\n"
+            _domain_persona(project_id)
+            + f"Cette paire d'entraînement a été détectée comme suspecte (raison: {item['reason']}, détail: {item['detail']}).\n\n"
             f"PROMPT:\n{item['prompt_snippet']}\n\n"
             f"COMPLETION:\n{item['completion_snippet']}\n\n"
             "En 1-2 phrases max : explique le problème précis et recommande l'action parmi : "
@@ -1222,8 +931,8 @@ async def ai_audit_auto_correct(project_id: str, body: dict[str, Any]) -> dict[s
     original_completion: str = pair.get("completion", "") or ""
 
     prompt = (
-        "Tu es un expert en migration Java→Python. "
-        "Une completion de paire d'entraînement présente un défaut identifié.\n\n"
+        _domain_persona(project_id)
+        + "Une completion de paire d'entraînement présente un défaut identifié.\n\n"
         f"DÉFAUT DÉTECTÉ : {reason}\n"
         f"CORRECTION À APPLIQUER : {recommendation}\n\n"
         f"COMPLETION ORIGINALE :\n{original_completion}\n\n"
@@ -1312,20 +1021,6 @@ class CleanRawRequest(BaseModel):
     dry_run:    bool = False
 
 
-# Track subprocess handles for cancellable jobs {job_id: asyncio.Process}
-_PROCS: dict[str, Any] = {}
-
-
-def _find_running_job(project_id: str, job_type: str) -> str | None:
-    """Return job_id of any running job of given type for this project, or None."""
-    for jid, j in _JOBS.items():
-        if (j.get("project_id") == project_id
-                and j.get("status") == "running"
-                and j.get("job_type") == job_type):
-            return jid
-    return None
-
-
 @router.post("/clean-raw")
 async def run_clean_raw(req: CleanRawRequest) -> dict[str, str]:
     from api.tasks.pipeline import clean_raw as _clean_raw_task  # noqa: PLC0415
@@ -1336,62 +1031,15 @@ async def run_clean_raw(req: CleanRawRequest) -> dict[str, str]:
 
 @router.delete("/clean-raw/{job_id}")
 async def cancel_clean_raw(job_id: str) -> dict[str, str]:
-    """Cancel a running clean_raw job — sends SIGTERM then SIGKILL after 5s."""
-    if job_id not in _JOBS:
+    """Cancel a job known to the ledger. Known limit: clean-raw jobs run in Celery and are not in the ledger yet."""
+    job = _ledger().get_job(job_id)
+    if job is None:
         raise HTTPException(404, "Job not found")
-    j = _JOBS[job_id]
-    if j["status"] != "running":
-        return {"status": j["status"], "message": "Job already finished"}
-
-    proc = _PROCS.get(job_id)
-    if proc:
-        try:
-            proc.terminate()  # SIGTERM — let clean_raw finish current step
-            try:
-                await asyncio.wait_for(proc.wait(), timeout=5.0)
-            except asyncio.TimeoutError:
-                proc.kill()   # SIGKILL if still running after 5s
-                await proc.wait()
-        except Exception:
-            pass
-        _PROCS.pop(job_id, None)
-
-    _JOBS[job_id]["status"] = "cancelled"
-    _JOBS[job_id]["lines"].append("⏹ Job annulé par l'utilisateur.")
-    _JOBS[job_id]["finished_at"] = datetime.now(timezone.utc).timestamp()
+    if job["status"] != "running":
+        return {"status": job["status"], "message": "Job already finished"}
+    _ledger().log(job_id, "Job annulé par l'utilisateur.", level="warning")
+    _ledger().set_status(job_id, "cancelled")
     return {"status": "cancelled", "job_id": job_id}
-
-
-async def _run_clean_raw(job_id: str, req: CleanRawRequest) -> None:
-    cmd = [
-        sys.executable, "-m", "pipeline.clean_raw",
-        "--project", req.project_id,
-    ]
-    if req.adapter:
-        cmd += ["--adapter", req.adapter]
-    if req.dry_run:
-        cmd.append("--dry-run")
-
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-        )
-        _PROCS[job_id] = proc  # store handle for cancellation
-        async for raw in proc.stdout:
-            _JOBS[job_id]["lines"].append(raw.decode(errors="replace").rstrip())
-        await proc.wait()
-        if _JOBS[job_id]["status"] != "cancelled":
-            _JOBS[job_id]["status"] = "completed" if proc.returncode == 0 else "failed"
-        _JOBS[job_id]["returncode"] = proc.returncode
-    except Exception as exc:
-        _JOBS[job_id]["status"] = "failed"
-        _JOBS[job_id]["lines"].append(f"ERROR: {exc}")
-    finally:
-        _PROCS.pop(job_id, None)
-        _JOBS[job_id]["finished_at"] = datetime.now(timezone.utc).timestamp()
-        _purge_old_jobs()
 
 
 @router.get("/clean-raw/{job_id}/stream")
@@ -1443,7 +1091,7 @@ async def clean_raw_estimate(project_id: str) -> dict[str, Any]:
 async def run_pipeline(req: PipelineRequest) -> dict[str, str]:
     _load_project_config(req.project_id)
     job_id = str(uuid.uuid4())[:8]
-    _JOBS[job_id] = {"status": "running", "lines": [], "project_id": req.project_id}
+    _ledger().create_job(job_id, req.project_id, "pipeline")
 
     asyncio.create_task(_run_pipeline(job_id, req))
     return {"job_id": job_id}
@@ -1465,21 +1113,18 @@ async def _run_pipeline(job_id: str, req: PipelineRequest) -> None:
         )
         async for raw in proc.stdout:
             line = raw.decode(errors="replace").rstrip()
-            _JOBS[job_id]["lines"].append(line)
+            _ledger().log(job_id, line)
 
         await proc.wait()
+        _ledger().set_fields(job_id, returncode=proc.returncode)
         if proc.returncode == 0:
-            _JOBS[job_id]["status"] = "completed"
             asyncio.create_task(_index_datalake_pairs(req.project_id, job_id))
+            _ledger().set_status(job_id, "completed")
         else:
-            _JOBS[job_id]["status"] = "failed"
-        _JOBS[job_id]["returncode"] = proc.returncode
+            _ledger().set_status(job_id, "failed")
     except Exception as exc:
-        _JOBS[job_id]["status"] = "failed"
-        _JOBS[job_id]["lines"].append(f"ERROR: {exc}")
-    finally:
-        _JOBS[job_id]["finished_at"] = datetime.now(timezone.utc).timestamp()
-        _purge_old_jobs()
+        _ledger().log(job_id, f"ERROR: {exc}", level="error")
+        _ledger().set_status(job_id, "failed")
 
 
 async def _index_datalake_pairs(project_id: str, job_id: str | None = None, stage: str | None = None) -> None:
@@ -1492,13 +1137,13 @@ async def _index_datalake_pairs(project_id: str, job_id: str | None = None, stag
             n = await asyncio.get_event_loop().run_in_executor(None, lambda s=s: idx.index_project(project_id, stage=s))
             total += n
         msg = f"[datalake-index] Indexed {total} pairs for {project_id} (stages: {', '.join(stages)})"
-        if job_id and job_id in _JOBS:
-            _JOBS[job_id]["lines"].append(msg)
+        if job_id and _ledger().exists(job_id):
+            _ledger().log(job_id, msg)
     except Exception as exc:
         hint = " (Qdrant not running — start with: docker compose up qdrant -d)" if "Connection refused" in str(exc) else ""
         msg = f"[datalake-index] Skipped — Qdrant unavailable{hint}"
-        if job_id and job_id in _JOBS:
-            _JOBS[job_id]["lines"].append(msg)
+        if job_id and _ledger().exists(job_id):
+            _ledger().log(job_id, msg)
 
 
 # ── Pair Generation ───────────────────────────────────────────────────────────
@@ -1523,33 +1168,6 @@ async def start_generate_pairs(req: GenerateRequest) -> dict[str, str]:
     _load_project_config(req.project_id)
     task = _gen_pairs_task.delay(req.project_id, req.dry_run)
     return {"job_id": task.id, "task_id": task.id}
-
-
-async def _run_generate_pairs(job_id: str, req: GenerateRequest) -> None:
-    cmd = [
-        sys.executable, "-m", "agents.pair_generator",
-        "--project", req.project_id,
-        *(["--dry-run"] if req.dry_run else []),
-    ]
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-        )
-        _PROCS[job_id] = proc
-        async for raw in proc.stdout:
-            _JOBS[job_id]["lines"].append(raw.decode(errors="replace").rstrip())
-        await proc.wait()
-        if _JOBS[job_id]["status"] != "cancelled":
-            _JOBS[job_id]["status"] = "completed" if proc.returncode == 0 else "failed"
-    except Exception as exc:
-        _JOBS[job_id]["status"] = "failed"
-        _JOBS[job_id]["lines"].append(f"ERROR: {exc}")
-    finally:
-        _PROCS.pop(job_id, None)
-        _JOBS[job_id]["finished_at"] = datetime.now(timezone.utc).timestamp()
-        _purge_old_jobs()
 
 
 @router.get("/pipeline/{job_id}/stream")
@@ -1823,17 +1441,15 @@ async def adapter_coverage(project_id: str) -> dict[str, Any]:
 
             # Count clean_raw records and their language split for this adapter
             clean_raw_file = Path(f"datalake/projects/{project_id}/processed/clean_raw/{name}.jsonl")
-            clean_raw_java = 0
-            clean_raw_python = 0
+            clean_raw_by_lang: dict[str, int] = {}
             if clean_raw_file.exists():
                 import json as _json  # noqa: PLC0415
                 for line in clean_raw_file.open():
                     if not line.strip(): continue
                     try:
-                        r = _json.loads(line)
-                        lang = r.get("lang", "").lower()
-                        if lang == "java": clean_raw_java += 1
-                        elif lang == "python": clean_raw_python += 1
+                        lang = _json.loads(line).get("lang", "").lower()
+                        if lang:
+                            clean_raw_by_lang[lang] = clean_raw_by_lang.get(lang, 0) + 1
                     except Exception: pass
 
             # Display fused pairs if available, otherwise raw collected count
@@ -1849,8 +1465,7 @@ async def adapter_coverage(project_id: str) -> dict[str, Any]:
                 "target":           target,
                 "collected":        display,
                 "fused_pairs":      fused_count,
-                "clean_raw_java":   clean_raw_java,
-                "clean_raw_python": clean_raw_python,
+                "clean_raw_by_lang": clean_raw_by_lang,
                 "missing":          missing,
                 "pct":              pct,
                 "status":           status,
@@ -1977,13 +1592,7 @@ async def ingest_raw_start(
     tmp_path.write_bytes(content)
 
     job_id = f"ingest-raw-{uuid.uuid4().hex[:8]}"
-    _JOBS[job_id] = {
-        "status":     "running",
-        "lines":      [],
-        "project_id": project_id,
-        "filename":   file.filename,
-        "started_at": datetime.now(timezone.utc).timestamp(),
-    }
+    _ledger().create_job(job_id, project_id, "ingest-raw", meta={"filename": file.filename})
     asyncio.create_task(_run_ingest_raw(job_id, tmp_path, source_description, adapter_name, config))
     return {"job_id": job_id}
 
@@ -2006,16 +1615,14 @@ async def _run_ingest_raw(
                 summary = log
             else:
                 line = f"[{log.get('level','info').upper()}] {log.get('msg','')}"
-                _JOBS[job_id]["lines"].append(line)
+                _ledger().log(job_id, line)
             await asyncio.sleep(0)
 
-        _JOBS[job_id]["status"]      = "completed"
-        _JOBS[job_id]["result"]      = summary
-        _JOBS[job_id]["finished_at"] = datetime.now(timezone.utc).timestamp()
+        _ledger().set_fields(job_id, result=summary)
+        _ledger().set_status(job_id, "completed")
     except Exception as exc:  # noqa: BLE001
-        _JOBS[job_id]["status"] = "failed"
-        _JOBS[job_id]["lines"].append(f"ERROR: {exc}")
-        _JOBS[job_id]["finished_at"] = datetime.now(timezone.utc).timestamp()
+        _ledger().log(job_id, f"ERROR: {exc}", level="error")
+        _ledger().set_status(job_id, "failed")
     finally:
         file_path.unlink(missing_ok=True)
 
@@ -2023,19 +1630,21 @@ async def _run_ingest_raw(
 @router.get("/ingest-raw/{job_id}/stream")
 async def ingest_raw_stream(job_id: str):
     """Stream log lines for a running ingest-raw job (SSE)."""
-    if job_id not in _JOBS:
+    if not _ledger().exists(job_id):
         raise HTTPException(404, f"Job {job_id} not found")
 
     async def event_gen():
-        sent = 0
+        last_seq = 0
         while True:
-            job   = _JOBS.get(job_id, {})
-            lines = job.get("lines", [])
-            while sent < len(lines):
-                yield {"data": lines[sent]}
-                sent += 1
-            if job.get("status") in ("completed", "failed"):
-                if job.get("result"):
+            for seq, line in _ledger().events_since(job_id, last_seq):
+                yield {"data": line}
+                last_seq = seq
+            job = _ledger().get_job(job_id)
+            if job["status"] in TERMINAL_STATUSES:
+                for seq, line in _ledger().events_since(job_id, last_seq):  # final drain
+                    yield {"data": line}
+                    last_seq = seq
+                if job["result"]:
                     yield {"data": f"[SUMMARY] {json.dumps(job['result'])}"}
                 break
             await asyncio.sleep(0.5)
@@ -2046,18 +1655,18 @@ async def ingest_raw_stream(job_id: str):
 @router.get("/ingest-raw/{job_id}/status")
 async def ingest_raw_status(job_id: str) -> dict[str, Any]:
     """Return current status of an ingest-raw job."""
-    if job_id not in _JOBS:
+    j = _ledger().get_job(job_id)
+    if j is None:
         raise HTTPException(404, f"Job {job_id} not found")
-    j = _JOBS[job_id]
     return {
         "job_id":     job_id,
-        "status":     j.get("status"),
-        "lines":      j.get("lines", []),
-        "result":     j.get("result"),
-        "project_id": j.get("project_id"),
-        "filename":   j.get("filename"),
-        "started_at": j.get("started_at"),
-        "finished_at":j.get("finished_at"),
+        "status":     j["status"],
+        "lines":      _ledger().lines(job_id),
+        "result":     j["result"],
+        "project_id": j["project_id"],
+        "filename":   j["meta"].get("filename"),
+        "started_at": j["created_at"],
+        "finished_at": j["finished_at"],
     }
 
 

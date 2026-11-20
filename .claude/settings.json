@@ -50,5 +50,18 @@
       "Write(~/Documents/GitHub/mlOps/datalake/raw/**)",
       "Write(~/migrator/**)"
     ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v python3 >/dev/null 2>&1; then exec python3 scripts/hooks/guard_stop.py; else exec python scripts/hooks/guard_stop.py; fi",
+            "timeout": 120
+          }
+        ]
+      }
+    ]
   }
 }

@@ -42,21 +42,16 @@ def _check_mlflow_run(mlflow_run_id: str, thresholds: dict[str, float]) -> tuple
     metrics = run.data.metrics
     failures: list[str] = []
 
-    threshold_map: dict[str, tuple[str, float]] = {
-        # (comparison, value) — "gte" means metric >= threshold, "lte" means metric <= threshold
-        "min_pass_rate":       ("gte", thresholds.get("min_pass_rate", 0.0)),
-        "min_rouge_l":         ("gte", thresholds.get("min_rouge_l", 0.0)),
-        "min_codebleu":        ("gte", thresholds.get("min_codebleu", 0.0)),
-        "min_compilation_rate":("gte", thresholds.get("min_compilation_rate", 0.0)),
-        "min_ner_f1":          ("gte", thresholds.get("min_ner_f1", 0.0)),
-        "max_latency_ratio":   ("lte", thresholds.get("max_latency_ratio", 999.0)),
-        "max_fpr":             ("lte", thresholds.get("max_fpr", 1.0)),
-    }
-
-    for threshold_key, (cmp, threshold_val) in threshold_map.items():
-        if threshold_val in (0.0, 999.0, 1.0):
+    # Generic: every `min_<metric>` / `max_<metric>` threshold is checked against the MLflow metric `<metric>`.
+    for threshold_key, threshold_val in thresholds.items():
+        if threshold_key.startswith("min_"):
+            cmp = "gte"
+        elif threshold_key.startswith("max_"):
+            cmp = "lte"
+        else:
+            continue
+        if not isinstance(threshold_val, (int, float)) or (cmp == "gte" and threshold_val == 0.0):
             continue  # threshold not configured — skip
-        # Map threshold key to likely MLflow metric name
         metric_key = threshold_key.removeprefix("min_").removeprefix("max_")
         if metric_key not in metrics:
             failures.append(f"metric '{metric_key}' missing from MLflow run")

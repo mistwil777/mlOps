@@ -13,9 +13,9 @@ from pydantic import BaseModel
 from qdrant_client import QdrantClient
 from sse_starlette.sse import EventSourceResponse
 
-router = APIRouter(prefix="/api/rag", tags=["rag"])
+from pipeline.utils.run_ledger import TERMINAL_STATUSES, get_ledger as _ledger
 
-_JOBS: dict[str, dict[str, Any]] = {}
+router = APIRouter(prefix="/api/rag", tags=["rag"])
 
 _QDRANT_HOST = "localhost"
 _QDRANT_PORT = 6333
@@ -69,7 +69,7 @@ async def get_rag_index(project_id: str) -> dict[str, Any]:
 async def build_rag_index(project_id: str, rebuild: bool = False) -> dict[str, str]:
     """Build or rebuild a RAG index for a project (async, SSE streaming)."""
     job_id = str(uuid.uuid4())[:8]
-    _JOBS[job_id] = {"status": "running", "lines": [], "project_id": project_id}
+    _ledger().create_job(job_id, project_id, "rag-build")
 
     asyncio.create_task(_run_build(job_id, project_id, rebuild))
     return {"job_id": job_id}
@@ -102,29 +102,33 @@ print(f'Done: {{idx.count}} patterns indexed', flush=True)
         )
         async for raw in proc.stdout:
             line = raw.decode(errors="replace").rstrip()
-            _JOBS[job_id]["lines"].append(line)
+            _ledger().log(job_id, line)
 
         await proc.wait()
-        _JOBS[job_id]["status"] = "completed" if proc.returncode == 0 else "failed"
+        _ledger().set_fields(job_id, returncode=proc.returncode)
+        _ledger().set_status(job_id, "completed" if proc.returncode == 0 else "failed")
     except Exception as exc:
-        _JOBS[job_id]["status"] = "failed"
-        _JOBS[job_id]["lines"].append(f"ERROR: {exc}")
+        _ledger().log(job_id, f"ERROR: {exc}", level="error")
+        _ledger().set_status(job_id, "failed")
 
 
 @router.get("/build/{job_id}/stream")
 async def stream_build(job_id: str):
-    if job_id not in _JOBS:
+    if not _ledger().exists(job_id):
         raise HTTPException(404, "Job not found")
 
     async def generator():
-        sent = 0
+        last_seq = 0
         while True:
-            job = _JOBS[job_id]
-            while sent < len(job["lines"]):
-                yield {"event": "log", "data": json.dumps({"line": job["lines"][sent]})}
-                sent += 1
-            if job["status"] != "running":
-                yield {"event": "done", "data": json.dumps({"status": job["status"]})}
+            for seq, line in _ledger().events_since(job_id, last_seq):
+                yield {"event": "log", "data": json.dumps({"line": line})}
+                last_seq = seq
+            status = _ledger().get_job(job_id)["status"]
+            if status in TERMINAL_STATUSES:
+                for seq, line in _ledger().events_since(job_id, last_seq):  # final drain
+                    yield {"event": "log", "data": json.dumps({"line": line})}
+                    last_seq = seq
+                yield {"event": "done", "data": json.dumps({"status": status})}
                 return
             await asyncio.sleep(0.5)
 

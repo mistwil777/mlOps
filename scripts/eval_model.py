@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import random
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -80,32 +80,24 @@ def _compute_pass_rate(predictions: list[str], references: list[str]) -> float:
     return passes / len(predictions) if predictions else 0.0
 
 
-def _check_java_compilation(java_snippet: str) -> bool:
-    """Write snippet to temp file and attempt javac compilation."""
-    import tempfile
-    tmp = Path(tempfile.mktemp(suffix=".java"))
-    # Wrap bare snippet in a class if it doesn't have one
-    if "class " not in java_snippet:
-        java_snippet = f"public class Tmp {{\n{java_snippet}\n}}"
-    tmp.write_text(java_snippet)
-    result = subprocess.run(
-        ["javac", str(tmp)], capture_output=True, timeout=10
-    )
-    tmp.unlink(missing_ok=True)
-    # Remove .class file if it was created
-    class_file = tmp.with_suffix(".class")
-    class_file.unlink(missing_ok=True)
-    return result.returncode == 0
+def _run_metric_plugin(metric: dict[str, Any], predictions: list[str], references: list[str]) -> float | None:
+    """Run a domain metric declared in evals/domains/<domain>.yaml.
 
-
-def _compute_compilation_rate(predictions: list[str]) -> float:
-    results = []
-    for p in predictions:
-        try:
-            results.append(_check_java_compilation(p))
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            results.append(False)
-    return sum(results) / len(results) if results else 0.0
+    A metric entry points to a script (`script:`) exposing
+    `compute(predictions, references, **params) -> float`; `params:` comes from the YAML.
+    Returns None when the metric has no script or cannot be loaded.
+    """
+    script = metric.get("script")
+    if not script:
+        return None
+    path = Path(script)
+    if not path.exists():
+        print(f"  WARNING: metric script not found for '{metric['name']}': {path}")
+        return None
+    spec = importlib.util.spec_from_file_location(f"eval_metric_{metric['name']}", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return float(module.compute(predictions, references, **metric.get("params", {})))
 
 
 def run_eval(
@@ -153,16 +145,12 @@ def run_eval(
     metrics["avg_latency_s"] = sum(latencies) / len(latencies) if latencies else 0.0
 
     # Domain-specific metrics
-    metric_names = [m["name"] for m in domain_cfg.get("metrics", [])]
-    if "compilation_rate" in metric_names:
-        metrics["compilation_rate"] = _compute_compilation_rate(predictions)
-    if "codebleu" in metric_names:
-        try:
-            from codebleu import calc_codebleu  # type: ignore[import]
-            result = calc_codebleu(references, predictions, lang="java", weights=(0.25, 0.25, 0.25, 0.25))
-            metrics["codebleu"] = result["codebleu"]
-        except ImportError:
-            print("  WARNING: codebleu not installed — skipping CodeBLEU metric")
+    for metric in domain_cfg.get("metrics", []):
+        if metric["name"] in metrics:
+            continue
+        value = _run_metric_plugin(metric, predictions, references)
+        if value is not None:
+            metrics[metric["name"]] = value
 
     # Log to MLflow
     mlflow.set_experiment(experiment_name)

@@ -29,8 +29,8 @@ help:
 	@echo "    make test-fast      Run tests without slow integration tests"
 	@echo "    make lint           Ruff + type check"
 	@echo ""
-	@echo "  Pipeline (Migrator)"
-	@echo "    make extract        Extract pairs from ~/migrator"
+	@echo "  Pipeline (PROJECT=<id> required)"
+	@echo "    make extract        Extract pairs from the project source"
 	@echo "    make clean-data     Clean + split dataset"
 	@echo "    make rag            Build Qdrant RAG index"
 	@echo "    make train          Launch LoRA fine-tuning"
@@ -93,7 +93,7 @@ lint:
 	$(VENV)/bin/ruff format --check pipeline/ api/ scripts/ agents/
 
 # ── Pipeline shortcuts ───────────────────────────────────────────────────────
-PROJECT ?= migrator
+PROJECT ?=
 
 .PHONY: extract clean-data rag train eval deploy
 extract:
