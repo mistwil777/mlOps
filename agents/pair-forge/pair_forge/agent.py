@@ -28,27 +28,20 @@ from pair_forge.tools import apply_tools, check_dependencies, detect_language
 
 # ── Default backend implementations (lazy imports — only used if not injected) ─
 
-def _default_llm(prompt: str, llm_config: dict, max_tokens: int = 2048) -> str | None:
-    try:
-        import boto3  # noqa: PLC0415
-        from botocore.config import Config  # noqa: PLC0415
+def _gateway_llm(project_id: str) -> Callable[[str, dict, int], str | None]:
+    """Default LLM backend: the mlOps gateway (project policy + audit). Inject `llm_fn` to use another one."""
 
-        model_id    = llm_config.get("model_id", "us.amazon.nova-pro-v1:0")
-        temperature = float(llm_config.get("temperature", 0.1))
-        region      = llm_config.get("region", "us-east-1")
-        client = boto3.client(
-            "bedrock-runtime", region_name=region,
-            config=Config(connect_timeout=10, read_timeout=120, retries={"max_attempts": 2}),
+    def _llm(prompt: str, llm_config: dict, max_tokens: int = 2048) -> str | None:
+        from pipeline.utils.llm import call_llm, call_llm_with_config  # noqa: PLC0415
+
+        if llm_config.get("provider") or llm_config.get("model_id"):
+            return call_llm_with_config(prompt, llm_config, max_tokens, project_id=project_id, purpose="pair-forge")
+        return call_llm(
+            prompt, max_tokens, float(llm_config.get("temperature", 0.1)),
+            project_id=project_id, purpose="pair-forge", cloud_model="us.amazon.nova-pro-v1:0",
         )
-        response = client.converse(
-            modelId=model_id,
-            messages=[{"role": "user", "content": [{"text": prompt}]}],
-            inferenceConfig={"maxTokens": max_tokens, "temperature": temperature},
-        )
-        return response["output"]["message"]["content"][0]["text"].strip()
-    except Exception as exc:  # noqa: BLE001
-        logging.getLogger("pair_forge").warning("Default LLM call failed: %s", exc)
-        return None
+
+    return _llm
 
 
 def _default_embed(texts: list[str]) -> list[list[float]]:
@@ -112,7 +105,7 @@ class PairForgeAgent:
         self.min_tokens  = int(config.get("min_tokens", 50))
         self.max_tokens  = int(config.get("max_tokens", 2048))
         self.qdrant_url  = qdrant_url
-        self._llm        = llm_fn    or _default_llm
+        self._llm        = llm_fn    or _gateway_llm(project_id)
         self._embed      = embed_fn  or _default_embed
         self._log        = log_fn    or _default_log
         self._qdrant     = None

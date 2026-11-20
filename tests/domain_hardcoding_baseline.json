@@ -20,7 +20,6 @@
   "pipeline/transform.py": 3,
   "pipeline/tune_pipeline.py": 3,
   "pipeline/utils/kpi_collectors/compliance.py": 1,
-  "pipeline/utils/llm.py": 1,
   "pipeline/utils/schema.py": 2,
   "scripts/seed_mock_evals.py": 1
 }

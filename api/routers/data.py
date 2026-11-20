@@ -260,6 +260,7 @@ async def _run_fuse(job_id: str, req: FuseRequest) -> None:
 
     cmd = [
         sys.executable, "-m", "agents.pair_fuser",
+        "--project", req.project_id,
         "--pair",         req.lang_pair,
         "--source-jsonl", str(source_jsonl),
         "--target-jsonl", str(target_jsonl),
@@ -731,7 +732,7 @@ async def ai_audit(project_id: str, rerun: bool = False) -> dict[str, Any]:
     """AI-assisted audit: flags suspicious accepted pairs and provides LLM recommendations."""
     import re  # noqa: PLC0415
     from concurrent.futures import ThreadPoolExecutor, as_completed  # noqa: PLC0415
-    from pipeline.utils.llm import call_llm_with_config  # noqa: PLC0415
+    from pipeline.utils.llm import LLMPolicyError, call_llm  # noqa: PLC0415
 
     ftr_dir = Path(f"datalake/projects/{project_id}/fine-tuning-ready")
     cache_path = _processed_dir(project_id) / "ai_audit.json"
@@ -860,11 +861,10 @@ async def ai_audit(project_id: str, rerun: bool = False) -> dict[str, Any]:
             "En 1-2 phrases max : explique le problème précis et recommande l'action parmi : "
             "SUPPRIMER (erreur claire), CORRIGER (problème mineur récupérable), IGNORER (faux positif)."
         )
-        result = call_llm_with_config(
-            prompt,
-            llm_config={"provider": "bedrock", "model": "us.anthropic.claude-sonnet-4-6"},
-            max_tokens=200,
-        )
+        try:
+            result = call_llm(prompt, max_tokens=200, project_id=project_id, purpose="ai-audit-recommendation")
+        except LLMPolicyError as exc:
+            return str(exc)  # shown as the recommendation: a human must see that the policy blocked it
         return result or "Recommandation indisponible (LLM non joignable)."
 
     if suspicious:
@@ -910,8 +910,8 @@ async def ai_audit_ignore(project_id: str, body: dict[str, Any]) -> dict[str, An
 
 @router.post("/review/{project_id}/ai-audit/auto-correct")
 async def ai_audit_auto_correct(project_id: str, body: dict[str, Any]) -> dict[str, Any]:
-    """Apply AI-suggested correction to a pair using Haiku, save back to train.jsonl."""
-    from pipeline.utils.llm import call_llm_with_config  # noqa: PLC0415
+    """Apply AI-suggested correction to a pair, save back to train.jsonl."""
+    from pipeline.utils.llm import LLMPolicyError, call_llm  # noqa: PLC0415
 
     index: int = body.get("index", -1)
     source: str = body.get("source", "train")
@@ -941,11 +941,10 @@ async def ai_audit_auto_correct(project_id: str, body: dict[str, Any]) -> dict[s
         "Retourne uniquement la completion corrigée, sans explication ni commentaire."
     )
 
-    corrected = call_llm_with_config(
-        prompt,
-        llm_config={"provider": "bedrock", "model": "us.anthropic.claude-haiku-4-5"},
-        max_tokens=2048,
-    )
+    try:
+        corrected = call_llm(prompt, max_tokens=2048, project_id=project_id, purpose="ai-audit-auto-correct")
+    except LLMPolicyError as exc:
+        raise HTTPException(403, str(exc)) from exc
     if not corrected:
         raise HTTPException(502, "LLM unavailable — correction impossible")
 
@@ -1886,20 +1885,13 @@ async def ingest_norm_document(
     kg_entities = 0
     try:
         from pipeline.utils.knowledge_graph import ProjectKG  # noqa: PLC0415
+        from pipeline.utils.llm import call_llm  # noqa: PLC0415
 
         def _llm_fn(prompt: str, cfg: dict, max_tokens: int = 1024) -> str | None:
-            import boto3  # noqa: PLC0415
-            from botocore.config import Config  # noqa: PLC0415
-            client = boto3.client(
-                "bedrock-runtime", region_name="us-east-1",
-                config=Config(connect_timeout=10, read_timeout=60),
+            return call_llm(
+                prompt, max_tokens=max_tokens, temperature=0.1, project_id=project_id,
+                purpose="norm-kg-extraction", cloud_model="us.amazon.nova-pro-v1:0",
             )
-            resp = client.converse(
-                modelId="us.amazon.nova-pro-v1:0",
-                messages=[{"role": "user", "content": [{"text": prompt}]}],
-                inferenceConfig={"maxTokens": max_tokens, "temperature": 0.1},
-            )
-            return resp["output"]["message"]["content"][0]["text"].strip()
 
         kg = ProjectKG(project_id)
         kg.ingest_norm_document(text, domain=domain, llm_fn=_llm_fn)

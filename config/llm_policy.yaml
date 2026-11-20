@@ -1,0 +1,32 @@
+# LLM gateway policy — what may leave the machine, per project classification.
+#
+# PROPOSAL: to be confirmed by the security officer before use on client projects.
+# Levels match the project's `classification` field (config/projects/<id>.yaml).
+# A missing or unknown level DENIES cloud calls. Add levels here; no code change needed.
+#
+#   cloud: allow      -> cloud LLMs may receive the prompt as is
+#   cloud: anonymize  -> cloud LLMs receive only anonymized text; the response is restored locally
+#   cloud: deny       -> only local backends (ollama, mlx); if none is reachable the call is blocked
+#
+#   audit_required: true -> every call is recorded BEFORE it is sent; if it cannot be recorded, it is not sent
+#   require_sensitive_terms: true -> the project config must define `sensitive_terms` (an empty list is an
+#                                    explicit choice) or cloud calls are denied
+levels:
+  interne:
+    cloud: allow
+    audit_required: false
+  confidentiel:
+    cloud: anonymize
+    audit_required: true
+    require_sensitive_terms: true
+  secret:
+    cloud: deny
+    audit_required: true
+
+# Calls that do not pass a project_id. They are audited as "unscoped" and counted by a guard
+# (tests/domain_hardcoding-style ratchet) so they can only decrease.
+unscoped_level: interne
+
+audit:
+  # Keep the exact text sent to a cloud LLM only when it was anonymized (it is the proof of what left).
+  store_sent_text: anonymized   # anonymized | none

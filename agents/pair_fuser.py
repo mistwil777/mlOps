@@ -143,7 +143,9 @@ class PairFuser:
         source_lang: str,
         target_lang: str,
         max_tokens: int = 2048,
+        project_id: str | None = None,
     ):
+        self.project_id  = project_id
         self.source_lang = source_lang
         self.target_lang = target_lang
         self.max_tokens  = max_tokens
@@ -177,7 +179,7 @@ class PairFuser:
                 source_code=source_code[:1500],
             )
 
-            response = call_llm(prompt, max_tokens=self.max_tokens, temperature=0.1)
+            response = call_llm(prompt, max_tokens=self.max_tokens, temperature=0.1, project_id=self.project_id, purpose="pair-fusion")
             if not response:
                 rejected["llm_fail"] += 1
                 logger.debug("[%d/%d] LLM failed — skipped", i + 1, len(records))
@@ -275,6 +277,7 @@ def main() -> None:
     parser.add_argument("--max-fused",    type=int, default=500, dest="max_fused")
     parser.add_argument("--max-tokens",   type=int, default=2048, dest="max_tokens")
     parser.add_argument("--adapter-name", default=None, dest="adapter_name")
+    parser.add_argument("--project", default=None, help="Project id: applies the project's LLM policy")
     args = parser.parse_args()
 
     pcfg = pairs_cfg[args.pair]
@@ -282,6 +285,7 @@ def main() -> None:
         source_lang=pcfg["source_lang"],
         target_lang=pcfg["target_lang"],
         max_tokens=args.max_tokens,
+        project_id=args.project,
     )
     n = fuser.run(
         source_jsonl=Path(args.source_jsonl),

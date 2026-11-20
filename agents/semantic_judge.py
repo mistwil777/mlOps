@@ -14,17 +14,15 @@ CLI:
 from __future__ import annotations
 
 import argparse
-import os
 from pathlib import Path
 from typing import Any
 
 from pipeline.utils.jsonl import read_jsonl, write_jsonl
+from pipeline.utils.llm import LLMPolicyError, call_llm
 from pipeline.utils.logger import get_logger
 
 logger = get_logger("mlops.semantic_judge")
 
-_HAIKU_MODEL  = "claude-haiku-4-5-20251001"
-_SONNET_MODEL = "claude-sonnet-4-6"
 _DEFAULT_THRESHOLD = 0.8
 
 _JUDGE_PROMPT = """You are a strict code equivalence judge.
@@ -64,46 +62,37 @@ def judge_pair(
     code_b: str,
     lang_a: str = "python",
     lang_b: str = "java",
-    model: str = _HAIKU_MODEL,
+    project_id: str | None = None,
 ) -> tuple[float, str]:
-    """Return (score_0_to_1, reasoning). Returns (0.5, 'api_error') on failure."""
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if not api_key:
-        logger.warning("ANTHROPIC_API_KEY not set — returning 0.5")
-        return 0.5, "no_api_key"
+    """Return (score_0_to_1, reasoning), through the LLM gateway (project policy + audit).
 
+    Returns (0.5, 'api_error') when no backend answered. A policy block raises LLMPolicyError.
+    """
     prompt = _JUDGE_PROMPT.format(
         lang_a=lang_a, code_a=code_a[:1000],
         lang_b=lang_b, code_b=code_b[:1000],
     )
-
     try:
-        import anthropic  # noqa: PLC0415
-
-        client = anthropic.Anthropic(api_key=api_key)
-        msg = client.messages.create(
-            model=model,
-            max_tokens=200,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        text = msg.content[0].text.strip()
-        reasoning = ""
-        score_raw  = 5
-
-        for line in text.splitlines():
-            if line.startswith("REASONING:"):
-                reasoning = line[len("REASONING:"):].strip()
-            elif line.startswith("SCORE:"):
-                try:
-                    score_raw = int(line[len("SCORE:"):].strip().split()[0])
-                except ValueError:
-                    pass
-
-        return min(1.0, max(0.0, score_raw / 10.0)), reasoning
-
+        text = call_llm(prompt, max_tokens=200, temperature=0.0, project_id=project_id, purpose="semantic-judge")
+    except LLMPolicyError:
+        raise
     except Exception as exc:  # noqa: BLE001
         logger.warning("Semantic judge failed: %s", exc)
         return 0.5, f"api_error: {exc}"
+    if not text:
+        return 0.5, "api_error: no LLM backend answered"
+
+    reasoning = ""
+    score_raw = 5
+    for line in text.splitlines():
+        if line.startswith("REASONING:"):
+            reasoning = line[len("REASONING:"):].strip()
+        elif line.startswith("SCORE:"):
+            try:
+                score_raw = int(line[len("SCORE:"):].strip().split()[0])
+            except ValueError:
+                pass
+    return min(1.0, max(0.0, score_raw / 10.0)), reasoning
 
 
 def judge_record(
@@ -112,6 +101,7 @@ def judge_record(
     tgt_field: str = "code_tgt",
     lang_a: str | None = None,
     lang_b: str | None = None,
+    project_id: str | None = None,
 ) -> tuple[float, str]:
     """Judge a single record. Infers fields from schema if not specified."""
     # Infer from multilang_wiki consolidated pair format (after pair_fuser or transform)
@@ -129,7 +119,7 @@ def judge_record(
     a_lang = lang_a or str(record.get("lang_src", "python"))
     b_lang = lang_b or str(record.get("lang_tgt", "java"))
 
-    return judge_pair(src_code, tgt_code, a_lang, b_lang)
+    return judge_pair(src_code, tgt_code, a_lang, b_lang, project_id=project_id)
 
 
 def filter_dataset(
@@ -141,6 +131,7 @@ def filter_dataset(
     lang_a: str | None = None,
     lang_b: str | None = None,
     threshold: float = _DEFAULT_THRESHOLD,
+    project_id: str | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Filter records where the two code fields are not semantically equivalent."""
     records = read_jsonl(input_path)
@@ -151,7 +142,7 @@ def filter_dataset(
         if i % 20 == 0:
             logger.info("Semantic judge %d/%d", i, len(records))
 
-        score, reasoning = judge_record(r, src_field, tgt_field, lang_a, lang_b)
+        score, reasoning = judge_record(r, src_field, tgt_field, lang_a, lang_b, project_id)
         tagged = {**r, "_semantic_score": round(score, 3), "_semantic_reasoning": reasoning}
 
         if score >= threshold:
@@ -185,18 +176,19 @@ def main() -> None:
     parser.add_argument("--output",    help="Passed records output")
     parser.add_argument("--rejected",  help="Rejected records output")
     parser.add_argument("--threshold", type=float, default=_DEFAULT_THRESHOLD)
+    parser.add_argument("--project", default=None, help="Project id: applies the project's LLM policy")
     args = parser.parse_args()
 
     if args.code_a:
         if not args.code_b:
             parser.error("--code-b required with --code-a")
-        score, reasoning = judge_pair(args.code_a, args.code_b, args.lang_a, args.lang_b)
+        score, reasoning = judge_pair(args.code_a, args.code_b, args.lang_a, args.lang_b, project_id=args.project)
         print(f"Score: {score:.2f}")
         print(f"Reasoning: {reasoning}")
     else:
         passed, rejected = filter_dataset(
             args.input, args.output, args.rejected,
-            args.src_field, args.tgt_field, args.lang_a, args.lang_b, args.threshold,
+            args.src_field, args.tgt_field, args.lang_a, args.lang_b, args.threshold, args.project,
         )
         print(f"Passed: {len(passed)}  Rejected: {len(rejected)}")
 

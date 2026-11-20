@@ -248,7 +248,7 @@ class AdapterPairGenerator:
                 tgt_lang=self.tgt_lang,
                 source_code=source_code[:1500],
             )
-            response = call_llm(prompt, max_tokens=1024, temperature=0.2)
+            response = call_llm(prompt, max_tokens=1024, temperature=0.2, project_id=self.project_id, purpose="pair-generation")
             if not response:
                 rejected["llm"] += 1
                 consec_fail += 1
@@ -298,7 +298,7 @@ class AdapterPairGenerator:
                 tgt_lang=self.tgt_lang,
                 adapter_context=self.description[:300],
             )
-            response = call_llm(prompt, max_tokens=1536, temperature=0.4)
+            response = call_llm(prompt, max_tokens=1536, temperature=0.4, project_id=self.project_id, purpose="pair-generation")
             if not response:
                 rejected["llm"] += 1
                 consec_fail += 1
@@ -350,7 +350,7 @@ class AdapterPairGenerator:
                 lang=self.tgt_lang,
                 adapter_context=self.description[:300],
             )
-            response = call_llm(prompt, max_tokens=1024, temperature=0.4)
+            response = call_llm(prompt, max_tokens=1024, temperature=0.4, project_id=self.project_id, purpose="pair-generation")
             if not response:
                 rejected["llm"] += 1
                 consec_fail += 1

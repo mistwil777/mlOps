@@ -88,3 +88,31 @@ class LineBatcher:
             report_job(self.job_id, lines=self._buffer)
             self._buffer = []
         self._last = time.monotonic()
+
+
+def _post(path: str, payload: dict[str, Any]) -> bool:
+    base = os.environ.get("MLOPS_API_URL", "")
+    token = os.environ.get("MLOPS_INTERNAL_TOKEN", "")
+    if not (base and token):
+        return False
+    request = urllib.request.Request(
+        f"{base.rstrip('/')}{path}",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json", "X-Internal-Token": token},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=_TIMEOUT_S):
+            return True
+    except Exception as exc:  # noqa: BLE001
+        _log.warning("report to %s failed: %s", path, exc)
+        return False
+
+
+def report_llm_call(call: dict[str, Any]) -> bool:
+    """Record an LLM call decision through the API (workers never open the ledger file)."""
+    return _post("/api/llm-calls", call)
+
+
+def report_llm_outcome(call_id: str, **outcome: Any) -> bool:
+    return _post(f"/api/llm-calls/{call_id}/outcome", outcome)

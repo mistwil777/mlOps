@@ -1,0 +1,21 @@
+{
+  "direct_provider_calls": {
+    "agents/data_augmentor.py": 1,
+    "agents/pair-forge/pair_forge/agent.py": 1,
+    "agents/pair-forge/pair_forge/extractors.py": 1,
+    "api/routers/advisor.py": 1,
+    "pipeline/checks/relevance.py": 1,
+    "pipeline/cluster.py": 1,
+    "pipeline/utils/embeddings.py": 1,
+    "pipeline/utils/llm_judge.py": 1
+  },
+  "calls_without_project_id": {
+    "pipeline/analyze_source.py": 1,
+    "pipeline/clean.py": 1,
+    "pipeline/generate_bilingual.py": 1,
+    "pipeline/test_prompts.py": 2,
+    "pipeline/tune_pipeline.py": 2,
+    "pipeline/utils/kpi_collectors/security.py": 1,
+    "scripts/generate_pairs.py": 2
+  }
+}

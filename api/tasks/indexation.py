@@ -51,20 +51,13 @@ def index_norms(
 
     try:
         from pipeline.utils.knowledge_graph import ProjectKG  # noqa: PLC0415
-        import boto3  # noqa: PLC0415
-        from botocore.config import Config as BotoConfig  # noqa: PLC0415
+        from pipeline.utils.llm import call_llm  # noqa: PLC0415
 
         def _llm_fn(prompt: str, cfg: dict = {}, max_tokens: int = 1024) -> str | None:  # noqa: B006
-            client = boto3.client(
-                "bedrock-runtime", region_name="us-east-1",
-                config=BotoConfig(connect_timeout=10, read_timeout=120),
+            return call_llm(
+                prompt, max_tokens=max_tokens, temperature=0.1, project_id=project_id,
+                purpose="norm-kg-extraction", cloud_model="us.amazon.nova-pro-v1:0",
             )
-            resp = client.converse(
-                modelId="us.amazon.nova-pro-v1:0",
-                messages=[{"role": "user", "content": [{"text": prompt}]}],
-                inferenceConfig={"maxTokens": max_tokens, "temperature": 0.1},
-            )
-            return resp["output"]["message"]["content"][0]["text"].strip()
 
         kg = ProjectKG(project_id)
     except Exception:  # noqa: BLE001

@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 GUARD_FILES = [
     ROOT / "tests" / "test_no_domain_hardcoding.py",
     ROOT / "tests" / "test_no_in_memory_job_state.py",
+    ROOT / "tests" / "test_no_direct_llm_calls.py",
 ]
 
 

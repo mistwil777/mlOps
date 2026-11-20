@@ -43,7 +43,31 @@ CREATE TABLE IF NOT EXISTS job_events (
     FOREIGN KEY (job_id) REFERENCES jobs(id)
 );
 CREATE INDEX IF NOT EXISTS idx_events_job ON job_events(job_id, seq);
+CREATE TABLE IF NOT EXISTS llm_calls (
+    id             TEXT PRIMARY KEY,
+    ts             REAL NOT NULL,
+    project_id     TEXT,
+    level          TEXT,
+    purpose        TEXT,
+    decision       TEXT NOT NULL,
+    backend        TEXT,
+    model          TEXT,
+    entities_json  TEXT,
+    sent_sha256    TEXT,
+    sent_chars     INTEGER,
+    sent_text      TEXT,
+    ok             INTEGER,
+    latency_ms     INTEGER,
+    response_chars INTEGER,
+    error          TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_llm_calls_project ON llm_calls(project_id, ts);
 """
+
+_LLM_CALL_COLUMNS = (
+    "id", "ts", "project_id", "level", "purpose", "decision", "backend", "model",
+    "entities_json", "sent_sha256", "sent_chars", "sent_text",
+)
 
 
 class RunLedger:
@@ -158,6 +182,41 @@ class RunLedger:
         return len(ids)
 
     # ── reads ─────────────────────────────────────────────────────────────────
+
+    def record_llm_call(self, call: dict[str, Any]) -> None:
+        """Record an LLM call decision BEFORE it is sent (id chosen by the caller)."""
+        values = [call.get(c) for c in _LLM_CALL_COLUMNS]
+        with self._lock, self._conn:
+            self._conn.execute(
+                f"INSERT INTO llm_calls ({', '.join(_LLM_CALL_COLUMNS)}) VALUES ({', '.join('?' * len(values))})",
+                values,
+            )
+
+    def finish_llm_call(
+        self, call_id: str, *, ok: bool, latency_ms: int | None = None,
+        response_chars: int | None = None, error: str | None = None,
+    ) -> None:
+        with self._lock, self._conn:
+            self._conn.execute(
+                "UPDATE llm_calls SET ok = ?, latency_ms = ?, response_chars = ?, error = ? WHERE id = ?",
+                (int(ok), latency_ms, response_chars, error, call_id),
+            )
+
+    def list_llm_calls(self, project_id: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+        sql, params = "SELECT * FROM llm_calls", []
+        if project_id:
+            sql += " WHERE project_id = ?"
+            params.append(project_id)
+        sql += " ORDER BY ts DESC LIMIT ?"
+        params.append(limit)
+        with self._lock:
+            rows = self._conn.execute(sql, params).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["entities"] = json.loads(d.pop("entities_json")) if d.get("entities_json") else {}
+            out.append(d)
+        return out
 
     def exists(self, job_id: str) -> bool:
         with self._lock:
