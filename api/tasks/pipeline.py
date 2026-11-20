@@ -7,11 +7,13 @@ import sys
 from typing import Any
 
 from api.celery_app import celery_app
+from pipeline.utils.ledger_client import LineBatcher
 
 
 def _run_subprocess(self: Any, cmd: list[str]) -> dict[str, Any]:
-    """Run cmd as subprocess, stream output lines into Celery task state."""
+    """Run cmd as subprocess, stream output lines into Celery task state and the job ledger."""
     lines: list[str] = []
+    batcher = LineBatcher(getattr(self.request, "id", None))
     self.update_state(state="PROGRESS", meta={"lines": lines, "returncode": None})
 
     try:
@@ -25,14 +27,18 @@ def _run_subprocess(self: Any, cmd: list[str]) -> dict[str, Any]:
         for line in proc.stdout:  # type: ignore[union-attr]
             stripped = line.rstrip()
             lines.append(stripped)
+            batcher.add(stripped)
             # Push state every 5 lines to avoid flooding Redis
             if len(lines) % 5 == 0:
                 self.update_state(state="PROGRESS", meta={"lines": lines[:], "returncode": None})
 
         proc.wait()
+        batcher.flush()
         return {"lines": lines, "returncode": proc.returncode}
     except Exception as exc:  # noqa: BLE001
         lines.append(f"ERROR: {exc}")
+        batcher.add(f"ERROR: {exc}")
+        batcher.flush()
         return {"lines": lines, "returncode": -1}
 
 

@@ -1021,22 +1021,38 @@ class CleanRawRequest(BaseModel):
     dry_run:    bool = False
 
 
+def _enqueue(task: Any, job_type: str, project_id: str, *args: Any) -> str:
+    """Record the job in the ledger, then queue the Celery task under the same id (job_id == task_id)."""
+    job_id = str(uuid.uuid4())
+    _ledger().create_job(job_id, project_id, job_type, status="pending", executor="celery")
+    try:
+        task.apply_async(args=args, task_id=job_id)
+    except Exception as exc:  # broker down: do not leave a pending job behind
+        _ledger().log(job_id, f"ERROR: task queue unavailable: {exc}", level="error")
+        _ledger().set_status(job_id, "failed")
+        raise HTTPException(503, f"Task queue unavailable: {exc}") from exc
+    return job_id
+
+
 @router.post("/clean-raw")
 async def run_clean_raw(req: CleanRawRequest) -> dict[str, str]:
     from api.tasks.pipeline import clean_raw as _clean_raw_task  # noqa: PLC0415
     _load_project_config(req.project_id)
-    task = _clean_raw_task.delay(req.project_id, req.adapter, req.dry_run)
-    return {"job_id": task.id, "task_id": task.id}
+    job_id = _enqueue(_clean_raw_task, "clean-raw", req.project_id, req.project_id, req.adapter, req.dry_run)
+    return {"job_id": job_id, "task_id": job_id}
 
 
 @router.delete("/clean-raw/{job_id}")
 async def cancel_clean_raw(job_id: str) -> dict[str, str]:
-    """Cancel a job known to the ledger. Known limit: clean-raw jobs run in Celery and are not in the ledger yet."""
+    """Cancel a pending or running job (Celery jobs are revoked and their worker process is terminated)."""
     job = _ledger().get_job(job_id)
     if job is None:
         raise HTTPException(404, "Job not found")
-    if job["status"] != "running":
+    if job["status"] not in ("pending", "running"):
         return {"status": job["status"], "message": "Job already finished"}
+    if job["executor"] == "celery":
+        from api.celery_app import celery_app  # noqa: PLC0415
+        celery_app.control.revoke(job_id, terminate=True, signal="SIGTERM")
     _ledger().log(job_id, "Job annulé par l'utilisateur.", level="warning")
     _ledger().set_status(job_id, "cancelled")
     return {"status": "cancelled", "job_id": job_id}
@@ -1166,8 +1182,8 @@ async def start_generate_pairs(req: GenerateRequest) -> dict[str, str]:
     """Generate missing pairs for all adapters in one pass."""
     from api.tasks.pipeline import generate_pairs as _gen_pairs_task  # noqa: PLC0415
     _load_project_config(req.project_id)
-    task = _gen_pairs_task.delay(req.project_id, req.dry_run)
-    return {"job_id": task.id, "task_id": task.id}
+    job_id = _enqueue(_gen_pairs_task, "generate-pairs", req.project_id, req.project_id, req.dry_run)
+    return {"job_id": job_id, "task_id": job_id}
 
 
 @router.get("/pipeline/{job_id}/stream")
@@ -2004,8 +2020,8 @@ async def ingest_norm_batch(
     if not file_paths:
         raise HTTPException(400, "Aucun fichier valide (max 50 MB par fichier)")
 
-    task = index_norms.delay(project_id, file_paths, domain, source_description)
-    return {"task_id": task.id, "files_queued": len(file_paths)}
+    job_id = _enqueue(index_norms, "index-norms", project_id, project_id, file_paths, domain, source_description)
+    return {"task_id": job_id, "files_queued": len(file_paths)}
 
 
 # ── Batch raw data upload (async via Celery) ─────────────────────────────────
@@ -2035,8 +2051,8 @@ async def upload_raw_files(
     if not file_paths:
         raise HTTPException(400, "Aucun fichier valide")
 
-    task = store_raw_files.delay(project_id, file_paths)
-    return {"task_id": task.id, "files_queued": len(file_paths), "errors": errors}
+    job_id = _enqueue(store_raw_files, "store-raw-files", project_id, project_id, file_paths)
+    return {"task_id": job_id, "files_queued": len(file_paths), "errors": errors}
 
 
 @router.get("/raw-files/{project_id}")

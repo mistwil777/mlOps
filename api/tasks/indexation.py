@@ -9,12 +9,14 @@ from typing import Any
 from celery import Task
 
 from api.celery_app import celery_app
+from pipeline.utils.ledger_client import report_job
 
 
 class _ProgressTask(Task):
     """Base task that exposes update_progress helper."""
 
     def update_progress(self, current: int, total: int, message: str, extra: dict | None = None) -> None:
+        report_job(self.request.id, lines=[f"[{current}/{total}] {message}"])
         self.update_state(
             state="PROGRESS",
             meta={"current": current, "total": total, "message": message, **(extra or {})},

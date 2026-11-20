@@ -61,7 +61,7 @@ AWS Bedrock baseline: Nova Pro (us.amazon.nova-pro-v1:0, us-east-1)
 9. models/staging/ → never served directly — promote via scripts/deploy_gate.py gate+promote
 10. Modify a skill → atomic commit tagged skill/<name>/vX.Y + update SKILLS.md
 11. Zero hardcoded domain: no project name, language, metric or persona in executable code — config only. Enforced by tests/test_no_domain_hardcoding.py (ratchet: tests/domain_hardcoding_baseline.json may only shrink via `python tests/test_no_domain_hardcoding.py --shrink`, never edited upward) and by the Stop hook scripts/hooks/guard_stop.py
-12. Job state lives in the durable ledger (pipeline/utils/run_ledger.py, SQLite): no in-memory job dict in api/. Enforced by tests/test_no_in_memory_job_state.py
+12. Job state lives in the durable ledger (pipeline/utils/run_ledger.py, SQLite): no in-memory job dict in api/. Enforced by tests/test_no_in_memory_job_state.py. The API is the single writer of the ledger file: Celery workers report through POST /api/jobs/{id}/report (pipeline/utils/ledger_client.py), never by opening the SQLite file. Queue tasks with data.py `_enqueue` so job_id == task_id
 13. A task is done only with evidence (command output), never with a claim. If an instruction was only partly applied, say so.
 
 ## Available Commands (skills)

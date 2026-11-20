@@ -30,6 +30,11 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
       - PYTHONPATH=/app
+      # Job ledger: the worker reports to the API (single writer of experiments/mlops.db)
+      - MLOPS_API_URL=http://host.docker.internal:${API_PORT:-8002}
+      - MLOPS_INTERNAL_TOKEN=${MLOPS_INTERNAL_TOKEN:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - .:/app
     depends_on:
