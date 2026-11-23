@@ -153,10 +153,10 @@
         ...(r.recommendation.orchestrator && Object.keys(r.recommendation.orchestrator).length > 0
           ? [r.recommendation.orchestrator] : []),
       ];
-      // Existing Phase 1 result — skip Phase 0, go directly to adapters
-      if (currentList.length > 0) activePhase = 1;
-      if (currentNeed && currentList.length > 0) {
-        await runEvalWith(currentNeed, currentList);
+      // Existing Phase 1 result — switch immediately, eval loads in background
+      if (currentList.length > 0) {
+        activePhase = 1;
+        if (currentNeed) runEvalWith(currentNeed, currentList); // intentionally not awaited
       }
     } catch (e) { error = (e as Error).message; }
     finally { loading = false; }
@@ -670,7 +670,11 @@
   <!-- ── Phase 1 — Adapters SLM ── -->
   {#if activePhase === 1}
   <div class="phase1-header mb-16">
-    <button class="btn-back" onclick={backToPhase0}>← Architecture</button>
+    {#if readOnly}
+      <button class="btn-back" onclick={() => goto(`/projects/${projectId}`)}>← Retour au projet</button>
+    {:else}
+      <button class="btn-back" onclick={backToPhase0}>← Modifier l'analyse</button>
+    {/if}
     {#if p0Result}
     <div class="phase1-header-badges">
       {#if p0Result.slm_needed}<span class="p0-arch-badge active">SLM</span>{/if}
