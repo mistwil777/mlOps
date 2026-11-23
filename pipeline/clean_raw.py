@@ -701,6 +701,160 @@ def augment_batch(
     return records + augmented
 
 
+# ── Raw document ingestion (étape C — multi-format) ──────────────────────────
+
+_CHUNK_TARGET_CHARS  = 2600   # ~650 tokens at 4 chars/token
+_CHUNK_OVERLAP_CHARS = 200    # ~50 tokens overlap
+_CHUNK_MIN_CHARS     = 400    # ~100 tokens minimum
+# Extensions handled by PairForge extractors (kept at module level to avoid re-instantiation)
+_RAW_DOC_EXTS = frozenset({
+    ".txt", ".md", ".pdf", ".docx", ".xlsx", ".pptx", ".rtf",
+    ".py", ".ts", ".js", ".go", ".rs", ".c", ".cpp", ".h",
+    ".png", ".jpg", ".jpeg", ".zip",
+})
+
+
+def _char_chunk(text: str) -> list[str]:
+    """Split text into overlapping character-based chunks."""
+    chunks: list[str] = []
+    start = 0
+    while start < len(text):
+        end = min(start + _CHUNK_TARGET_CHARS, len(text))
+        chunk = text[start:end].strip()
+        if len(chunk) >= _CHUNK_MIN_CHARS:
+            chunks.append(chunk)
+        start += _CHUNK_TARGET_CHARS - _CHUNK_OVERLAP_CHARS
+    return chunks
+
+
+def _assign_chunks_to_adapters(
+    chunk_texts: list[str],
+    adapter_names: list[str],
+    adapter_descriptions: dict[str, str],
+) -> list[str]:
+    """Return adapter name per chunk. Single-adapter: no embedding needed."""
+    if len(adapter_names) == 1:
+        return [adapter_names[0]] * len(chunk_texts)
+    desc_texts = [adapter_descriptions.get(n, n) for n in adapter_names]
+    try:
+        import numpy as np  # noqa: PLC0415
+        desc_embs  = _embed(desc_texts)
+        chunk_embs = _embed(chunk_texts)
+        d = np.array(desc_embs,  dtype=float)
+        c = np.array(chunk_embs, dtype=float)
+        d /= np.linalg.norm(d, axis=1, keepdims=True) + 1e-9
+        c /= np.linalg.norm(c, axis=1, keepdims=True) + 1e-9
+        best = (c @ d.T).argmax(axis=1)
+        return [adapter_names[int(i)] for i in best]
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Adapter routing embedding failed (%s) — assigning to first adapter", exc)
+        return [adapter_names[0]] * len(chunk_texts)
+
+
+def _process_raw_documents(
+    raw_dir: Path,
+    cleaned_dir: Path,
+    project_id: str,
+    adapters: list[dict[str, Any]],
+    quality_mode: str,
+    rag_ctx: object | None,
+    kg_ctx: object | None,
+    flagged_path: Path,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Extract, chunk, score raw documents. Output per-adapter JSONL with schema:
+    {text, source_file, adapter_name, _semantic_score, chunk_index}
+    """
+    import sys as _sys  # noqa: PLC0415
+    _pair_forge_root = Path(__file__).parents[1] / "agents" / "pair-forge"
+    if str(_pair_forge_root) not in _sys.path:
+        _sys.path.insert(0, str(_pair_forge_root))
+    from pair_forge.extractors import extract_content  # noqa: PLC0415
+
+    doc_files = sorted(f for f in raw_dir.iterdir()
+                       if f.is_file() and f.suffix.lower() in _RAW_DOC_EXTS)
+    if not doc_files:
+        return {"document_mode": True, "files_processed": 0, "chunks_total": 0}
+
+    adapter_names = [a["name"] for a in adapters]
+    adapter_descriptions = {a["name"]: a.get("description", a["name"]) for a in adapters}
+
+    all_chunks: list[dict[str, Any]] = []
+    files_ok = files_failed = 0
+    for doc in doc_files:
+        try:
+            content, method = extract_content(doc)
+            if not content or not content.strip():
+                logger.warning("Empty extraction: %s (method=%s)", doc.name, method)
+                files_failed += 1
+                continue
+            for idx, chunk_text in enumerate(_char_chunk(content)):
+                all_chunks.append({
+                    "text": chunk_text,
+                    "source_file": doc.name,
+                    "adapter_name": "__unassigned__",
+                    "chunk_index": idx,
+                })
+            files_ok += 1
+            logger.info("Extracted %s → chunks (method=%s)", doc.name, method)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Extraction failed %s: %s", doc.name, exc)
+            files_failed += 1
+
+    if not all_chunks:
+        return {"document_mode": True, "files_processed": 0, "chunks_total": 0,
+                "files_failed": files_failed}
+
+    # Assign adapters
+    assignments = _assign_chunks_to_adapters(
+        [c["text"] for c in all_chunks], adapter_names, adapter_descriptions
+    )
+    for chunk, name in zip(all_chunks, assignments):
+        chunk["adapter_name"] = name
+
+    # Semantic scoring — reuse existing functions via synthetic records
+    # score_semantic reads text via _record_text() which looks for "description"
+    synthetic = [{**c, "description": c["text"]} for c in all_chunks]
+    if rag_ctx is not None or kg_ctx is not None:
+        synthetic = score_semantic(synthetic, rag_ctx, kg_ctx)
+        before = len(synthetic)
+        synthetic = filter_by_semantic_score(synthetic, quality_mode, flagged_path)
+        logger.info("Semantic filter: %d → %d chunks", before, len(synthetic))
+    else:
+        synthetic = [{**r, "_semantic_score": None} for r in synthetic]
+
+    # Group by adapter and write
+    by_adapter: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for r in synthetic:
+        by_adapter[r["adapter_name"]].append(r)
+
+    total_written = 0
+    for adapter_name, recs in by_adapter.items():
+        output = [
+            {
+                "text":            r["text"],
+                "source_file":     r["source_file"],
+                "adapter_name":    r["adapter_name"],
+                "_semantic_score": r.get("_semantic_score"),
+                "chunk_index":     r["chunk_index"],
+            }
+            for r in recs
+        ]
+        if not dry_run:
+            out_path = cleaned_dir / f"{adapter_name}.jsonl"
+            write_jsonl(out_path, output)
+            logger.info("[%s] Written %d chunks → %s", adapter_name, len(output), out_path)
+        total_written += len(output)
+
+    return {
+        "document_mode":   True,
+        "files_processed": files_ok,
+        "files_failed":    files_failed,
+        "chunks_total":    len(all_chunks),
+        "chunks_kept":     total_written,
+    }
+
+
 # ── Semantic scoring (RAG + KG) ───────────────────────────────────────────────
 
 def _load_semantic_context(
@@ -1039,7 +1193,39 @@ def main() -> None:
     else:
         logger.info("No semantic context available — semantic scoring skipped")
 
-    # Load all raw records once
+    # Detect document mode: raw/ contains non-JSONL files → étape C document path
+    _has_docs = raw_dir.exists() and any(
+        f.is_file() and f.suffix.lower() in _RAW_DOC_EXTS
+        for f in raw_dir.iterdir()
+    )
+
+    full_report: dict[str, Any] = {"project": args.project, "adapters": {}}
+
+    if _has_docs:
+        logger.info("Document mode detected — running étape C multi-format ingestion")
+        doc_report = _process_raw_documents(
+            raw_dir=raw_dir,
+            cleaned_dir=cleaned_dir,
+            project_id=args.project,
+            adapters=adapters,
+            quality_mode=quality_mode,
+            rag_ctx=rag_ctx,
+            kg_ctx=kg_ctx,
+            flagged_path=flagged_path,
+            dry_run=args.dry_run,
+        )
+        full_report["document_mode"] = doc_report
+        print("\n── clean_raw report (document mode) ─────────────────────────")
+        print(f"  files processed : {doc_report.get('files_processed', 0)}")
+        print(f"  files failed    : {doc_report.get('files_failed', 0)}")
+        print(f"  chunks total    : {doc_report.get('chunks_total', 0)}")
+        print(f"  chunks kept     : {doc_report.get('chunks_kept', 0)}")
+        print()
+        if args.report:
+            Path(args.report).write_text(json.dumps(full_report, indent=2, ensure_ascii=False))
+        return
+
+    # Load all raw records once (pair mode — legacy JSONL pairs)
     all_raw = []
     for f in raw_dir.glob("*.jsonl"):
         all_raw.extend(read_jsonl(f))
@@ -1099,12 +1285,10 @@ def main() -> None:
             ))
             logger.info("Cross-adapter reassignment complete")
 
-    full_report: dict[str, Any] = {
-        "project":      args.project,
+    full_report.update({
         "domain":       domain,
         "quality_mode": quality_mode,
-        "adapters":     {},
-    }
+    })
 
     for adapter in adapters:
         name   = adapter["name"]
