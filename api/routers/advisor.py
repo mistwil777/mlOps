@@ -567,11 +567,10 @@ def _parse_recommendation(raw: str) -> dict[str, Any]:
 
 
 def _update_project_config(project: str, recommendation: dict[str, Any], need: str = "") -> None:
-    path = Path("config/projects") / f"{project}.yaml"
-    if not path.exists():
-        raise FileNotFoundError(f"Project config not found: {path}")
-
-    cfg = yaml.safe_load(path.read_text())
+    from api.config import get_project_config, save_project_config  # noqa: PLC0415
+    cfg = get_project_config(project)
+    if cfg is None:
+        raise FileNotFoundError(f"Project config not found: {project}")
 
     existing_by_name: dict[str, dict] = {
         a["name"]: a for a in cfg.get("adapters", []) if isinstance(a, dict)
@@ -626,7 +625,7 @@ def _update_project_config(project: str, recommendation: dict[str, Any], need: s
     if cfg.get("classification") in ("confidentiel", "secret"):
         cfg["isolation_level"] = "sovereign"
 
-    path.write_text(yaml.dump(cfg, default_flow_style=False, allow_unicode=True))
+    save_project_config(project, cfg)
 
 
 _ALT_TEMPLATE = """\
@@ -1302,12 +1301,12 @@ class PatchAdapterSourcesRequest(BaseModel):
 
 @router.patch("/adapter-sources/{project_id}")
 def patch_adapter_sources(project_id: str, body: PatchAdapterSourcesRequest) -> dict[str, Any]:
-    """Replace the source_configs of one adapter in the project YAML."""
-    path = Path("config/projects") / f"{project_id}.yaml"
-    if not path.exists():
+    """Replace the source_configs of one adapter in the project config."""
+    from api.config import get_project_config, save_project_config  # noqa: PLC0415
+    cfg = get_project_config(project_id)
+    if cfg is None:
         raise HTTPException(404, f"Project '{project_id}' not found")
 
-    cfg = yaml.safe_load(path.read_text()) or {}
     adapters: list[dict] = cfg.get("adapters", [])
     found = False
     for a in adapters:
@@ -1321,17 +1320,17 @@ def patch_adapter_sources(project_id: str, body: PatchAdapterSourcesRequest) -> 
         raise HTTPException(404, f"Adapter '{body.adapter_name}' not found in project '{project_id}'")
 
     cfg["adapters"] = adapters
-    path.write_text(yaml.dump(cfg, default_flow_style=False, allow_unicode=True))
+    save_project_config(project_id, cfg)
     return {"ok": True, "adapter_name": body.adapter_name, "n_sources": len(body.source_configs)}
 
 
 @router.get("/recommendation/{project_id}")
 def get_recommendation(project_id: str) -> dict[str, Any]:
     """Return the saved adapter recommendation for an existing project."""
-    path = Path("config/projects") / f"{project_id}.yaml"
-    if not path.exists():
+    from api.config import get_project_config  # noqa: PLC0415
+    cfg = get_project_config(project_id)
+    if cfg is None:
         raise HTTPException(404, f"Project '{project_id}' not found")
-    cfg = yaml.safe_load(path.read_text()) or {}
 
     all_adapters: list[dict[str, Any]] = cfg.get("adapters", [])
     specialists   = [a for a in all_adapters if a.get("role") != "orchestrator"]
@@ -1373,7 +1372,7 @@ def recommend(body: AdvisorRequest) -> dict[str, Any]:
     if body.project:
         try:
             _update_project_config(body.project, recommendation, need=body.need)  # type: ignore[arg-type]
-            config_updated = f"config/projects/{body.project}.yaml"
+            config_updated = f"experiments/mlops.db#{body.project}"
         except FileNotFoundError:
             pass
 
@@ -1478,7 +1477,7 @@ async def recommend_stream(body: AdvisorRequest) -> StreamingResponse:
         if body.project:
             try:
                 _update_project_config(body.project, recommendation, need=body.need)
-                config_updated = f"config/projects/{body.project}.yaml"
+                config_updated = f"experiments/mlops.db#{body.project}"
             except FileNotFoundError:
                 pass
 

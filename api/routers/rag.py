@@ -79,15 +79,14 @@ async def _run_build(job_id: str, project_id: str, rebuild: bool) -> None:
     cmd = [
         sys.executable, "-c",
         f"""
-import yaml, sys
-from pathlib import Path
+import sys
+from api.config import get_project_config
 from pipeline.rag_index import build_index
-p = Path('config/projects/{project_id}.yaml')
-if not p.exists():
-    print(f'ERROR: project config not found: {{p}}', flush=True)
+cfg = get_project_config('{project_id}')
+if cfg is None:
+    print(f'ERROR: project config not found: {project_id}', flush=True)
     sys.exit(1)
-cfg = yaml.safe_load(p.open())
-domain = cfg.get('domain', 'code')
+domain = cfg.get('domain', 'other')
 print(f'Building RAG index for project={project_id} domain={{domain}} rebuild={rebuild}...', flush=True)
 idx = build_index('{project_id}', domain, rebuild={rebuild})
 print(f'Done: {{idx.count}} patterns indexed', flush=True)

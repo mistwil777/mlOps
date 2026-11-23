@@ -32,10 +32,10 @@ class AdapterInstance(BaseModel):
 
 def _load_adapter_registry(project: str) -> list[AdapterInstance]:
     """Read running adapter instances from project config."""
-    path = Path("config/projects") / f"{project}.yaml"
-    if not path.exists():
-        raise FileNotFoundError(f"Project config not found: {path}")
-    cfg = yaml.safe_load(path.read_text())
+    from api.config import get_project_config  # noqa: PLC0415
+    cfg = get_project_config(project)
+    if cfg is None:
+        raise FileNotFoundError(f"Project config not found: {project}")
     adapters = cfg.get("adapters", [])
     instances = []
     for a in adapters:

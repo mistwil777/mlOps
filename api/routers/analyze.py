@@ -14,15 +14,12 @@ from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/analyze", tags=["analyze"])
 
-_PROJECTS_DIR = Path("config/projects")
-
-
 def _project_cfg(project_id: str) -> dict[str, Any]:
-    path = _PROJECTS_DIR / f"{project_id}.yaml"
-    if not path.exists():
+    from api.config import get_project_config  # noqa: PLC0415
+    cfg = get_project_config(project_id)
+    if cfg is None:
         raise HTTPException(404, f"Project config not found: {project_id}")
-    with path.open() as fh:
-        return yaml.safe_load(fh) or {}
+    return cfg
 
 
 def _report_path(project_id: str) -> Path:
@@ -99,17 +96,13 @@ async def validate_report(project_id: str, body: ValidateRequest) -> dict[str, A
 
 
 def _apply_categories_to_config(project_id: str, categories: list[dict[str, Any]]) -> None:
-    path = _PROJECTS_DIR / f"{project_id}.yaml"
-    with path.open() as fh:
-        cfg = yaml.safe_load(fh) or {}
-
+    from api.config import get_project_config, save_project_config  # noqa: PLC0415
+    cfg = get_project_config(project_id) or {}
     cfg["categories"] = [
         {"name": c["name"], "description": c.get("description", "")}
         for c in categories
     ]
-
-    with path.open("w") as fh:
-        yaml.dump(cfg, fh, allow_unicode=True, sort_keys=False, default_flow_style=False)
+    save_project_config(project_id, cfg)
 
 
 # ── GET gate status ────────────────────────────────────────────────────────────

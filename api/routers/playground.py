@@ -72,9 +72,9 @@ def _get_rag_context(project_id: str, query: str, k: int = 3) -> str:
 
 def _load_project_domain(project_id: str) -> str:
     try:
-        cfg_path = Path(f"config/projects/{project_id}.yaml")
-        with cfg_path.open() as fh:
-            return yaml.safe_load(fh).get("domain", "text")
+        from api.config import get_project_config  # noqa: PLC0415
+        cfg = get_project_config(project_id)
+        return (cfg or {}).get("domain", "text")
     except Exception:
         return "text"
 

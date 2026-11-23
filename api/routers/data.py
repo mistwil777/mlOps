@@ -28,11 +28,11 @@ router = APIRouter(prefix="/api/data", tags=["data"])
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _load_project_config(project_id: str) -> dict[str, Any]:
-    p = Path("config/projects") / f"{project_id}.yaml"
-    if not p.exists():
+    from api.config import get_project_config  # noqa: PLC0415
+    cfg = get_project_config(project_id)
+    if cfg is None:
         raise HTTPException(404, f"Project config not found: {project_id}")
-    with p.open() as fh:
-        return yaml.safe_load(fh)
+    return cfg
 
 
 def _domain_persona(project_id: str) -> str:

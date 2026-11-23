@@ -108,12 +108,8 @@ def get_compliance_report(model_id: str):
 
     # Load project config
     project_id = row.get("project_id") or row.get("project_id_col", "")
-    cfg_path = Path("config/projects") / f"{project_id}.yaml"
-    if cfg_path.exists():
-        with cfg_path.open() as fh:
-            project_cfg = yaml.safe_load(fh) or {}
-    else:
-        project_cfg = {"id": project_id, "name": row.get("project_name", project_id)}
+    from api.config import get_project_config  # noqa: PLC0415
+    project_cfg = get_project_config(project_id) or {"id": project_id, "name": row.get("project_name", project_id)}
 
     # Load latest eval metrics
     eval_row = fetchone(
