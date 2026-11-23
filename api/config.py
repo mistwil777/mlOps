@@ -1,4 +1,4 @@
-"""Read project and model YAML configs."""
+"""Read project and model configs — projects stored in SQLite, models in YAML."""
 
 from __future__ import annotations
 
@@ -7,8 +7,7 @@ from typing import Any
 
 import yaml
 
-MODELS_DIR   = Path("config/models")
-PROJECTS_DIR = Path("config/projects")
+MODELS_DIR = Path("config/models")
 
 TASK_TYPES = [
     "migration", "summarization", "classification", "qa",
@@ -65,26 +64,15 @@ def get_base_model(model_id: str) -> dict[str, Any] | None:
 
 
 def list_project_configs() -> list[dict[str, Any]]:
-    projects = []
-    for path in sorted(PROJECTS_DIR.glob("*.yaml")):
-        with path.open() as fh:
-            data = yaml.safe_load(fh)
-        data["id"] = path.stem
-        projects.append(data)
-    return projects
+    from api.db import project_config_list
+    return project_config_list()
 
 
 def get_project_config(project_id: str) -> dict[str, Any] | None:
-    path = PROJECTS_DIR / f"{project_id}.yaml"
-    if not path.exists():
-        return None
-    with path.open() as fh:
-        data = yaml.safe_load(fh)
-    data["id"] = project_id
-    return data
+    from api.db import project_config_get
+    return project_config_get(project_id)
 
 
 def save_project_config(project_id: str, data: dict[str, Any]) -> None:
-    path = PROJECTS_DIR / f"{project_id}.yaml"
-    with path.open("w") as fh:
-        yaml.dump(data, fh, allow_unicode=True, sort_keys=False)
+    from api.db import project_config_save
+    project_config_save(project_id, data)

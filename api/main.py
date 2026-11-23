@@ -38,8 +38,10 @@ for r in (
 
 @app.on_event("startup")
 async def _startup() -> None:
+    from api.db import migrate_central_db  # noqa: PLC0415
     from api.watchdog import watchdog_loop  # noqa: PLC0415
     from pipeline.utils.run_ledger import get_ledger  # noqa: PLC0415
+    migrate_central_db()
     # Jobs started by a previous API process cannot still be running: mark them interrupted.
     interrupted = get_ledger().interrupt_orphans("api")
     if interrupted:

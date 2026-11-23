@@ -1,4 +1,4 @@
-"""Projects CRUD — creates YAML config + SQLite row."""
+"""Projects CRUD — config stored in central SQLite, per-project DB created on init."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from api.config import (
     list_project_configs,
     save_project_config,
 )
-from api.db import execute, fetchall, fetchone
+from api.db import ensure_project_db, execute, fetchall, fetchone
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -143,17 +143,14 @@ def create_project(body: ProjectCreate):
 
     save_project_config(project_id, cfg)
 
+    # Per-project isolated SQLite DB
+    ensure_project_db(project_id)
+
     # Create datalake directories
     from pathlib import Path
     for stage in ("raw", "processed", "fine-tuning-ready"):
         Path(f"datalake/projects/{project_id}/{stage}").mkdir(parents=True, exist_ok=True)
     Path(f"datalake/projects/{project_id}/raw/feedback").mkdir(parents=True, exist_ok=True)
-
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    execute(
-        "INSERT OR IGNORE INTO projects (id, name, description, base_model, created_at, updated_at) VALUES (?,?,?,?,?,?)",
-        (project_id, body.name, body.description, body.model, now, now),
-    )
 
     return {**cfg, "id": project_id}
 
@@ -164,19 +161,31 @@ def delete_project(project_id: str):
     import shutil
 
     cfg = get_project_config(project_id)
-    db_row = fetchone("SELECT id FROM projects WHERE id = ?", (project_id,))
-    if not cfg and not db_row:
+    if not cfg:
         raise HTTPException(404, f"Project '{project_id}' not found")
 
-    # Remove YAML config
-    config_path = Path("config/projects") / f"{project_id}.yaml"
-    config_path.unlink(missing_ok=True)
-
-    # Remove SQLite rows (cascade: runs, evaluations, rag_feedback)
-    execute("DELETE FROM evaluations WHERE run_id IN (SELECT id FROM runs WHERE project_id = ?)", (project_id,))
-    execute("DELETE FROM runs WHERE project_id = ?", (project_id,))
+    # Remove SQLite rows in dependency order
+    execute("DELETE FROM eval_category_breakdown WHERE project_id = ?", (project_id,))
+    execute("DELETE FROM eval_learning_curve WHERE project_id = ?", (project_id,))
+    execute("DELETE FROM eval_robustness WHERE project_id = ?", (project_id,))
+    execute("DELETE FROM eval_security WHERE project_id = ?", (project_id,))
+    execute("DELETE FROM eval_compliance WHERE project_id = ?", (project_id,))
+    execute("DELETE FROM evaluations WHERE project_id = ?", (project_id,))
+    execute("DELETE FROM models WHERE project_id = ?", (project_id,))
+    execute("DELETE FROM adapter_data_links WHERE adapter_id IN (SELECT id FROM adapters WHERE project_id = ?)", (project_id,))
+    execute("DELETE FROM adapters WHERE project_id = ?", (project_id,))
+    execute("DELETE FROM datasets WHERE project_id = ?", (project_id,))
     execute("DELETE FROM rag_feedback WHERE project_id = ?", (project_id,))
-    execute("DELETE FROM projects WHERE id = ?", (project_id,))
+    execute("DELETE FROM production_feedback WHERE project = ?", (project_id,))
+    # Disable FK checks for this batch — MLflow shares the DB and has cross-table FKs
+    # that don't involve our rows; re-enabled automatically on connection close.
+    from api.db import get_db  # noqa: PLC0415
+    with get_db() as conn:
+        conn.execute("PRAGMA foreign_keys=OFF")
+        conn.execute("DELETE FROM runs WHERE project_id = ?", (project_id,))
+        conn.execute("DELETE FROM jobs WHERE project_id = ?", (project_id,))
+        conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+        conn.execute("PRAGMA foreign_keys=ON")
 
     # Remove datalake directory (non-blocking — log on error)
     datalake_dir = Path("datalake/projects") / project_id

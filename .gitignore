@@ -79,6 +79,9 @@ frontend/.svelte-kit/
 frontend/node_modules/
 frontend/build/
 
+# Project runtime configs (application state — stored in SQLite, not git)
+config/projects/
+
 # MLflow WAL (SQLite journal — not versionable)
 experiments/*.db-shm
 experiments/*.db-wal
