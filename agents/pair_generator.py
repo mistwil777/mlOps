@@ -138,6 +138,23 @@ DESCRIPTION: <one sentence describing what the code does>
 ```
 """
 
+_CHUNK_TO_PAIR_PROMPT = """\
+You are an expert in {adapter_context}.
+
+Below is an extract from a reference document. Based on this extract, generate ONE realistic \
+training pair: an instruction a user might ask, and the precise answer drawn from the extract.
+
+Rules:
+- The instruction must be a natural question or request (1-2 sentences)
+- The response must be grounded in the extract — do not invent facts
+- Output format EXACTLY:
+INSTRUCTION: <the question or request>
+RESPONSE: <the answer, 2-10 sentences, grounded in the extract>
+
+Extract:
+{chunk_text}
+"""
+
 
 # ── Per-adapter generator ─────────────────────────────────────────────────────
 
@@ -173,6 +190,15 @@ class AdapterPairGenerator:
         self._java_records: list[dict[str, Any]] | None = None
         # Running buffer — flushed to disk every SAVE_EVERY pairs
         self._buffer: list[dict[str, Any]] = list(existing_pairs)
+
+    def _load_chunks_from_clean_raw(self) -> list[dict[str, Any]]:
+        """Load document-mode chunks written by étape C (schema: text, source_file, _semantic_score, chunk_index)."""
+        cr_file = Path(f"datalake/projects/{self.project_id}/processed/clean_raw/{self.name}.jsonl")
+        if not cr_file.exists():
+            return []
+        records = read_jsonl(cr_file)
+        # Document-mode records have 'text' + '_semantic_score'; JSONL-mode records have 'code'/'prompt'
+        return [r for r in records if r.get("text") and "_semantic_score" in r]
 
     def _load_java_records(self) -> list[dict[str, Any]]:
         if self._java_records is not None:
@@ -216,13 +242,21 @@ class AdapterPairGenerator:
             print(f"[DRY RUN] Would generate {self.needed} pairs for {self.name}", flush=True)
             return 0
 
-        if self.strategy == "fuse":
-            java_recs = self._load_java_records()
-            if java_recs:
-                print(f"Mode : traduction ({len(java_recs)} records Java disponibles)", flush=True)
-                n = self._generate_by_translation(java_recs)
+        if self.strategy == "chunk_to_pair":
+            chunks = self._load_chunks_from_clean_raw()
+            if chunks:
+                print(f"Mode : chunk_to_pair ({len(chunks)} chunks depuis étape C)", flush=True)
+                n = self._generate_chunk_to_pair(chunks)
             else:
-                print("Mode : génération synthétique (pas de Java dans clean_raw)", flush=True)
+                print("⚠ Aucun chunk trouvé dans processed/clean_raw/ — lancez d'abord l'étape C", flush=True)
+                n = 0
+        elif self.strategy == "fuse":
+            src_recs = self._load_java_records()
+            if src_recs:
+                print(f"Mode : traduction ({len(src_recs)} records {self.src_lang} disponibles)", flush=True)
+                n = self._generate_by_translation(src_recs)
+            else:
+                print(f"Mode : génération synthétique (pas de records {self.src_lang} dans clean_raw)", flush=True)
                 n = self._generate_synthetic_pairs()
         else:
             print(f"Mode : doc_to_code ({self.tgt_lang})", flush=True)
@@ -389,6 +423,63 @@ class AdapterPairGenerator:
             time.sleep(_RATE_LIMIT_S)
 
         print(f"Rejetés — syntax:{rejected['syntax']} ratio:{rejected['ratio']} llm:{rejected['llm']} parse:{rejected['parse']}", flush=True)
+        return done
+
+    def _generate_chunk_to_pair(self, chunks: list[dict[str, Any]]) -> int:
+        done = 0
+        rejected = {"llm": 0, "parse": 0, "ratio": 0}
+        consec_fail = 0
+        idx = 0
+
+        while done < self.needed:
+            chunk = chunks[idx % len(chunks)]
+            idx += 1
+            chunk_text = chunk.get("text", "")[:1800]
+
+            prompt = _CHUNK_TO_PAIR_PROMPT.format(
+                adapter_context=self.description[:300],
+                chunk_text=chunk_text,
+            )
+            response = call_llm(
+                prompt, max_tokens=512, temperature=0.3,
+                project_id=self.project_id, purpose="pair-generation",
+            )
+            if not response:
+                rejected["llm"] += 1
+                consec_fail += 1
+                if consec_fail >= _MAX_CONSEC_FAILURES:
+                    print(f"⚠ {_MAX_CONSEC_FAILURES} échecs LLM consécutifs — adapter ignoré", flush=True)
+                    break
+                time.sleep(_RATE_LIMIT_S)
+                continue
+
+            consec_fail = 0
+            instr_m = re.search(r"INSTRUCTION:\s*(.+?)(?=\nRESPONSE:)", response, re.DOTALL)
+            resp_m  = re.search(r"RESPONSE:\s*(.+)", response, re.DOTALL)
+
+            if not instr_m or not resp_m:
+                rejected["parse"] += 1
+                time.sleep(_RATE_LIMIT_S)
+                continue
+
+            instruction = instr_m.group(1).strip()
+            answer      = resp_m.group(1).strip()
+
+            ok, _ = _verify_ratio(instruction, answer)
+            if not ok:
+                rejected["ratio"] += 1
+                time.sleep(_RATE_LIMIT_S)
+                continue
+
+            self._accept(self._make_pair(
+                prompt=instruction, completion=answer,
+                gen_type="chunk_to_pair",
+                source_url=chunk.get("source_file"),
+            ))
+            done += 1
+            time.sleep(_RATE_LIMIT_S)
+
+        print(f"Rejetés — llm:{rejected['llm']} parse:{rejected['parse']} ratio:{rejected['ratio']}", flush=True)
         return done
 
     def _make_pair(
